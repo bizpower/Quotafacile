@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>QuotaFacile – Il Marketplace delle Assicurazioni in Italia</title>
+  <meta name="description" content="Trova le migliori offerte assicurative e confronta i professionisti del settore. Richiedi preventivi gratuiti e consulta le risposte degli intermediari verificati. Scopri come risparmiare sulle tue polizze con QuotaFacile.">
+  <meta name="keywords" content="assicurazione a basso prezzo, risparmia sulle polizze, marketplace assicurativo, confronta assicurazioni online, assicurazioni trasparenti, intermediari assicurativi, broker assicurativo, preventivo assicurazione">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://www.quotafacile.it/">
+  <meta name="theme-color" content="#145233">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="QuotaFacile">
+  <meta property="og:title" content="QuotaFacile – Il Marketplace delle Assicurazioni in Italia">
+  <meta property="og:description" content="Trova l'intermediario giusto, confronta e risparmia sulle tue polizze. Professionisti verificati, nessuna intermediazione occulta.">
+  <meta property="og:url" content="https://www.quotafacile.it/">
+  <meta property="og:locale" content="it_IT">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="QuotaFacile – Il Marketplace delle Assicurazioni in Italia">
+  <meta name="twitter:description" content="Confronta intermediari assicurativi verificati e risparmia sulle tue polizze.">
+
+  <!-- JSON-LD: Organization + WebSite -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://www.quotafacile.it/#org",
+        "name": "QuotaFacile",
+        "url": "https://www.quotafacile.it/",
+        "description": "Marketplace assicurativo italiano: intermediari, agenzie e broker in vetrina, preventivi e consulenze gratuite.",
+        "sameAs": ["https://www.linkedin.com/", "https://www.youtube.com/", "https://www.instagram.com/"]
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://www.quotafacile.it/#website",
+        "url": "https://www.quotafacile.it/",
+        "name": "QuotaFacile",
+        "publisher": { "@id": "https://www.quotafacile.it/#org" },
+        "potentialAction": {
+          "@type": "SearchAction",
+          "target": "https://www.quotafacile.it/#/bacheca?q={search_term_string}",
+          "query-input": "required name=search_term_string"
+        }
+      }
+    ]
+  }
+  </script>
+  <!-- JSON-LD dinamico per FAQ (iniettato da app.js ad ogni cambio pagina) -->
+  <script type="application/ld+json" id="jsonld-dynamic"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a href="#/" class="brand" aria-label="QuotaFacile home">
+        <span class="brand-mark">Q</span>
+        <span class="brand-name">Quota<em>Facile</em></span>
+      </a>
+      <nav class="topnav" aria-label="Navigazione principale">
+        <a href="#/" data-nav="home">Home</a>
+        <a href="#/intermediari" data-nav="intermediari">Intermediari</a>
+        <a href="#/bacheca" data-nav="bacheca">Bacheca Q&amp;A</a>
+        <a href="#/professionisti" data-nav="professionisti">Per i professionisti</a>
+      </nav>
+      <div class="topbar-cta">
+        <a href="#/preventivo" class="btn btn-ghost btn-sm">Richiedi preventivo</a>
+        <a href="#/area-pro" class="btn btn-primary btn-sm">Area Pro</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- APP VIEW (renderizzata da app.js) -->
+  <main id="app" class="app-main" aria-live="polite"></main>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <div class="brand footer-brand"><span class="brand-mark">Q</span><span class="brand-name">Quota<em>Facile</em></span></div>
+        <p class="footer-tag">Il marketplace delle assicurazioni in Italia. Trasparente, verificato, gratuito per chi cerca.</p>
+      </div>
+      <div>
+        <h4>Piattaforma</h4>
+        <a href="#/intermediari">Trova un intermediario</a>
+        <a href="#/preventivo">Richiedi un preventivo</a>
+        <a href="#/bacheca">Bacheca Q&amp;A</a>
+      </div>
+      <div>
+        <h4>Professionisti</h4>
+        <a href="#/professionisti">Perché iscriversi</a>
+        <a href="#/area-pro">Area Pro</a>
+      </div>
+      <div>
+        <h4>Legale</h4>
+        <a href="#/">Chi siamo</a>
+        <a href="#/">Privacy</a>
+        <a href="#/">Termini e condizioni</a>
+        <a href="#/">Contatti</a>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <span>© 2026 QuotaFacile. Gli intermediari presenti sono iscritti al RUI (IVASS).</span>
+    </div>
+  </footer>
+
+  <!-- BOTTOM TAB BAR (mobile, stile app) -->
+  <nav class="tabbar" aria-label="Navigazione mobile">
+    <a href="#/" data-nav="home"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-8.5Z"/></svg><span>Home</span></a>
+    <a href="#/bacheca" data-nav="bacheca"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H8l-4 4V4Z"/></svg><span>Bacheca</span></a>
+    <a href="#/preventivo" class="tab-cta" data-nav="preventivo"><span class="tab-cta-btn">€</span><span>Preventivo</span></a>
+    <a href="#/intermediari" data-nav="intermediari"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg><span>Esperti</span></a>
+    <a href="#/area-pro" data-nav="area-pro"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M8 6V4h8v2"/></svg><span>Pro</span></a>
+  </nav>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="assets/js/daily-questions.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>

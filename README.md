@@ -1,0 +1,93 @@
+# QuotaFacile — Il Marketplace delle Assicurazioni in Italia
+
+Piattaforma web (mobile-first, stile app) dove **intermediari assicurativi** (agenti, broker, subagenti) mettono in vetrina il proprio profilo — la **QuotaPass**, una tessera professionale con numero RUI e specializzazioni — e gli **utenti** possono contattarli, richiedere preventivi e consulenze.
+
+Il cuore SEO del portale è la **Bacheca Q&A gamificata**: gli intermediari rispondono alle domande assicurative degli utenti, guadagnano punti/badge e salgono in classifica. Ogni Q&A genera contenuto originale con markup `schema.org/FAQPage`, ovvero contenuto indicizzabile che lavora per il portale.
+
+## Struttura
+
+```
+quotafacile/
+├── index.html                    # Shell dell'app, meta SEO, JSON-LD, header/footer/tabbar
+├── assets/
+│   ├── css/style.css             # Design system (verde professionale + oro gamification)
+│   ├── js/app.js                 # Router, store, viste, gamification, motore giornaliero
+│   └── js/daily-questions.js     # ⭐ Pool 200 domande "del giorno" (qui vanno le tue keyword)
+├── preview.html                  # Versione single-file (tutto inline) per anteprima rapida
+├── robots.txt
+├── sitemap.xml
+└── README.md
+```
+
+Zero dipendenze, zero build: HTML + CSS + JS vanilla. Funziona aprendo `index.html` o servendo la cartella.
+
+## ☀️ Sistema "Domanda del giorno" (200 giorni)
+
+Ogni giorno alle 00:00 viene pubblicata automaticamente **1 nuova domanda** dal pool di 200 (`assets/js/daily-questions.js`), in ordine, a partire dalla data `DAILY_EPOCH` in `app.js` (default: 2026-07-17). Ogni domanda esce già con una **risposta automatica della "Redazione QuotaFacile"** (badge dedicato + disclaimer), e gli **intermediari possono integrare** con risposte firmate (+10 pt): il contenuto cresce da solo, ogni giorno, per 200 giorni.
+
+In bacheca il contatore mostra "Domanda del giorno X di 200" con progress bar e countdown alla prossima.
+
+### Come inserire le tue 200 keyword
+Apri `assets/js/daily-questions.js`:
+1. **CURATED** — le domande scritte a mano, escono per prime. Formato: `{ cat, keyword, domanda, rispostaAuto }`. Sostituiscile/aggiungine con le tue keyword prioritarie.
+2. **TOPICS** — liste di argomenti per categoria: il generatore le combina con 4 template (costo / copertura / convenienza / funzionamento) e riempie automaticamente fino a 200 slot senza duplicati.
+Puoi anche azzerare tutto e mettere 200 voci CURATED: il sistema pubblica in ordine, una al giorno. Per cambiare la data di partenza modifica `DAILY_EPOCH` in `app.js`.
+
+## Funzionalità
+
+| Area | Cosa fa |
+|---|---|
+| **Home** | Hero con doppia CTA, come funziona, vantaggi, QuotaPass in evidenza, anteprima bacheca (con la domanda del giorno in testa) |
+| **Per i professionisti** | Landing dedicata: sistema punti, livelli, perché iscriversi |
+| **Area Pro** | Dopo la creazione del profilo si sbloccano 3 tab: **📊 Dashboard** (chiamate ricevute, email, consulenze, viste profilo, ultimi contatti, richieste dal marketplace, pubblicazione FAQ), **💬 Bacheca da rispondere** (domande community senza tua risposta + domande del giorno da integrare), **🪪 Profilo** (editor con anteprima live della QuotaPass) |
+| **Preventivo** | Form multi-step (tipo richiesta → ramo → contatti), anche indirizzato a un intermediario specifico (`#/preventivo?to=b1`) |
+| **Directory** | Griglia di QuotaPass filtrabile per ramo, con Chiama / Email / Consulenza |
+| **Bacheca Q&A** | Domanda del giorno + domande della community, risposte firmate, voti "utile", classifica esperti live |
+
+> Nota demo: alla creazione del profilo la dashboard viene popolata con lead di esempio; in produzione andranno tracciati i contatti reali (click su Chiama/Email, form consulenza).
+
+## Avvio locale
+
+```bash
+# opzione 1: apri direttamente
+open index.html
+
+# opzione 2: server locale
+npx serve .
+```
+
+## Deploy su GitHub Pages
+
+```bash
+git init
+git add .
+git commit -m "QuotaFacile v1"
+git branch -M main
+git remote add origin https://github.com/TUO-USERNAME/quotafacile.git
+git push -u origin main
+```
+
+Poi su GitHub: **Settings → Pages → Source: main / root**. Il sito sarà su `https://TUO-USERNAME.github.io/quotafacile/`.
+
+> Aggiorna `sitemap.xml`, i tag `canonical`/`og:url` in `index.html` con il dominio definitivo.
+
+### Gamification (la SEO del portale)
+- **+10 pt** risposta pubblicata · **+5 pt** voto utile · **+25 pt** migliore risposta
+- Livelli: Novizio → Consulente (50) → Esperto (150) → **Top Advisor (300)**
+- I Top Advisor finiscono in evidenza in home → incentivo a produrre contenuto → contenuto = pagine indicizzabili
+
+## SEO: cosa c'è e prossimo step
+
+**Già incluso:**
+- Meta title/description/keywords come da brief, Open Graph, Twitter card, canonical
+- JSON-LD statico (`Organization`, `WebSite` + `SearchAction`)
+- JSON-LD **dinamico `FAQPage`** rigenerato ad ogni navigazione della bacheca e delle singole domande
+- `robots.txt` + `sitemap.xml`
+
+**Nota importante:** questa v1 è una SPA con routing `#/`. Per sfruttare al massimo la genialata Q&A su Google, il passo successivo è servire ogni domanda come **pagina statica con URL proprio** (es. `/faq/classe-di-merito-auto-nuova/`), perché gli URL con `#` non vengono indicizzati come pagine separate. Opzioni, in ordine di sforzo:
+1. **Prerender/SSG**: uno script che genera un file HTML per ogni FAQ dal database (il markup c'è già).
+2. Migrazione a **Astro/Next.js** con backend (Supabase/Firebase) quando i contenuti diventano reali.
+
+## Backend (non incluso, per design)
+
+I dati sono in `localStorage` con seed demo: perfetto per validare UX e pitch. Per andare in produzione servono: auth intermediari, verifica RUI (registro IVASS), database Q&A, notifiche richieste preventivo.
