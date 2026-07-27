@@ -14,6 +14,7 @@ quotafacile/
 │   ├── js/app.js                 # Router, store, viste, gamification, motore giornaliero
 │   ├── js/daily-questions.js     # ⭐ Pool 200 domande "del giorno" (qui vanno le tue keyword)
 │   ├── js/staff-questions.js     # 📌 Guide QuotaFacile: keyword SEO posizionate in bacheca
+│   ├── js/intermediari.js        # 🪪 Intermediari in vetrina (fonte di verità delle QuotaPass)
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
 ├── robots.txt
@@ -89,6 +90,20 @@ Poi su GitHub: **Settings → Pages → Source: main / root**. Il sito sarà su 
 **Nota importante:** questa v1 è una SPA con routing `#/`. Per sfruttare al massimo la genialata Q&A su Google, il passo successivo è servire ogni domanda come **pagina statica con URL proprio** (es. `/faq/classe-di-merito-auto-nuova/`), perché gli URL con `#` non vengono indicizzati come pagine separate. Opzioni, in ordine di sforzo:
 1. **Prerender/SSG**: uno script che genera un file HTML per ogni FAQ dal database (il markup c'è già).
 2. Migrazione a **Astro/Next.js** con backend (Supabase/Firebase) quando i contenuti diventano reali.
+
+## 🪪 Intermediari in vetrina
+
+`assets/js/intermediari.js` è la fonte di verità delle QuotaPass pubblicate. Viene **risincronizzato
+ad ogni avvio**: modificarlo aggiorna le schede anche per chi ha già dati nel `localStorage`
+(punti e risposte accumulati vengono conservati per `id`).
+
+Regola non negoziabile: **il campo `rui` resta `null` finché il numero non è stato letto sul
+[registro pubblico IVASS](https://servizi.ivass.it/RuirPubblica/)**. Con `rui: null` la tessera
+mostra `RUI sez. E · dal gg/mm/aaaa · n. in verifica` e il badge "In verifica" al posto di
+"✓ Verificato RUI". Appena inserisci il numero, `verificato` diventa `true` da solo.
+
+I campi ancora da compilare si scrivono tra virgolette basse (`«Città»`) e vengono evidenziati in
+giallo nell'interfaccia invece di essere stampati come se fossero veri.
 
 ## 📌 Guide QuotaFacile (keyword SEO in bacheca)
 

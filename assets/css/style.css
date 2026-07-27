@@ -569,3 +569,11 @@ p { line-height: 1.6; }
 .answer-rich li { margin-bottom: .5rem; line-height: 1.65; }
 .answer-rich strong { color: var(--ink); }
 .answer-rich em { color: var(--ink-soft); }
+
+/* ---------- Campi di contenuto ancora da compilare ---------- */
+.todo-field {
+  background: rgba(226, 166, 61, .22); border-bottom: 1px dotted var(--gold-500);
+  color: inherit; padding: 0 .2rem; border-radius: 3px;
+}
+.rui-pending { color: var(--gold-500); font-family: var(--font-body); letter-spacing: 0; font-size: .74rem; }
+.qpass-rui { font-size: .74rem; line-height: 1.35; max-width: 62%; }

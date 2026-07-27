@@ -8,48 +8,25 @@
 const DB_KEY = "quotafacile_db_v1";
 
 const seed = {
-  brokers: [
-    { id: "b1", nome: "Laura Bianchi", ruolo: "Broker", azienda: "LB Insurance Broker", rui: "B000123456", citta: "Milano", tel: "+39 02 1234567", email: "laura@lbinsurance.it", bio: "15 anni di esperienza in polizze per PMI e professionisti. Rispondo entro 24h.", spec: ["Impresa", "Professionale", "Casa"], punti: 320, risposte: 24, verificato: true },
-    { id: "b2", nome: "Marco Ferri", ruolo: "Agente", azienda: "Ferri Assicurazioni", rui: "A000778899", citta: "Roma", tel: "+39 06 7654321", email: "marco@ferriassicura.it", bio: "Specializzato in RC Auto e polizze famiglia. Preventivi chiari, senza sorprese.", spec: ["Auto", "Famiglia", "Vita"], punti: 265, risposte: 19, verificato: true },
-    { id: "b3", nome: "Giulia Conti", ruolo: "Subagente", azienda: "Conti & Partners", rui: "E000445566", citta: "Torino", tel: "+39 011 998877", email: "giulia@contipartners.it", bio: "Aiuto famiglie e giovani a proteggere casa e futuro con soluzioni su misura.", spec: ["Casa", "Vita", "Salute"], punti: 190, risposte: 14, verificato: true },
-    { id: "b4", nome: "Antonio Russo", ruolo: "Broker", azienda: "Russo Risk Advisory", rui: "B000334455", citta: "Napoli", tel: "+39 081 445566", email: "antonio@russorisk.it", bio: "Risk management per aziende: flotte, cyber, D&O e credito commerciale.", spec: ["Impresa", "Cyber", "Flotte"], punti: 148, risposte: 11, verificato: false }
-  ],
+  /* Gli intermediari in vetrina vivono in assets/js/intermediari.js
+     e vengono risincronizzati ad ogni avvio (vedi sincronizzaBrokers). */
+  brokers: [],
+  /* Domande della community, in attesa di risposta. Le risposte di
+     esempio sono state rimosse: erano firmate da intermediari
+     inventati e, tolte quelle schede, sarebbero finite in bocca a
+     professionisti reali. Restano come domande aperte — che è anche
+     l'esca giusta per chi si iscrive. */
   faqs: [
-    {
-      id: "f1", cat: "Auto", autore: "b2", data: "2026-07-10",
-      domanda: "La classe di merito si trasferisce se compro un'auto nuova?",
-      risposte: [
-        { autore: "b2", testo: "Sì: la classe di merito (CU) segue il proprietario, non il veicolo. Quando acquisti un'auto nuova, l'attestato di rischio resta valido e mantieni la tua classe. Con la Legge Bersani puoi anche ereditare la classe di un familiare convivente sul primo veicolo.", voti: 12, accettata: true },
-        { autore: "b1", testo: "Aggiungo: verifica sempre che l'attestato di rischio sia aggiornato nella banca dati ANIA. Se cambi compagnia, la nuova assicurazione lo recupera automaticamente.", voti: 5, accettata: false }
-      ]
-    },
-    {
-      id: "f2", cat: "Casa", autore: "b3", data: "2026-07-08",
-      domanda: "La polizza casa copre i danni causati da un tubo che perde nel condominio?",
-      risposte: [
-        { autore: "b3", testo: "Dipende dalla garanzia \"danni da acqua condotta\": se il tubo è di tua proprietà esclusiva, la tua polizza copre i danni causati a terzi (RC verso i vicini). Se il tubo è condominiale, interviene la polizza globale fabbricati del condominio. Controlla sempre franchigie e scoperti.", voti: 9, accettata: true }
-      ]
-    },
-    {
-      id: "f3", cat: "Vita", autore: "b1", data: "2026-07-05",
-      domanda: "Che differenza c'è tra polizza vita temporanea (TCM) e polizza vita intera?",
-      risposte: [
-        { autore: "b1", testo: "La TCM (temporanea caso morte) copre solo un periodo definito, ad esempio 20 anni, con premi molto più bassi: è ideale per proteggere un mutuo o i figli. La vita intera copre per sempre e ha una componente di risparmio, ma costa molto di più. Per la maggior parte delle famiglie la TCM è la scelta più efficiente.", voti: 15, accettata: true },
-        { autore: "b3", testo: "Concordo. Attenzione anche alla dichiarazione dello stato di salute: essere trasparenti in fase di sottoscrizione evita contestazioni al momento del sinistro.", voti: 6, accettata: false }
-      ]
-    },
-    {
-      id: "f4", cat: "Impresa", autore: "b4", data: "2026-07-01",
-      domanda: "Una piccola srl ha davvero bisogno di una polizza cyber?",
-      risposte: [
-        { autore: "b4", testo: "Oggi sì, quasi sempre. Le PMI sono il bersaglio preferito del ransomware perché meno protette. Una polizza cyber copre ripristino dati, interruzione di attività, richieste di risarcimento per violazione dati (GDPR) e spesso include assistenza legale e tecnica 24/7. I premi partono da poche centinaia di euro l'anno.", voti: 8, accettata: true }
-      ]
-    },
-    {
-      id: "f5", cat: "Salute", autore: "b3", data: "2026-06-28",
-      domanda: "Le polizze salute rimborsano anche le visite specialistiche private?",
-      risposte: []
-    }
+    { id: "f1", cat: "Auto", autore: null, data: "2026-07-10", risposte: [],
+      domanda: "La classe di merito si trasferisce se compro un'auto nuova?" },
+    { id: "f2", cat: "Casa", autore: null, data: "2026-07-08", risposte: [],
+      domanda: "La polizza casa copre i danni causati da un tubo che perde nel condominio?" },
+    { id: "f3", cat: "Vita", autore: null, data: "2026-07-05", risposte: [],
+      domanda: "Che differenza c'è tra polizza vita temporanea (TCM) e polizza vita intera?" },
+    { id: "f4", cat: "Impresa", autore: null, data: "2026-07-01", risposte: [],
+      domanda: "Una piccola srl ha davvero bisogno di una polizza cyber?" },
+    { id: "f5", cat: "Salute", autore: null, data: "2026-06-28", risposte: [],
+      domanda: "Le polizze salute rimborsano anche le visite specialistiche private?" }
   ],
   richieste: [],
   proProfile: null,
@@ -82,6 +59,21 @@ DB.segnalazioni = DB.segnalazioni || [];
 DB.consensi = DB.consensi || [];
 DB.staffExtra = DB.staffExtra || {};
 DB.staffVotes = DB.staffVotes || {};
+
+/* Gli intermediari in vetrina sono contenuto editoriale, non dati
+   dell'utente: la fonte di verità è assets/js/intermediari.js e va
+   riallineata ad ogni avvio, altrimenti chi ha già visitato il sito
+   continuerebbe a vedere le schede vecchie salvate nel localStorage.
+   Punti e risposte accumulati vengono conservati per id. */
+function sincronizzaBrokers() {
+  const precedenti = Object.fromEntries((DB.brokers || []).map(b => [b.id, b]));
+  DB.brokers = (window.INTERMEDIARI || []).map(i => ({
+    ...i,
+    punti: precedenti[i.id]?.punti ?? i.punti ?? 0,
+    risposte: precedenti[i.id]?.risposte ?? i.risposte ?? 0
+  }));
+}
+sincronizzaBrokers();
 
 /* ---------------- HELPERS ---------------- */
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -233,6 +225,20 @@ function faqJsonLd(faqs) {
   };
 }
 
+/* I campi non ancora compilati sono marcati «così» nei file di
+   contenuto: li evidenziamo invece di stamparli come fossero veri. */
+const DA_COMPILARE = v => typeof v === "string" && /^«.*»$/.test(v);
+const campo = v => DA_COMPILARE(v) ? `<span class="todo-field">${esc(v)}</span>` : esc(v);
+
+/* Etichetta RUI: senza numero verificato non stampiamo un numero.
+   Sezione e data di iscrizione restano visibili perché sono i dati
+   che l'utente può usare per cercare la persona sul registro IVASS. */
+function ruiLabel(b) {
+  if (b.rui) return `RUI ${esc(b.rui)}`;
+  const dal = b.ruiDal ? ` · dal ${new Date(b.ruiDal).toLocaleDateString("it-IT")}` : "";
+  return `RUI sez. ${esc(b.ruiSezione || "—")}${dal} · <span class="rui-pending">n. in verifica</span>`;
+}
+
 /* QuotaPass component */
 function qpass(b, flat = false) {
   return `
@@ -247,13 +253,13 @@ function qpass(b, flat = false) {
         <div class="qpass-avatar">${esc(initials(b.nome))}</div>
         <div>
           <div class="qpass-name">${esc(b.nome)}</div>
-          <div class="qpass-role">${esc(b.ruolo)} · ${esc(b.azienda)} · ${esc(b.citta)}</div>
+          <div class="qpass-role">${esc(b.ruolo)} · ${campo(b.azienda)} · ${campo(b.citta)}</div>
         </div>
       </div>
     </div>
     <div class="qpass-bottom">
-      <span class="qpass-rui">RUI ${esc(b.rui)}</span>
-      <span class="qpass-tags">${b.spec.slice(0, 3).map(s => `<span>${esc(s)}</span>`).join("")}</span>
+      <span class="qpass-rui">${ruiLabel(b)}</span>
+      <span class="qpass-tags">${(b.spec || []).slice(0, 3).map(s => `<span>${esc(s)}</span>`).join("")}</span>
     </div>
   </div>`;
 }
@@ -327,7 +333,7 @@ views.home = () => {
           <div class="pass-wrap">
             ${qpass(b, true)}
             <div class="pass-actions">
-              <a class="btn btn-outline btn-sm" href="tel:${esc(b.tel)}">📞 Chiama</a>
+              ${DA_COMPILARE(b.tel) ? "" : `<a class="btn btn-outline btn-sm" href="tel:${esc(b.tel)}">📞 Chiama</a>`}
               <a class="btn btn-primary btn-sm" href="#/preventivo?to=${b.id}">Richiedi consulenza</a>
             </div>
           </div>`).join("")}
@@ -484,10 +490,10 @@ views.intermediari = () => {
         ${list.map(b => `
         <div class="pass-wrap">
           ${qpass(b, true)}
-          <p class="muted" style="font-size:.88rem;margin:.1rem 0">${esc(b.bio)}</p>
+          <p class="muted" style="font-size:.88rem;margin:.1rem 0">${campo(b.bio)}</p>
           <div class="pass-actions">
-            <a class="btn btn-outline btn-sm" href="tel:${esc(b.tel)}">📞 Chiama</a>
-            <a class="btn btn-outline btn-sm" href="mailto:${esc(b.email)}">✉️ Email</a>
+            ${DA_COMPILARE(b.tel) ? "" : `<a class="btn btn-outline btn-sm" href="tel:${esc(b.tel)}">📞 Chiama</a>`}
+            ${DA_COMPILARE(b.email) ? "" : `<a class="btn btn-outline btn-sm" href="mailto:${esc(b.email)}">✉️ Email</a>`}
             <a class="btn btn-primary btn-sm" href="#/preventivo?to=${b.id}">Consulenza</a>
           </div>
         </div>`).join("") || `<p class="muted">Nessun intermediario per questa categoria (per ora).</p>`}
@@ -746,7 +752,7 @@ function proFormHTML(p) {
     <form id="pro-form" class="form-grid">
       <div class="field"><label for="p-nome">Nome e cognome *</label><input id="p-nome" required value="${esc(p?.nome || "")}" placeholder="Laura Bianchi"></div>
       <div class="field"><label for="p-ruolo">Ruolo *</label>
-        <select id="p-ruolo">${["Agente", "Broker", "Subagente", "Intermediario"].map(r => `<option ${p?.ruolo === r ? "selected" : ""}>${r}</option>`).join("")}</select>
+        <select id="p-ruolo">${["Agente", "Broker", "Collaboratore", "Subagente", "Intermediario"].map(r => `<option ${p?.ruolo === r ? "selected" : ""}>${r}</option>`).join("")}</select>
       </div>
       <div class="field"><label for="p-azienda">Ragione sociale *</label><input id="p-azienda" required value="${esc(p?.azienda || "")}" placeholder="LB Insurance Srl"></div>
       <div class="field"><label for="p-rui">Numero RUI *</label><input id="p-rui" required value="${esc(p?.rui || "")}" placeholder="B000123456"></div>
