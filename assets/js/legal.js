@@ -22,7 +22,11 @@
     /* Identità del titolare del trattamento / gestore del sito */
     ragioneSociale: "«Ragione sociale»",
     sedeLegale: "«Via, CAP, Città (Provincia), Italia»",
-    piva: "«Partita IVA»",
+    /* Comunicata dal titolare. Attenzione: una partita IVA italiana ha
+       11 cifre — questa ne ha 9, quindi il controllo qui sotto la segnala
+       ancora come da completare. Non ho integrato le cifre mancanti:
+       indovinarle produrrebbe la partita IVA di un'altra impresa. */
+    piva: "138078966",
     cf: "«Codice fiscale»",
     rea: "«Numero REA / Registro Imprese»",
     pec: "«indirizzo PEC»",
@@ -46,11 +50,25 @@
   };
 
   const DA_COMPILARE = /^«.*»$/;
-  const todo = v => DA_COMPILARE.test(v)
+
+  /* Un dato formalmente invalido in un'informativa vale quanto un dato
+     assente: va segnalato allo stesso modo, non stampato come se fosse
+     corretto. Le regole di formato dei campi che sappiamo verificare: */
+  const FORMATO = {
+    piva: v => /^\d{11}$/.test(v),
+    cf: v => /^[0-9]{11}$/.test(v) || /^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/i.test(v),
+    pec: v => /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v)
+  };
+  const nonValido = (k, v) => typeof v === "string" && !DA_COMPILARE.test(v)
+    && FORMATO[k] && !FORMATO[k](v);
+
+  const invalidi = () => new Set(Object.entries(LEGAL_CONFIG)
+    .filter(([k, v]) => nonValido(k, v)).map(([, v]) => v));
+  const todo = v => (DA_COMPILARE.test(v) || invalidi().has(v))
     ? `<mark class="legal-todo">${v}</mark>`
     : v;
   const mancanti = () => Object.entries(LEGAL_CONFIG)
-    .filter(([, v]) => typeof v === "string" && DA_COMPILARE.test(v))
+    .filter(([k, v]) => typeof v === "string" && (DA_COMPILARE.test(v) || nonValido(k, v)))
     .map(([k]) => k);
 
   const C = LEGAL_CONFIG;
@@ -60,8 +78,8 @@
     const warn = mancanti().length ? `
       <div class="legal-warning" role="alert">
         <strong>⚠️ Documento non ancora pubblicabile.</strong>
-        Mancano i dati identificativi del titolare
-        (<code>${mancanti().join("</code>, <code>")}</code>).
+        Dati identificativi del titolare mancanti o in formato non valido:
+        <code>${mancanti().join("</code>, <code>")}</code>.
         Compilali in <code>assets/js/legal.js</code> → <code>LEGAL_CONFIG</code>:
         senza di essi l'informativa non soddisfa l'art. 13 GDPR né l'art. 7 del d.lgs. 70/2003.
       </div>` : "";
