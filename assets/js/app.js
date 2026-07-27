@@ -56,7 +56,9 @@ const seed = {
   votati: [],
   dailyExtra: {},   // risposte dei pro alle domande del giorno: { d3: [{...}] }
   autoVotes: {},    // voti "utile" alla risposta automatica: { d3: 4 }
-  leads: []         // contatti ricevuti dal pro: {tipo, nome, ramo, nota, data}
+  leads: [],        // contatti ricevuti dal pro: {tipo, nome, ramo, nota, data}
+  segnalazioni: [], // notice & action DSA: {target, motivo, dettaglio, email, data, stato}
+  consensi: []      // registro dei consensi raccolti (accountability art. 7.1 GDPR)
 };
 
 function loadDB() {
@@ -74,6 +76,8 @@ let DB = loadDB();
 DB.dailyExtra = DB.dailyExtra || {};
 DB.autoVotes = DB.autoVotes || {};
 DB.leads = DB.leads || [];
+DB.segnalazioni = DB.segnalazioni || [];
+DB.consensi = DB.consensi || [];
 
 /* ---------------- HELPERS ---------------- */
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -89,6 +93,34 @@ function toast(msg) {
   t.classList.add("show");
   clearTimeout(t._h);
   t._h = setTimeout(() => t.classList.remove("show"), 2600);
+}
+window.toast = toast; // usato anche dal modulo consenso cookie
+
+/* Registro dei consensi raccolti: art. 7.1 GDPR — il titolare deve
+   essere in grado di dimostrare che l'interessato ha prestato il consenso. */
+function registraConsenso(contesto, testo) {
+  DB.consensi.push({ contesto, testo, data: new Date().toISOString() });
+  if (DB.consensi.length > 500) DB.consensi = DB.consensi.slice(-500);
+}
+
+const INFORMATIVA_BREVE = `Ho letto l'<a href="#/privacy">informativa privacy</a> e acconsento al trattamento dei miei dati per dare seguito a questa richiesta.`;
+
+/* Blocco consenso riutilizzabile nei form (art. 7 GDPR: consenso
+   espresso con azione positiva inequivocabile, mai precompilato) */
+function consentBox(id, testo, obbligatorio = true) {
+  return `
+  <div class="consent-box">
+    <input type="checkbox" id="${id}" ${obbligatorio ? "required" : ""}>
+    <label for="${id}">${testo}${obbligatorio ? ` <span class="consent-req">*</span>` : ""}</label>
+  </div>`;
+}
+
+/* Conteggi reali: i numeri esposti al pubblico devono essere veri
+   (art. 21 d.lgs. 206/2005 — pratiche commerciali ingannevoli). */
+function contaRisposte() {
+  const daBacheca = DB.faqs.reduce((n, f) => n + f.risposte.length, 0);
+  const daGiornaliere = Object.values(DB.dailyExtra).reduce((n, r) => n + r.length, 0);
+  return daBacheca + daGiornaliere + dailyPublishedCount();
 }
 
 function livello(punti) {
@@ -207,8 +239,8 @@ views.home = () => {
           <a href="#/professionisti" class="btn btn-light">Sei un intermediario?</a>
         </div>
         <div class="hero-trust">
-          <div><strong>${DB.brokers.length * 37}+</strong><span>intermediari iscritti</span></div>
-          <div><strong>${DB.faqs.length * 84}+</strong><span>risposte pubblicate</span></div>
+          <div><strong>${DB.brokers.length + (DB.proProfile ? 1 : 0)}</strong><span>intermediari iscritti</span></div>
+          <div><strong>${contaRisposte()}</strong><span>risposte pubblicate</span></div>
           <div><strong>100%</strong><span>gratuito per chi cerca</span></div>
         </div>
       </div>
@@ -291,6 +323,9 @@ views.home = () => {
           <input type="email" id="notify-email" required placeholder="La tua email" aria-label="Email per notifica lancio app">
           <button class="btn btn-primary" type="submit">Avvisami</button>
         </form>
+        <div style="max-width:30rem">
+          ${consentBox("notify-consenso", `Acconsento all'uso della mia email per essere avvisato del lancio dell'app, come descritto nell'<a href="#/privacy">informativa privacy</a>. Nessun altro invio, disiscrizione con un clic.`)}
+        </div>
       </div>
       <div class="phone-stage rise-2">
         <div class="phone" role="img" aria-label="Anteprima dell'app QuotaFacile su iPhone">
@@ -483,6 +518,9 @@ views.bacheca = () => {
               <div class="field"><label for="ask-cat">Categoria</label>
                 <select id="ask-cat">${["Auto","Casa","Vita","Impresa","Salute","Viaggi"].map(c => `<option>${c}</option>`).join("")}</select>
               </div>
+              <div class="field full">
+                ${consentBox("ask-consenso", `Ho letto l'<a href="#/privacy">informativa privacy</a> e acconsento alla pubblicazione della domanda in bacheca. So che sarà visibile pubblicamente e indicizzabile dai motori di ricerca: non inserisco dati personali miei o di terzi.`)}
+              </div>
               <div class="field" style="justify-content:flex-end"><button class="btn btn-primary" type="submit">Pubblica la domanda</button></div>
             </form>
           </div>
@@ -522,6 +560,12 @@ views.faqDetail = (id) => {
       </div>
       <h1 style="font-size:clamp(1.5rem,4vw,2.2rem)">${esc(f.domanda)}</h1>
 
+      <p class="privacy-hint" style="margin-bottom:1rem">
+        Le risposte pubblicate hanno valore informativo generale e non costituiscono consulenza
+        personalizzata: verifica sempre le condizioni di polizza e il set informativo del prodotto.
+        <a href="#/note-legali">Note legali</a>.
+      </p>
+
       ${f.risposte.length ? f.risposte.map((r, i) => {
         const a = broker(r.autore) || { nome: "Intermediario", punti: 0 };
         const voted = DB.votati.includes(f.id + ":" + i);
@@ -537,11 +581,14 @@ views.faqDetail = (id) => {
             <button class="vote-btn" data-vote="${f.id}:${i}" ${voted ? "disabled" : ""}>▲ Utile (${r.voti})</button>
           </div>
           <p style="margin:.2rem 0">${esc(r.testo)}</p>
-          ${r.auto ? `<p class="muted" style="font-size:.72rem;margin:.5rem 0 0">Risposta generale della redazione: non sostituisce una consulenza. Gli intermediari possono integrare qui sotto.</p>` : ""}
+          ${r.auto ? `<p class="muted" style="font-size:.72rem;margin:.5rem 0 0">Risposta generale della redazione: informazione divulgativa, non consulenza personalizzata. Gli intermediari possono integrare qui sotto.</p>` : ""}
           ${!r.auto && a.id ? `<div class="pass-actions" style="margin-top:.7rem;max-width:340px">
             ${a.tel ? `<a class="btn btn-outline btn-sm" href="tel:${esc(a.tel)}">📞 Chiama</a>` : ""}
             <a class="btn btn-primary btn-sm" href="#/preventivo?to=${a.id}">Chiedi consulenza</a>
           </div>` : ""}
+          <div class="answer-foot">
+            <button class="report-btn" data-report="${f.id}:${i}" title="Segnala questo contenuto">🚩 Segnala</button>
+          </div>
         </div>`;
       }).join("") : `<p class="muted" style="font-style:italic">Ancora nessuna risposta.</p>`}
 
@@ -606,7 +653,12 @@ views.preventivo = (query) => {
           <div class="field"><label for="q-citta">Città</label><input id="q-citta" required placeholder="Milano"></div>
           <div class="field"><label for="q-email">Email</label><input id="q-email" type="email" required placeholder="mario@email.it"></div>
           <div class="field"><label for="q-tel">Telefono</label><input id="q-tel" type="tel" required placeholder="+39 ..."></div>
-          <div class="field full"><label for="q-note">Note (facoltative)</label><textarea id="q-note" placeholder="Es. attualmente pago 620€/anno per la RC auto..."></textarea></div>
+          <div class="field full"><label for="q-note">Note (facoltative)</label><textarea id="q-note" placeholder="Es. attualmente pago 620€/anno per la RC auto..."></textarea>
+            <p class="privacy-hint">Non inserire dati sanitari o riferimenti a terze persone: per quelli parlane direttamente con l'intermediario.</p>
+          </div>
+          <div class="field full">
+            ${consentBox("q-consenso", `Ho letto l'<a href="#/privacy">informativa privacy</a> e acconsento alla trasmissione dei miei recapiti ${dest ? "a " + esc(dest.nome) : "agli intermediari specializzati nel ramo indicato"}, che li tratterà come autonomo titolare per ricontattarmi.`)}
+          </div>
           <div class="field full" style="flex-direction:row;gap:.6rem">
             <button class="btn btn-ghost" type="button" data-step="2">← Indietro</button>
             <button class="btn btn-gold" style="flex:1" type="submit">Invia la richiesta</button>
@@ -624,7 +676,14 @@ views.preventivo = (query) => {
           </div>
         </div>` : ""}
       </div>
-      <p class="muted" style="font-size:.75rem;margin-top:.8rem">Inviando accetti i Termini e la Privacy Policy. I tuoi dati vengono condivisi solo con gli intermediari pertinenti alla richiesta.</p>
+      <p class="muted" style="font-size:.75rem;margin-top:.8rem">
+        I tuoi dati vengono condivisi solo con gli intermediari pertinenti alla richiesta e conservati
+        24 mesi dall'ultimo contatto. Puoi revocare il consenso e chiederne la cancellazione in ogni
+        momento scrivendo a <a href="#/privacy">privacy@quotafacile.it</a>.
+        Consulta <a href="#/termini">Termini e Condizioni</a>, <a href="#/privacy">Privacy Policy</a> e
+        <a href="#/note-legali">Note legali</a>. QuotaFacile non è un intermediario assicurativo e non
+        è iscritta al RUI: mette solo in contatto.
+      </p>
     </div>
   </section>`;
 };
@@ -651,7 +710,19 @@ function proFormHTML(p) {
       <div class="field"><label for="p-email">Email professionale *</label><input id="p-email" type="email" required value="${esc(p?.email || "")}" placeholder="nome@azienda.it"></div>
       <div class="field"><label for="p-spec">Specializzazioni (max 3, separate da virgola)</label><input id="p-spec" value="${esc((p?.spec || []).join(", "))}" placeholder="Auto, Casa, Impresa"></div>
       <div class="field full"><label for="p-bio">About me (breve)</label><textarea id="p-bio" placeholder="Racconta in due righe come aiuti i tuoi clienti...">${esc(p?.bio || "")}</textarea></div>
-      <div class="field full"><button class="btn btn-primary" type="submit">${p ? "Salva modifiche" : "Crea la QuotaPass"}</button></div>
+      ${p ? "" : `
+      <div class="field full">
+        ${consentBox("pro-rui", `Dichiaro sotto la mia responsabilità di essere <strong>regolarmente iscritto al RUI</strong> con il numero indicato e in posizione attiva, e mi impegno a comunicare tempestivamente ogni variazione o cancellazione dell'iscrizione.`)}
+      </div>
+      <div class="field full">
+        ${consentBox("pro-terms", `Accetto i <a href="#/termini">Termini e Condizioni</a> e ho letto l'<a href="#/privacy">informativa privacy</a>. Sono consapevole che i dati del profilo (nome, ruolo, azienda, numero RUI, città e recapiti professionali) saranno <strong>pubblici</strong> sul sito e indicizzabili dai motori di ricerca.`)}
+      </div>
+      <div class="field full">
+        ${consentBox("pro-lead", `Acconsento a ricevere all'indirizzo indicato le richieste di preventivo e consulenza degli utenti.`, false)}
+      </div>`}
+      <div class="field full"><button class="btn btn-primary" type="submit">${p ? "Salva modifiche" : "Crea la QuotaPass"}</button>
+        <p class="privacy-hint">Le dichiarazioni sull'iscrizione al RUI sono verificate sul registro pubblico IVASS. I profili non riscontrabili vengono sospesi. Il badge “Verificato RUI” attesta solo l'esito di quel controllo formale.</p>
+      </div>
     </form>
   </div>`;
 }
@@ -669,7 +740,7 @@ function proDashboardHTML(p) {
         <div class="stat"><strong>${nCall}</strong><span>📞 chiamate</span></div>
         <div class="stat"><strong>${nMail}</strong><span>✉️ email</span></div>
         <div class="stat"><strong>${nCons}</strong><span>💬 consulenze</span></div>
-        <div class="stat"><strong>${p.viste ?? 12}</strong><span>👁 viste profilo</span></div>
+        <div class="stat"><strong>${p.viste ?? 0}</strong><span>👁 viste profilo</span></div>
       </div>
       <div class="card" style="margin-top:1rem">
         <h3>Ultimi contatti ricevuti</h3>
@@ -801,7 +872,7 @@ views.areaPro = () => {
         <div class="pro-preview">
           <div id="pass-preview" style="width:100%;display:flex;justify-content:center">${qpass(p, true)}</div>
           <div class="stats-row">
-            <div class="stat"><strong>${p.viste ?? 12}</strong><span>viste profilo</span></div>
+            <div class="stat"><strong>${p.viste ?? 0}</strong><span>viste profilo</span></div>
             <div class="stat"><strong>${DB.leads.length}</strong><span>contatti ricevuti</span></div>
             <div class="stat"><strong>${p.risposte ?? 0}</strong><span>risposte in bacheca</span></div>
           </div>
@@ -812,6 +883,16 @@ views.areaPro = () => {
 };
 
 /* ---------------- ROUTER ---------------- */
+/* Pagine legali servite da assets/js/legal.js */
+const LEGAL_ROUTES = {
+  "privacy": () => window.QF_LEGAL.views.privacy(),
+  "cookie-policy": () => window.QF_LEGAL.views.cookie(),
+  "termini": () => window.QF_LEGAL.views.termini(),
+  "note-legali": () => window.QF_LEGAL.views.noteLegali(),
+  "contatti": () => window.QF_LEGAL.views.contatti(),
+  "chi-siamo": () => window.QF_LEGAL.views.contatti()
+};
+
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, "") || "";
   const [pathPart, queryPart] = raw.split("?");
@@ -832,12 +913,81 @@ function render() {
   else if (page === "faq") { html = views.faqDetail(path[1]); navKey = "bacheca"; }
   else if (page === "preventivo") html = views.preventivo(query);
   else if (page === "area-pro") html = views.areaPro();
+  else if (LEGAL_ROUTES[page]) { setJsonLd(null); html = LEGAL_ROUTES[page](); navKey = ""; }
   else { html = views.home(); navKey = "home"; }
 
   app.innerHTML = html;
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle("active", a.dataset.nav === navKey));
   window.scrollTo({ top: 0 });
   bind();
+}
+
+/* ---------------- SEGNALAZIONE CONTENUTI (DSA) ----------------
+   Art. 16 Reg. UE 2022/2065: meccanismo di notifica accessibile,
+   facile da usare, che consente la notifica in via elettronica.
+   La segnalazione finisce in coda di moderazione (area Admin). */
+const MOTIVI_SEGNALAZIONE = [
+  "Informazione errata o fuorviante",
+  "Contenuto non pertinente alla domanda",
+  "Pubblicità ingannevole o promessa di risultati",
+  "Contenuto offensivo, diffamatorio o discriminatorio",
+  "Dati personali di terzi",
+  "Violazione di diritti d'autore o di marchio",
+  "Altro"
+];
+
+function apriSegnalazione(target) {
+  const host = document.createElement("div");
+  host.innerHTML = `
+  <div class="cc-overlay" data-close-report>
+    <div class="cc-modal" role="dialog" aria-modal="true" aria-labelledby="rep-t">
+      <div class="cc-modal-head">
+        <h2 id="rep-t">🚩 Segnala questo contenuto</h2>
+        <button class="cc-x" data-close-report aria-label="Chiudi">✕</button>
+      </div>
+      <form id="report-form" class="cc-modal-body">
+        <p class="muted" style="font-size:.88rem">
+          Esaminiamo ogni segnalazione in modo tempestivo e non arbitrario. Se il contenuto viene
+          rimosso, l'autore riceve una motivazione e può contestarla. Le segnalazioni manifestamente
+          infondate e ripetute possono comportare la sospensione della possibilità di segnalare.
+        </p>
+        <div class="field"><label for="rep-motivo">Motivo</label>
+          <select id="rep-motivo">${MOTIVI_SEGNALAZIONE.map(m => `<option>${m}</option>`).join("")}</select>
+        </div>
+        <div class="field" style="margin-top:.7rem"><label for="rep-det">Spiega brevemente perché *</label>
+          <textarea id="rep-det" required placeholder="Indica cosa non va nel contenuto..."></textarea>
+        </div>
+        <div class="field" style="margin-top:.7rem"><label for="rep-mail">La tua email (facoltativa, per la conferma di ricezione)</label>
+          <input id="rep-mail" type="email" placeholder="tu@email.it">
+        </div>
+        <p class="privacy-hint">I dati della segnalazione sono trattati per la sola gestione della
+        stessa (art. 6.1.c e 6.1.f GDPR) — <a href="#/privacy">informativa</a>.</p>
+      </form>
+      <div class="cc-modal-foot">
+        <button class="btn btn-ghost btn-sm" data-close-report>Annulla</button>
+        <button class="btn btn-primary btn-sm" form="report-form" type="submit">Invia segnalazione</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(host);
+  const chiudi = () => host.remove();
+  host.querySelectorAll("[data-close-report]").forEach(el =>
+    el.addEventListener("click", e => { if (e.target === el) chiudi(); }));
+  host.querySelector("#report-form").addEventListener("submit", e => {
+    e.preventDefault();
+    DB.segnalazioni.unshift({
+      id: "s" + Date.now(),
+      target,
+      motivo: host.querySelector("#rep-motivo").value,
+      dettaglio: host.querySelector("#rep-det").value.trim(),
+      email: host.querySelector("#rep-mail").value.trim(),
+      data: new Date().toISOString(),
+      stato: "aperta"
+    });
+    saveDB();
+    chiudi();
+    toast("Segnalazione ricevuta. La esamineremo al più presto.");
+  });
 }
 
 /* ---------------- EVENTS ---------------- */
@@ -864,6 +1014,8 @@ function bind() {
 
   $("#quote-form")?.addEventListener("submit", e => {
     e.preventDefault();
+    if (!$("#q-consenso").checked) { toast("Per inviare la richiesta serve il consenso al trattamento dei dati."); return; }
+    registraConsenso("richiesta-preventivo", "Consenso alla trasmissione dei recapiti all'intermediario destinatario");
     DB.richieste.push({ tipo: quoteState.tipo, ramo: quoteState.ramo, to: quoteState.to, nome: $("#q-nome").value, data: new Date().toISOString() });
     saveDB();
     quoteState.step = 4;
@@ -873,6 +1025,8 @@ function bind() {
   /* coming soon app: notifica lancio */
   $("#notify-form")?.addEventListener("submit", e => {
     e.preventDefault();
+    if (!$("#notify-consenso")?.checked) { toast("Spunta il consenso per ricevere l'avviso di lancio."); return; }
+    registraConsenso("waitlist-app", "Consenso all'uso dell'email per la notifica di lancio dell'app");
     DB.notifiche = DB.notifiche || [];
     DB.notifiche.push({ email: $("#notify-email").value.trim(), data: new Date().toISOString() });
     saveDB();
@@ -883,6 +1037,8 @@ function bind() {
   /* nuova domanda in bacheca */
   $("#ask-form")?.addEventListener("submit", e => {
     e.preventDefault();
+    if (!$("#ask-consenso").checked) { toast("Serve il consenso alla pubblicazione per pubblicare la domanda."); return; }
+    registraConsenso("domanda-bacheca", "Consenso alla pubblicazione della domanda in bacheca");
     DB.faqs.unshift({ id: "f" + Date.now(), cat: $("#ask-cat").value, autore: null, data: new Date().toISOString().slice(0, 10), domanda: $("#ask-q").value.trim(), risposte: [] });
     saveDB(); render();
     toast("Domanda pubblicata! Un intermediario ti risponderà.");
@@ -916,6 +1072,10 @@ function bind() {
       saveDB(); render();
       toast("Grazie del feedback!");
     }));
+
+  /* segnalazione contenuti — notice & action art. 16 Reg. UE 2022/2065 (DSA) */
+  document.querySelectorAll("[data-report]").forEach(b =>
+    b.addEventListener("click", () => apriSegnalazione(b.dataset.report)));
 
   /* risposta a una FAQ (pro) — community o domanda del giorno */
   $("#answer-form")?.addEventListener("submit", e => {
@@ -964,20 +1124,23 @@ function bind() {
     proForm.addEventListener("submit", e => {
       e.preventDefault();
       const wasNew = !DB.proProfile;
-      DB.proProfile = collect();
-      DB.proProfile.verificato = true; // demo: in produzione verifica RUI via IVASS
-      if (wasNew && !DB.leads.length) {
-        /* lead demo per popolare la dashboard (in produzione: tracking reale) */
-        const oggi = new Date();
-        const d = n => new Date(oggi - n * 86400000).toISOString().slice(0, 10);
-        DB.leads = [
-          { tipo: "consulenza", nome: "Paolo M.", ramo: "Auto", nota: "RC auto in scadenza, paga 640€/anno", data: d(0) },
-          { tipo: "chiamata", nome: "Sara T.", ramo: "Casa", nota: "dalla tua QuotaPass in directory", data: d(1) },
-          { tipo: "email", nome: "Studio Verdi", ramo: "Impresa", nota: "richiesta polizza catastrofale", data: d(2) },
-          { tipo: "chiamata", nome: "Numero riservato", ramo: "", nota: "dalla risposta in bacheca", data: d(4) },
-          { tipo: "consulenza", nome: "Anna R.", ramo: "Vita", nota: "TCM collegata al mutuo", data: d(6) }
-        ];
+      if (wasNew) {
+        if (!$("#pro-rui").checked || !$("#pro-terms").checked) {
+          toast("Devi dichiarare l'iscrizione al RUI e accettare i Termini per creare il profilo.");
+          return;
+        }
+        registraConsenso("registrazione-pro", "Dichiarazione iscrizione RUI + accettazione Termini e informativa privacy");
       }
+      const statoPrec = DB.proProfile?.statoVerifica;
+      DB.proProfile = collect();
+      /* Il badge "Verificato RUI" viene assegnato solo dopo il riscontro
+         sul registro pubblico IVASS, mai in automatico: dichiararsi
+         verificati senza controllo sarebbe un'attestazione non veritiera. */
+      DB.proProfile.statoVerifica = statoPrec || "in_attesa";
+      DB.proProfile.verificato = DB.proProfile.statoVerifica === "verificato";
+      /* Nessun lead fittizio: la dashboard mostra solo contatti reali.
+         Popolarla con dati inventati falserebbe le metriche di business
+         mostrate al professionista. */
       proTab = "dashboard";
       saveDB(); render();
       toast(wasNew ? "QuotaPass creata! Benvenuto su QuotaFacile 🎉" : "Profilo aggiornato.");

@@ -12,8 +12,9 @@ quotafacile/
 ├── assets/
 │   ├── css/style.css             # Design system (verde professionale + oro gamification)
 │   ├── js/app.js                 # Router, store, viste, gamification, motore giornaliero
-│   └── js/daily-questions.js     # ⭐ Pool 200 domande "del giorno" (qui vanno le tue keyword)
-├── preview.html                  # Versione single-file (tutto inline) per anteprima rapida
+│   ├── js/daily-questions.js     # ⭐ Pool 200 domande "del giorno" (qui vanno le tue keyword)
+│   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
+│   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
 ├── robots.txt
 ├── sitemap.xml
 └── README.md
@@ -87,6 +88,33 @@ Poi su GitHub: **Settings → Pages → Source: main / root**. Il sito sarà su 
 **Nota importante:** questa v1 è una SPA con routing `#/`. Per sfruttare al massimo la genialata Q&A su Google, il passo successivo è servire ogni domanda come **pagina statica con URL proprio** (es. `/faq/classe-di-merito-auto-nuova/`), perché gli URL con `#` non vengono indicizzati come pagine separate. Opzioni, in ordine di sforzo:
 1. **Prerender/SSG**: uno script che genera un file HTML per ogni FAQ dal database (il markup c'è già).
 2. Migrazione a **Astro/Next.js** con backend (Supabase/Firebase) quando i contenuti diventano reali.
+
+## ⚖️ Conformità legale e GDPR
+
+| Documento | Rotta | Riferimenti |
+|---|---|---|
+| Privacy Policy | `#/privacy` | Artt. 13-14 GDPR, d.lgs. 101/2018 |
+| Cookie Policy | `#/cookie-policy` | Art. 122 d.lgs. 196/2003, Linee guida Garante 231/2021 |
+| Termini e Condizioni | `#/termini` | Cod. Consumo, DSA (Reg. UE 2022/2065) |
+| Note legali | `#/note-legali` | Art. 7 d.lgs. 70/2003, art. 106 CAP (d.lgs. 209/2005) |
+| Chi siamo / Contatti | `#/contatti`, `#/chi-siamo` | — |
+
+**Cookie banner (`assets/js/consent.js`)** — nessuno strumento non necessario prima della scelta,
+"Rifiuta tutti" con la stessa evidenza di "Accetta tutti", consenso granulare per 4 categorie,
+chiusura con la ✕ = rifiuto, registrazione della scelta con data e versione, banner non riproposto
+per 6 mesi dopo un rifiuto. Revoca sempre disponibile dal footer o via `QFConsent.open()`.
+
+> ⚠️ **Prima di pubblicare:** compila `LEGAL_CONFIG` in `assets/js/legal.js` (ragione sociale, sede,
+> P. IVA, REA, PEC, foro). Finché i campi restano `«...»` le pagine legali mostrano un avviso giallo
+> in cima: nessun dato societario inventato viene mai pubblicato al posto di quelli reali.
+
+**Segnalazione contenuti (DSA)** — ogni risposta in bacheca ha un pulsante 🚩 *Segnala* che apre il
+modulo di notice & action (art. 16 Reg. UE 2022/2065). Le segnalazioni finiscono in
+`DB.segnalazioni` per la coda di moderazione.
+
+**Consensi** — ogni form (preventivo, domanda in bacheca, waitlist app, registrazione pro) ha una
+checkbox non precompilata con informativa contestuale; l'evento è registrato in `DB.consensi`
+(accountability, art. 7.1 GDPR).
 
 ## Backend (non incluso, per design)
 
