@@ -216,8 +216,15 @@ function setSeo(title, desc) {
   if (og) og.content = title || SEO_BASE.title;
   const ogd = document.querySelector('meta[property="og:description"]');
   if (ogd) ogd.content = desc || SEO_BASE.desc;
+  /* Canonical e og:url si costruiscono dall'origine reale della pagina.
+     Puntarli a un dominio fisso mentre il sito è servito da un altro
+     host direbbe a Google che la pagina "vera" sta altrove, con il
+     rischio di far deindicizzare quella pubblicata. */
+  const url = location.origin + location.pathname + (location.hash || "");
   const can = document.querySelector('link[rel="canonical"]');
-  if (can) can.href = "https://www.quotafacile.it/" + (location.hash || "");
+  if (can) can.href = url;
+  const ogu = document.querySelector('meta[property="og:url"]');
+  if (ogu) ogu.content = url;
 }
 
 /* JSON-LD dinamico per SEO (FAQPage) */

@@ -22,9 +22,10 @@
 
 (function () {
 
-  /* passphrase di default: quotafacile-admin-2026 — CAMBIALA */
-  const PASS_HASH = "de95e1fa0b6c9831b8ad0aeeac954686ed6067366dbb5fecdb75d4bb91e84b8f";
-  const PASS_HASH_DEFAULT = PASS_HASH;
+  const PASS_HASH = "a5df5c53ea608f6eb4c7aec34dcb40907213d6be8ed071b0d9f17c65efdcc5d1";
+  /* hash della passphrase di esempio distribuita col progetto:
+     serve solo a far comparire l'avviso se non è mai stata cambiata */
+  const PASS_HASH_DEFAULT = "de95e1fa0b6c9831b8ad0aeeac954686ed6067366dbb5fecdb75d4bb91e84b8f";
   const SESSION_KEY = "qf_admin_sessione";
 
   const QF = () => window.QF;

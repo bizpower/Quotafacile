@@ -113,7 +113,8 @@ all'autore, come previsto dall'art. 17 del Digital Services Act.
 > 🔓 **Sull'accesso, senza giri di parole.** La passphrase è confrontata nel browser contro il suo
 > hash SHA-256 scritto in `admin.js`. Tiene fuori chi arriva per caso o prova a indovinare la rotta;
 > **non** ferma chi apre i sorgenti. È un deterrente, non un controllo di accesso: diventa sicurezza
-> vera solo con un login server-side. Default: `quotafacile-admin-2026` — **cambiala**:
+> vera solo con un login server-side. La passphrase in uso è stata impostata dal titolare; per
+> sostituirla:
 > ```bash
 > node -e "console.log(require('crypto').createHash('sha256').update('LA-TUA-PASSPHRASE').digest('hex'))"
 > ```
