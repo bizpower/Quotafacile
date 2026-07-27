@@ -9,6 +9,8 @@
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://www.quotafacile.it/">
   <meta name="theme-color" content="#145233">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%23145233'/%3E%3Ctext%20x='32'%20y='46'%20font-family='system-ui,sans-serif'%20font-size='40'%20font-weight='800'%20fill='%23ffffff'%20text-anchor='middle'%3EQ%3C/text%3E%3C/svg%3E">
+  <meta name="author" content="QuotaFacile">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
@@ -104,14 +106,18 @@
       </div>
       <div>
         <h4>Legale</h4>
-        <a href="#/">Chi siamo</a>
-        <a href="#/">Privacy</a>
-        <a href="#/">Termini e condizioni</a>
-        <a href="#/">Contatti</a>
+        <a href="#/chi-siamo">Chi siamo</a>
+        <a href="#/privacy">Privacy Policy</a>
+        <a href="#/cookie-policy">Cookie Policy</a>
+        <a href="#/termini">Termini e condizioni</a>
+        <a href="#/note-legali">Note legali</a>
+        <a href="#/contatti">Contatti</a>
+        <button class="footer-linkbtn" data-open-consent>Gestisci i cookie</button>
       </div>
     </div>
     <div class="container footer-bottom">
-      <span>© 2026 QuotaFacile. Gli intermediari presenti sono iscritti al RUI (IVASS).</span>
+      <p>© 2026 QuotaFacile. Gli intermediari presenti dichiarano l'iscrizione al RUI (IVASS) e sono verificabili sul <a href="https://servizi.ivass.it/RuirPubblica/" target="_blank" rel="noopener">registro pubblico</a>.</p>
+      <p class="footer-disclaimer">QuotaFacile è una piattaforma di informazione e messa in contatto: <strong>non è un intermediario assicurativo</strong>, non è iscritta al RUI e non svolge attività di distribuzione assicurativa ai sensi dell'art. 106 del d.lgs. 209/2005. I contenuti pubblicati hanno valore informativo generale e non costituiscono consulenza.</p>
     </div>
   </footer>
 
@@ -126,7 +132,12 @@
 
   <div id="toast" class="toast" role="status"></div>
 
+  <script src="assets/js/intermediari.js"></script>
   <script src="assets/js/daily-questions.js"></script>
+  <script src="assets/js/staff-questions.js"></script>
+  <script src="assets/js/legal.js"></script>
+  <script src="assets/js/admin.js"></script>
   <script src="assets/js/app.js"></script>
+  <script src="assets/js/consent.js"></script>
 </body>
 </html>
