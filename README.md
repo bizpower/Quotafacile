@@ -15,6 +15,7 @@ quotafacile/
 │   ├── js/daily-questions.js     # ⭐ Pool 200 domande "del giorno" (qui vanno le tue keyword)
 │   ├── js/staff-questions.js     # 📌 Guide QuotaFacile: keyword SEO posizionate in bacheca
 │   ├── js/intermediari.js        # 🪪 Intermediari in vetrina (fonte di verità delle QuotaPass)
+│   ├── js/admin.js               # 🔐 Console riservata (#/admin): KPI, moderazione, keyword
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
 ├── robots.txt
@@ -90,6 +91,37 @@ Poi su GitHub: **Settings → Pages → Source: main / root**. Il sito sarà su 
 **Nota importante:** questa v1 è una SPA con routing `#/`. Per sfruttare al massimo la genialata Q&A su Google, il passo successivo è servire ogni domanda come **pagina statica con URL proprio** (es. `/faq/classe-di-merito-auto-nuova/`), perché gli URL con `#` non vengono indicizzati come pagine separate. Opzioni, in ordine di sforzo:
 1. **Prerender/SSG**: uno script che genera un file HTML per ogni FAQ dal database (il markup c'è già).
 2. Migrazione a **Astro/Next.js** con backend (Supabase/Firebase) quando i contenuti diventano reali.
+
+## 🔐 Area Admin — `#/admin`
+
+Console riservata, non linkata da nessuna parte nel sito. Cinque sezioni:
+
+| Sezione | Cosa fa |
+|---|---|
+| **📊 KPI** | Iscritti e stato di verifica, domande e risposte per tipo, richieste ricevute (totali, ultimi 30 giorni, per ramo), voti "utile", domande scoperte, segnalazioni aperte, waitlist app, copertura della bacheca, classifica professionisti |
+| **🪪 Professionisti** | Ogni iscritto con la sua QuotaPass, dati RUI e attività. Stato di verifica impostabile su Verificato / In attesa / Respinto, con link diretto al registro IVASS |
+| **💬 Bacheca** | Tutte le domande (utenti, guide, del giorno) con le rispettive risposte. Badge **★ Migliore risposta** (+25 pt all'autore), rimozione risposte e domande, filtri per tipo e per "senza risposta" |
+| **🎯 Keyword → Staff** | Pubblica una keyword come domanda Staff: campi SEO con contatori di lunghezza, editor con formattazione leggera, anteprima dello snippet Google, pubblicazione immediata in cima alla bacheca e ritiro |
+| **🚩 Segnalazioni** | Coda DSA alimentata dal pulsante *Segnala*. Accogli (rimuove il contenuto) o respingi, sempre con motivazione registrata |
+
+Ogni rimozione richiede una motivazione, archiviata in `DB.moderazioni`: serve per rispondere
+all'autore, come previsto dall'art. 17 del Digital Services Act.
+
+**Editor delle guide** — nel campo risposta: `## titolo`, `- elenco`, `1. elenco numerato`,
+`**grassetto**`. Viene convertito in HTML da `mdToHtml()`.
+
+> 🔓 **Sull'accesso, senza giri di parole.** La passphrase è confrontata nel browser contro il suo
+> hash SHA-256 scritto in `admin.js`. Tiene fuori chi arriva per caso o prova a indovinare la rotta;
+> **non** ferma chi apre i sorgenti. È un deterrente, non un controllo di accesso: diventa sicurezza
+> vera solo con un login server-side. Default: `quotafacile-admin-2026` — **cambiala**:
+> ```bash
+> node -e "console.log(require('crypto').createHash('sha256').update('LA-TUA-PASSPHRASE').digest('hex'))"
+> ```
+> e incolla il risultato in `PASS_HASH`. Finché resta quella di default la console mostra un avviso.
+
+> 📊 **Sui numeri.** Senza backend la console legge il `localStorage` del browser da cui la apri:
+> mostra le iscrizioni e le domande create lì, non quelle degli altri visitatori. Diventano dati
+> reali con il database.
 
 ## 🪪 Intermediari in vetrina
 

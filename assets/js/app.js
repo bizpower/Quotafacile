@@ -67,12 +67,22 @@ DB.staffVotes = DB.staffVotes || {};
    Punti e risposte accumulati vengono conservati per id. */
 function sincronizzaBrokers() {
   const precedenti = Object.fromEntries((DB.brokers || []).map(b => [b.id, b]));
-  DB.brokers = (window.INTERMEDIARI || []).map(i => ({
-    ...i,
-    punti: precedenti[i.id]?.punti ?? i.punti ?? 0,
-    risposte: precedenti[i.id]?.risposte ?? i.risposte ?? 0
-  }));
+  DB.brokers = (window.INTERMEDIARI || []).map(i => {
+    /* Lo stato di verifica deciso dall'Admin ha la precedenza:
+       è il risultato di un controllo umano sul registro IVASS. */
+    const stato = (DB.verifiche || {})[i.id] || i.statoVerifica;
+    return {
+      ...i,
+      statoVerifica: stato,
+      verificato: stato === "verificato" && !!i.rui,
+      punti: precedenti[i.id]?.punti ?? i.punti ?? 0,
+      risposte: precedenti[i.id]?.risposte ?? i.risposte ?? 0
+    };
+  });
 }
+DB.staffCustom = DB.staffCustom || [];
+DB.staffHidden = DB.staffHidden || [];
+DB.verifiche = DB.verifiche || {};
 sincronizzaBrokers();
 
 /* ---------------- HELPERS ---------------- */
@@ -162,12 +172,18 @@ function publishedDaily() {
    intento. Vivono in assets/js/staff-questions.js: sono uguali
    per tutti i visitatori e non dipendono dal localStorage.
    Gli intermediari possono integrarle come tutte le altre. */
+const spoglia = html => String(html || "")
+  .replace(/<\/(p|li|h4|ol|ul)>/g, " ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+
 function staffFaqs() {
-  return (window.STAFF_FAQS || []).map(s => ({
+  /* Guide scritte nel repo + guide create dall'area Admin,
+     meno quelle ritirate dall'Admin. */
+  const base = (window.STAFF_FAQS || []).filter(s => !(DB.staffHidden || []).includes(s.id));
+  return [...(DB.staffCustom || []), ...base].map(s => ({
     id: s.id, staff: true, cat: s.cat, keyword: s.keyword, meta: s.meta, titolo: s.titolo,
     autore: "qf", data: s.data, domanda: s.domanda,
     risposte: [
-      { autore: "qf", testo: s.testo, rich: s.risposta, voti: DB.staffVotes[s.id] || 0, accettata: true, auto: true, staff: true },
+      { autore: "qf", testo: s.testo || spoglia(s.risposta), rich: s.risposta, voti: DB.staffVotes[s.id] || 0, accettata: true, auto: true, staff: true },
       ...(DB.staffExtra[s.id] || [])
     ]
   }));
@@ -178,7 +194,7 @@ function getFaqById(id) {
     const i = +id.slice(1);
     return i < dailyPublishedCount() ? dailyFaq(i) : null;
   }
-  if (/^k\d+$/.test(id)) return staffFaqs().find(x => x.id === id) || null;
+  if (/^k/.test(id)) return staffFaqs().find(x => x.id === id) || null;
   return DB.faqs.find(x => x.id === id) || null;
 }
 function hoursToNextDaily() {
@@ -971,7 +987,8 @@ const SEO_PAGINE = {
   "termini": ["Termini e Condizioni | QuotaFacile", "Condizioni generali di utilizzo della piattaforma QuotaFacile per utenti e intermediari assicurativi."],
   "note-legali": ["Note legali | QuotaFacile", "Informazioni sul gestore del sito, natura dell'attività e avvertenze IVASS. QuotaFacile non è un intermediario assicurativo."],
   "contatti": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."],
-  "chi-siamo": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."]
+  "chi-siamo": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."],
+  "admin": ["Area riservata | QuotaFacile", "Console di amministrazione."]
 };
 
 function applicaSeo(page, path) {
@@ -1003,6 +1020,7 @@ function render() {
   else if (page === "preventivo") html = views.preventivo(query);
   else if (page === "area-pro") html = views.areaPro();
   else if (LEGAL_ROUTES[page]) { setJsonLd(null); html = LEGAL_ROUTES[page](); navKey = ""; }
+  else if (page === "admin") { setJsonLd(null); html = window.QF_ADMIN ? window.QF_ADMIN.view(path[1]) : ""; navKey = ""; }
   else { html = views.home(); navKey = "home"; }
 
   applicaSeo(page, path);
@@ -1141,9 +1159,10 @@ function bind() {
       if (DB.votati.includes(key)) return;
       const sep = key.lastIndexOf(":");
       const fid = key.slice(0, sep), idx = +key.slice(sep + 1);
-      if (/^[dk]\d+$/.test(fid)) {
-        /* domanda del giorno (d) o domanda Staff (k): la prima
-           risposta è quella redazionale, le altre sono dei pro */
+      if (/^k/.test(fid) || /^d\d+$/.test(fid)) {
+        /* domanda del giorno (d) o domanda Staff (k, incluse le
+           kc… create dall'Admin): la prima risposta è quella
+           redazionale, le altre sono dei professionisti */
         const staff = fid[0] === "k";
         const voti = staff ? DB.staffVotes : DB.autoVotes;
         const extra = staff ? DB.staffExtra : DB.dailyExtra;
@@ -1167,6 +1186,9 @@ function bind() {
       toast("Grazie del feedback!");
     }));
 
+  /* console di amministrazione (rotta #/admin) */
+  if (parseHash().path[0] === "admin" && window.QF_ADMIN) window.QF_ADMIN.bind();
+
   /* segnalazione contenuti — notice & action art. 16 Reg. UE 2022/2065 (DSA) */
   document.querySelectorAll("[data-report]").forEach(b =>
     b.addEventListener("click", () => apriSegnalazione(b.dataset.report)));
@@ -1178,7 +1200,7 @@ function bind() {
     const id = path[1];
     if (!DB.proProfile) return;
     const testo = $("#ans-t").value.trim();
-    if (/^[dk]\d+$/.test(id)) {
+    if (/^k/.test(id) || /^d\d+$/.test(id)) {
       const extra = id[0] === "k" ? DB.staffExtra : DB.dailyExtra;
       if (!extra[id]) extra[id] = [];
       extra[id].push({ autore: "me", testo, voti: 0, accettata: false });
@@ -1257,6 +1279,16 @@ function bind() {
     location.hash = "#/bacheca";
   });
 }
+
+/* ---------------- API INTERNA ----------------
+   Superficie minima esposta ai moduli (admin.js): evita che
+   ognuno reimplementi store, rendering e helper. */
+window.QF = {
+  get DB() { return DB; },
+  saveDB, render, toast, esc, initials, livello, qpass, broker,
+  staffFaqs, publishedDaily, dailyPublishedCount, getFaqById,
+  contaRisposte, sincronizzaBrokers, campo, DA_COMPILARE, ruiLabel
+};
 
 window.addEventListener("hashchange", render);
 render();
