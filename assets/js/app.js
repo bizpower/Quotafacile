@@ -58,7 +58,9 @@ const seed = {
   autoVotes: {},    // voti "utile" alla risposta automatica: { d3: 4 }
   leads: [],        // contatti ricevuti dal pro: {tipo, nome, ramo, nota, data}
   segnalazioni: [], // notice & action DSA: {target, motivo, dettaglio, email, data, stato}
-  consensi: []      // registro dei consensi raccolti (accountability art. 7.1 GDPR)
+  consensi: [],     // registro dei consensi raccolti (accountability art. 7.1 GDPR)
+  staffExtra: {},   // risposte dei pro alle domande Staff: { k1: [{...}] }
+  staffVotes: {}    // voti "utile" alla risposta della redazione: { k1: 7 }
 };
 
 function loadDB() {
@@ -78,6 +80,8 @@ DB.autoVotes = DB.autoVotes || {};
 DB.leads = DB.leads || [];
 DB.segnalazioni = DB.segnalazioni || [];
 DB.consensi = DB.consensi || [];
+DB.staffExtra = DB.staffExtra || {};
+DB.staffVotes = DB.staffVotes || {};
 
 /* ---------------- HELPERS ---------------- */
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -161,16 +165,51 @@ function publishedDaily() {
   for (let i = n - 1; i >= 0; i--) out.push(dailyFaq(i)); // più recenti prima
   return out;
 }
+/* ---------------- DOMANDE STAFF (keyword SEO) ----------------
+   Pubblicate dalla redazione per presidiare keyword ad alto
+   intento. Vivono in assets/js/staff-questions.js: sono uguali
+   per tutti i visitatori e non dipendono dal localStorage.
+   Gli intermediari possono integrarle come tutte le altre. */
+function staffFaqs() {
+  return (window.STAFF_FAQS || []).map(s => ({
+    id: s.id, staff: true, cat: s.cat, keyword: s.keyword, meta: s.meta, titolo: s.titolo,
+    autore: "qf", data: s.data, domanda: s.domanda,
+    risposte: [
+      { autore: "qf", testo: s.testo, rich: s.risposta, voti: DB.staffVotes[s.id] || 0, accettata: true, auto: true, staff: true },
+      ...(DB.staffExtra[s.id] || [])
+    ]
+  }));
+}
+
 function getFaqById(id) {
   if (/^d\d+$/.test(id)) {
     const i = +id.slice(1);
     return i < dailyPublishedCount() ? dailyFaq(i) : null;
   }
+  if (/^k\d+$/.test(id)) return staffFaqs().find(x => x.id === id) || null;
   return DB.faqs.find(x => x.id === id) || null;
 }
 function hoursToNextDaily() {
   const next = new Date(new Date(DAILY_EPOCH + "T00:00:00").getTime() + (dayIndex() + 1) * 86400000);
   return Math.max(1, Math.ceil((next - Date.now()) / 3600000));
+}
+
+/* ---------------- SEO on-page ----------------
+   Title e meta description cambiano ad ogni rotta: senza, tutte
+   le pagine condividono lo stesso snippet in SERP e competono
+   fra loro invece che con i concorrenti. */
+const SEO_BASE = { title: document.title, desc: document.querySelector('meta[name="description"]')?.content || "" };
+
+function setSeo(title, desc) {
+  document.title = title || SEO_BASE.title;
+  const m = document.querySelector('meta[name="description"]');
+  if (m) m.content = desc || SEO_BASE.desc;
+  const og = document.querySelector('meta[property="og:title"]');
+  if (og) og.content = title || SEO_BASE.title;
+  const ogd = document.querySelector('meta[property="og:description"]');
+  if (ogd) ogd.content = desc || SEO_BASE.desc;
+  const can = document.querySelector('link[rel="canonical"]');
+  if (can) can.href = "https://www.quotafacile.it/" + (location.hash || "");
 }
 
 /* JSON-LD dinamico per SEO (FAQPage) */
@@ -225,7 +264,7 @@ const views = {};
 /* ----- HOME ----- */
 views.home = () => {
   const featured = [...DB.brokers].sort((a, b) => b.punti - a.punti).slice(0, 3);
-  const topFaq = [publishedDaily()[0], ...DB.faqs.filter(f => f.risposte.length)].filter(Boolean).slice(0, 3);
+  const topFaq = [...staffFaqs().slice(0, 2), publishedDaily()[0], ...DB.faqs.filter(f => f.risposte.length)].filter(Boolean).slice(0, 3);
   setJsonLd(faqJsonLd(topFaq));
   return `
   <section class="hero">
@@ -464,9 +503,10 @@ function qaCard(f) {
   const a = best ? broker(best.autore) : null;
   const proCount = f.risposte.filter(r => !r.auto).length;
   return `
-  <article class="card qa-card ${f.daily ? "qa-daily" : ""}" data-goto="#/faq/${f.id}">
+  <article class="card qa-card ${f.daily ? "qa-daily" : ""}${f.staff ? " qa-staff" : ""}" data-goto="#/faq/${f.id}">
     <div class="qa-meta">
       ${f.daily ? `<span class="badge-cat badge-daily">☀️ Domanda del giorno #${f.num}</span>` : ""}
+      ${f.staff ? `<span class="badge-cat badge-staff">📌 Guida QuotaFacile</span>` : ""}
       <span class="badge-cat">${esc(f.cat)}</span>
       <span>${esc(f.data)}</span>
       <span>· ${f.risposte.length} rispost${f.risposte.length === 1 ? "a" : "e"}${f.daily && proCount ? ` (${proCount} da intermediari)` : ""}</span>
@@ -484,7 +524,9 @@ function qaCard(f) {
 
 views.bacheca = () => {
   const cats = ["Tutte", "Auto", "Casa", "Vita", "Impresa", "Salute", "Viaggi"];
-  const merged = [...publishedDaily(), ...DB.faqs].sort((a, b) => (b.data > a.data ? 1 : b.data < a.data ? -1 : (b.daily ? 1 : -1)));
+  /* Le domande Staff restano in cima: sono le pagine su cui
+     puntiamo il posizionamento, devono essere le prime viste. */
+  const merged = [...staffFaqs(), ...publishedDaily(), ...DB.faqs.filter(f => !f.staff)];
   const list = merged.filter(f => boardFilter === "Tutte" || f.cat === boardFilter);
   const leaders = [...DB.brokers, ...(DB.proProfile ? [DB.proProfile] : [])].sort((a, b) => b.punti - a.punti).slice(0, 5);
   const nDaily = dailyPublishedCount();
@@ -556,6 +598,7 @@ views.faqDetail = (id) => {
       <a href="#/bacheca" class="muted" style="font-size:.85rem">← Bacheca Q&amp;A</a>
       <div class="qa-meta" style="margin-top:1rem">
         ${f.daily ? `<span class="badge-cat badge-daily">☀️ Domanda del giorno #${f.num}</span>` : ""}
+        ${f.staff ? `<span class="badge-cat badge-staff">📌 Guida QuotaFacile</span>` : ""}
         <span class="badge-cat">${esc(f.cat)}</span><span>${esc(f.data)}</span>
       </div>
       <h1 style="font-size:clamp(1.5rem,4vw,2.2rem)">${esc(f.domanda)}</h1>
@@ -574,14 +617,16 @@ views.faqDetail = (id) => {
           <div class="answer-head">
             <span class="qa-author">
               ${r.auto
-                ? `<span class="mini-avatar mini-qf">QF</span>${esc(a.nome)} <span class="level-badge badge-auto">risposta automatica</span>`
+                ? `<span class="mini-avatar mini-qf">QF</span>${esc(a.nome)} <span class="level-badge badge-auto">${r.staff ? "guida redazionale" : "risposta automatica"}</span>`
                 : `<span class="mini-avatar">${esc(initials(a.nome))}</span>${esc(a.nome)} <span class="level-badge">${livello(a.punti)}</span>`}
               ${r.accettata && !r.auto ? `<span class="badge-cat" style="background:var(--gold-100);color:#9A6B14">★ Migliore risposta</span>` : ""}
             </span>
             <button class="vote-btn" data-vote="${f.id}:${i}" ${voted ? "disabled" : ""}>▲ Utile (${r.voti})</button>
           </div>
-          <p style="margin:.2rem 0">${esc(r.testo)}</p>
-          ${r.auto ? `<p class="muted" style="font-size:.72rem;margin:.5rem 0 0">Risposta generale della redazione: informazione divulgativa, non consulenza personalizzata. Gli intermediari possono integrare qui sotto.</p>` : ""}
+          ${r.rich
+            ? `<div class="answer-rich">${r.rich}</div>`
+            : `<p style="margin:.2rem 0">${esc(r.testo)}</p>`}
+          ${r.auto ? `<p class="muted" style="font-size:.72rem;margin:.5rem 0 0">Contenuto redazionale a carattere divulgativo: non è consulenza personalizzata. Gli intermediari iscritti al RUI possono integrarlo qui sotto con la propria esperienza.</p>` : ""}
           ${!r.auto && a.id ? `<div class="pass-actions" style="margin-top:.7rem;max-width:340px">
             ${a.tel ? `<a class="btn btn-outline btn-sm" href="tel:${esc(a.tel)}">📞 Chiama</a>` : ""}
             <a class="btn btn-primary btn-sm" href="#/preventivo?to=${a.id}">Chiedi consulenza</a>
@@ -787,17 +832,25 @@ function proDashboardHTML(p) {
 
 function proBoardHTML() {
   const daily = publishedDaily().filter(f => !(DB.dailyExtra[f.id] || []).some(r => r.autore === "me")).slice(0, 6);
+  const staff = staffFaqs().filter(f => !(DB.staffExtra[f.id] || []).some(r => r.autore === "me"));
   const community = DB.faqs.filter(f => !f.risposte.some(r => r.autore === "me"));
   const row = f => `
     <div class="lead-row" data-goto="#/faq/${f.id}" style="cursor:pointer">
-      <span class="lead-icon">${f.daily ? "☀️" : "🙋"}</span>
+      <span class="lead-icon">${f.staff ? "📌" : f.daily ? "☀️" : "🙋"}</span>
       <span class="leader-info">
         <strong>${esc(f.domanda)}</strong>
-        <span>${f.daily ? `Domanda del giorno #${f.num} · risposta automatica da integrare` : (f.risposte.length ? f.risposte.length + " risposte di altri intermediari" : "Ancora senza risposta")} · ${esc(f.cat)}</span>
+        <span>${f.staff ? "Guida su keyword strategica · massima visibilità organica"
+              : f.daily ? `Domanda del giorno #${f.num} · risposta automatica da integrare`
+              : (f.risposte.length ? f.risposte.length + " risposte di altri intermediari" : "Ancora senza risposta")} · ${esc(f.cat)}</span>
       </span>
       <span class="pts" style="white-space:nowrap">+10 pt</span>
     </div>`;
   return `
+  <div class="card" style="margin-bottom:1.2rem">
+    <h3>📌 Guide QuotaFacile — le pagine che portano traffico</h3>
+    <p class="muted" style="font-size:.82rem">Sono le domande su cui stiamo puntando il posizionamento su Google: chi le integra per primo si mette la firma sotto la pagina più letta del portale.</p>
+    ${staff.length ? staff.map(row).join("") : `<p class="muted" style="font-size:.9rem">Hai integrato tutte le guide pubblicate. 🏆</p>`}
+  </div>
   <div class="grid-2" style="align-items:start">
     <div class="card">
       <h3>🙋 Domande della community</h3>
@@ -901,6 +954,36 @@ function parseHash() {
   return { path: pathPart.split("/").filter(Boolean), query };
 }
 
+const SEO_PAGINE = {
+  "intermediari": ["Trova un intermediario assicurativo verificato RUI | QuotaFacile", "Agenti, broker e collaboratori iscritti al RUI in vetrina: ruolo, città, specializzazioni e numero di iscrizione. Contatta direttamente chi preferisci, gratis."],
+  "bacheca": ["Bacheca Q&A: domande e risposte sulle assicurazioni | QuotaFacile", "Dubbi assicurativi reali con risposte firmate da intermediari iscritti al RUI. Una nuova domanda ogni giorno, tutte le risposte pubbliche e verificabili."],
+  "professionisti": ["Per agenti e broker: la tua vetrina digitale | QuotaFacile", "Crea la tua QuotaPass gratis, rispondi in bacheca e fatti trovare da chi cerca una polizza. Nessuna commissione sui contratti: il cliente è tuo."],
+  "preventivo": ["Richiedi un preventivo assicurativo gratuito | QuotaFacile", "Compila in due minuti e ricevi il contatto di intermediari specializzati nel ramo che ti serve. Gratuito, senza impegno, senza registrazione."],
+  "area-pro": ["Area Pro — dashboard intermediari | QuotaFacile", "Gestisci la tua QuotaPass, rispondi alle domande della bacheca e monitora i contatti ricevuti."],
+  "privacy": ["Privacy Policy | QuotaFacile", "Informativa sul trattamento dei dati personali ai sensi degli artt. 13-14 del Regolamento (UE) 2016/679."],
+  "cookie-policy": ["Cookie Policy | QuotaFacile", "Cookie e strumenti di tracciamento usati su QuotaFacile, categorie, durate e come gestire il consenso."],
+  "termini": ["Termini e Condizioni | QuotaFacile", "Condizioni generali di utilizzo della piattaforma QuotaFacile per utenti e intermediari assicurativi."],
+  "note-legali": ["Note legali | QuotaFacile", "Informazioni sul gestore del sito, natura dell'attività e avvertenze IVASS. QuotaFacile non è un intermediario assicurativo."],
+  "contatti": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."],
+  "chi-siamo": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."]
+};
+
+function applicaSeo(page, path) {
+  if (page === "faq") {
+    const f = getFaqById(path[1]);
+    if (f) {
+      const best = f.risposte.find(r => r.accettata) || f.risposte[0];
+      setSeo(
+        f.titolo ? f.titolo + " | QuotaFacile" : (f.domanda.length > 60 ? f.domanda : f.domanda + " | QuotaFacile"),
+        f.meta || (best ? best.testo.slice(0, 155).replace(/\s+\S*$/, "") + "…" : SEO_BASE.desc)
+      );
+      return;
+    }
+  }
+  const s = SEO_PAGINE[page];
+  setSeo(s ? s[0] : null, s ? s[1] : null);
+}
+
 function render() {
   const { path, query } = parseHash();
   const page = path[0] || "home";
@@ -916,6 +999,7 @@ function render() {
   else if (LEGAL_ROUTES[page]) { setJsonLd(null); html = LEGAL_ROUTES[page](); navKey = ""; }
   else { html = views.home(); navKey = "home"; }
 
+  applicaSeo(page, path);
   app.innerHTML = html;
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle("active", a.dataset.nav === navKey));
   window.scrollTo({ top: 0 });
@@ -1051,12 +1135,16 @@ function bind() {
       if (DB.votati.includes(key)) return;
       const sep = key.lastIndexOf(":");
       const fid = key.slice(0, sep), idx = +key.slice(sep + 1);
-      if (/^d\d+$/.test(fid)) {
-        /* domanda del giorno */
+      if (/^[dk]\d+$/.test(fid)) {
+        /* domanda del giorno (d) o domanda Staff (k): la prima
+           risposta è quella redazionale, le altre sono dei pro */
+        const staff = fid[0] === "k";
+        const voti = staff ? DB.staffVotes : DB.autoVotes;
+        const extra = staff ? DB.staffExtra : DB.dailyExtra;
         if (idx === 0) {
-          DB.autoVotes[fid] = (DB.autoVotes[fid] || 0) + 1; // risposta automatica
+          voti[fid] = (voti[fid] || 0) + 1;
         } else {
-          const r = (DB.dailyExtra[fid] || [])[idx - 1];
+          const r = (extra[fid] || [])[idx - 1];
           if (!r) return;
           r.voti++;
           const a = broker(r.autore); if (a) a.punti += 5;
@@ -1084,9 +1172,10 @@ function bind() {
     const id = path[1];
     if (!DB.proProfile) return;
     const testo = $("#ans-t").value.trim();
-    if (/^d\d+$/.test(id)) {
-      if (!DB.dailyExtra[id]) DB.dailyExtra[id] = [];
-      DB.dailyExtra[id].push({ autore: "me", testo, voti: 0, accettata: false });
+    if (/^[dk]\d+$/.test(id)) {
+      const extra = id[0] === "k" ? DB.staffExtra : DB.dailyExtra;
+      if (!extra[id]) extra[id] = [];
+      extra[id].push({ autore: "me", testo, voti: 0, accettata: false });
     } else {
       const f = DB.faqs.find(x => x.id === id);
       if (!f) return;

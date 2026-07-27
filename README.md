@@ -13,6 +13,7 @@ quotafacile/
 │   ├── css/style.css             # Design system (verde professionale + oro gamification)
 │   ├── js/app.js                 # Router, store, viste, gamification, motore giornaliero
 │   ├── js/daily-questions.js     # ⭐ Pool 200 domande "del giorno" (qui vanno le tue keyword)
+│   ├── js/staff-questions.js     # 📌 Guide QuotaFacile: keyword SEO posizionate in bacheca
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
 ├── robots.txt
@@ -88,6 +89,20 @@ Poi su GitHub: **Settings → Pages → Source: main / root**. Il sito sarà su 
 **Nota importante:** questa v1 è una SPA con routing `#/`. Per sfruttare al massimo la genialata Q&A su Google, il passo successivo è servire ogni domanda come **pagina statica con URL proprio** (es. `/faq/classe-di-merito-auto-nuova/`), perché gli URL con `#` non vengono indicizzati come pagine separate. Opzioni, in ordine di sforzo:
 1. **Prerender/SSG**: uno script che genera un file HTML per ogni FAQ dal database (il markup c'è già).
 2. Migrazione a **Astro/Next.js** con backend (Supabase/Firebase) quando i contenuti diventano reali.
+
+## 📌 Guide QuotaFacile (keyword SEO in bacheca)
+
+`assets/js/staff-questions.js` contiene le domande che la redazione pubblica per presidiare keyword
+ad alto intento. A differenza della "domanda del giorno" **escono tutte subito**, restano in cima
+alla bacheca e non dipendono dal `localStorage`: sono identiche per ogni visitatore.
+
+Ogni slot porta con sé i metadati di ricerca (`keyword`, `volume`, `difficolta`, `intento`) più
+`titolo` e `meta` usati per il `<title>` e la meta description della pagina. Gli intermediari le
+integrano come qualunque altra domanda (+10 pt), e le loro risposte finiscono in `DB.staffExtra`.
+
+Il criterio di scelta è quello che conta: **long-tail con SERP occupata da chi non è del settore**
+(news, portali fiscali, studi legali). Le head keyword assicurative sono presidiate da Facile.it,
+Segugio e Prima: inseguirle è bruciare budget.
 
 ## ⚖️ Conformità legale e GDPR
 

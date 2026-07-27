@@ -555,3 +555,17 @@ p { line-height: 1.6; }
 .footer-bottom p { margin: 0 0 .6rem; }
 .footer-bottom a { display: inline; text-decoration: underline; }
 .footer-disclaimer { font-size: .74rem; line-height: 1.55; opacity: .75; max-width: 68ch; }
+
+/* ---------- Domande Staff (guide SEO) ---------- */
+.badge-staff { background: var(--gold-100); color: #8A5B0B; }
+.qa-card.qa-staff { border-left: 3px solid var(--gold-500); }
+.answer-rich { font-size: .98rem; line-height: 1.7; }
+.answer-rich p { margin: .7rem 0; }
+.answer-rich h4 {
+  font-family: var(--font-display); font-size: 1.05rem; font-weight: 700;
+  color: var(--green-800); margin: 1.4rem 0 .4rem;
+}
+.answer-rich ul, .answer-rich ol { padding-left: 1.3rem; margin: .6rem 0; }
+.answer-rich li { margin-bottom: .5rem; line-height: 1.65; }
+.answer-rich strong { color: var(--ink); }
+.answer-rich em { color: var(--ink-soft); }

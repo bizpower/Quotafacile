@@ -5,6 +5,12 @@
   <url><loc>https://www.quotafacile.it/#/bacheca</loc><changefreq>hourly</changefreq><priority>0.9</priority></url>
   <url><loc>https://www.quotafacile.it/#/professionisti</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
   <url><loc>https://www.quotafacile.it/#/preventivo</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <!-- Guide QuotaFacile: le pagine su cui puntiamo il posizionamento organico -->
+  <url><loc>https://www.quotafacile.it/#/faq/k1</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://www.quotafacile.it/#/faq/k2</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://www.quotafacile.it/#/faq/k3</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://www.quotafacile.it/#/faq/k4</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://www.quotafacile.it/#/faq/k5</loc><changefreq>weekly</changefreq><priority>0.9</priority></url>
   <url><loc>https://www.quotafacile.it/#/chi-siamo</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://www.quotafacile.it/#/contatti</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://www.quotafacile.it/#/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
