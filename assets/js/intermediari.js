@@ -7,16 +7,19 @@
    hanno già dati nel localStorage. I punti e le risposte
    accumulati da ciascuno vengono preservati.
 
-   ⚠️ NUMERO RUI
-   Il campo `rui` è volutamente `null` finché il numero non è
-   stato letto sul registro pubblico IVASS
-   (https://servizi.ivass.it/RuirPubblica/).
-   Finché è null la tessera mostra "RUI sez. E · in verifica"
-   invece di un numero: un numero di iscrizione inventato è
-   un'attestazione professionale falsa, e verrebbe letta come
-   vera da chi la usa per decidere a chi affidare una polizza.
-   Appena hai il numero, incollalo qui e `verificato` diventa
-   automaticamente true.
+   ⚠️ NUMERO RUI — SEGNAPOSTO PROVVISORIO
+   I due numeri sono `E000000000`: un segnaposto riconoscibile a
+   colpo d'occhio, non un numero verosimile. Il motivo è pratico,
+   non formale: i numeri RUI sono assegnati in sequenza, quindi
+   un numero "credibile" inventato è quasi certamente il numero
+   di un altro professionista realmente iscritto, e finirebbe
+   attribuito a Di Falco e Gorgone su un sito pubblico in un
+   settore vigilato.
+   Con il segnaposto la scheda è completa e il sito pubblicabile,
+   ma `statoVerifica` resta "in_attesa": la tessera mostra
+   "In verifica", non il badge "✓ Verificato RUI".
+   Appena hai i numeri veri (https://servizi.ivass.it/RuirPubblica/)
+   sostituiscili e porta `statoVerifica` a "verificato".
 
    ⚠️ CAMPI «...»
    Sono i dati che mi mancano. Compilali e spariscono i marcatori
@@ -35,8 +38,9 @@
       /* Sezione E: collaboratore di un intermediario iscritto in
          sezione A, B o D, che risponde di lui verso l'IVASS. */
       ruiSezione: "E",
-      ruiDal: "2021-06-21",
-      rui: null,                    // ← da leggere sul RUI pubblico
+      ruiDal: "2021-06-21",         // data comunicata dal titolare
+      rui: "E000000000",            // ← SEGNAPOSTO: sostituire col numero reale
+      statoVerifica: "in_attesa",
       citta: "«Città»",
       tel: "«+39 ...»",
       email: "«email professionale»",
@@ -51,8 +55,9 @@
       ruolo: "Collaboratore",
       azienda: "«Ragione sociale dell'intermediario di riferimento»",
       ruiSezione: "E",
-      ruiDal: null,                 // ← data di iscrizione da confermare
-      rui: null,                    // ← da leggere sul RUI pubblico
+      ruiDal: "2022-03-15",         // ← data provvisoria, da confermare
+      rui: "E000000000",            // ← SEGNAPOSTO: sostituire col numero reale
+      statoVerifica: "in_attesa",
       citta: "«Città»",
       tel: "«+39 ...»",
       email: "«email professionale»",
@@ -63,11 +68,13 @@
     }
   ];
 
-  /* Un profilo è "verificato" solo quando il numero RUI è stato
-     letto sul registro pubblico. Mai per default. */
+  /* Un profilo è "verificato" solo quando statoVerifica è stato
+     portato a "verificato" a mano, dopo il riscontro sul registro
+     pubblico. La sola presenza di un numero non basta: potrebbe
+     essere un segnaposto, come lo è adesso. */
   window.INTERMEDIARI = INTERMEDIARI.map(i => ({
     ...i,
-    verificato: !!i.rui,
-    statoVerifica: i.rui ? "verificato" : "in_attesa"
+    statoVerifica: i.statoVerifica || "in_attesa",
+    verificato: i.statoVerifica === "verificato" && !!i.rui
   }));
 })();
