@@ -22,11 +22,9 @@
     /* Identità del titolare del trattamento / gestore del sito */
     ragioneSociale: "«Ragione sociale»",
     sedeLegale: "«Via, CAP, Città (Provincia), Italia»",
-    /* Comunicata dal titolare. Attenzione: una partita IVA italiana ha
-       11 cifre — questa ne ha 9, quindi il controllo qui sotto la segnala
-       ancora come da completare. Non ho integrato le cifre mancanti:
-       indovinarle produrrebbe la partita IVA di un'altra impresa. */
-    piva: "138078966",
+    /* Comunicata dal titolare e validata: 11 cifre, cifra di controllo
+       corretta secondo l'algoritmo di cui al DM 23/12/1976. */
+    piva: "13807830966",
     cf: "«Codice fiscale»",
     rea: "«Numero REA / Registro Imprese»",
     pec: "«indirizzo PEC»",
@@ -54,8 +52,25 @@
   /* Un dato formalmente invalido in un'informativa vale quanto un dato
      assente: va segnalato allo stesso modo, non stampato come se fosse
      corretto. Le regole di formato dei campi che sappiamo verificare: */
+  /* Cifra di controllo della partita IVA (DM 23/12/1976): somma delle
+     cifre di posto dispari più le cifre di posto pari raddoppiate
+     (sottraendo 9 se superano 9); l'undicesima cifra completa la decina.
+     Un refuso di una cifra sola passerebbe un controllo di sola
+     lunghezza, e finirebbe stampato nell'informativa come se fosse
+     corretto. */
+  function pivaValida(v) {
+    if (!/^\d{11}$/.test(v)) return false;
+    let s = 0;
+    for (let i = 0; i < 10; i++) {
+      let d = +v[i];
+      if (i % 2 === 1) { d *= 2; if (d > 9) d -= 9; }
+      s += d;
+    }
+    return (10 - (s % 10)) % 10 === +v[10];
+  }
+
   const FORMATO = {
-    piva: v => /^\d{11}$/.test(v),
+    piva: pivaValida,
     cf: v => /^[0-9]{11}$/.test(v) || /^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/i.test(v),
     pec: v => /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(v)
   };
