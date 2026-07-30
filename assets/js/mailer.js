@@ -62,6 +62,11 @@
     return `mailto:${dest}?subject=${encodeURIComponent(oggetto)}&body=${encodeURIComponent(corpo(dati))}`;
   }
 
+  /* Attenzione: questi servizi rispondono 200 anche quando NON hanno
+     recapitato nulla — è il caso della casella non ancora attivata, in
+     cui la risposta contiene success:false e il messaggio di conferma.
+     Fermarsi allo stato HTTP significherebbe dire all'utente
+     "richiesta inviata" mentre il contatto non è arrivato a nessuno. */
   async function postJson(url, payload) {
     const r = await fetch(url, {
       method: "POST",
@@ -69,7 +74,14 @@
       body: JSON.stringify(payload)
     });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    return r.json().catch(() => ({}));
+    const esito = await r.json().catch(() => ({}));
+    const ok = esito.success === true || esito.success === "true";
+    if ("success" in esito && !ok) {
+      const e = new Error(esito.message || "Consegna non riuscita");
+      e.rispostaServizio = esito;
+      throw e;
+    }
+    return esito;
   }
 
   /* Invia a un singolo destinatario. Restituisce true/false senza
@@ -99,6 +111,10 @@
       }
       return false; // provider "mailto": gestito dal fallback
     } catch (e) {
+      /* Utile in console per capire se il problema è la casella non
+         ancora attivata o altro. Non blocca nulla: la chiamante mostra
+         comunque il ripiego con il mailto già compilato. */
+      console.warn("[QFMailer] consegna a " + dest + " non riuscita:", e.message);
       return false;
     }
   }
