@@ -644,3 +644,9 @@ p { line-height: 1.6; }
   opacity: .55; cursor: not-allowed; pointer-events: none;
   box-shadow: none;
 }
+
+/* ---------- Recapiti del professionista ---------- */
+.recapiti-card { border-left: 3px solid var(--green-600); }
+.recapiti-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--line); font-size: .9rem; flex-wrap: wrap; }
+.recapiti-row:last-of-type { border-bottom: 0; }
+.recapiti-row strong { font-family: var(--font-body); color: var(--green-800); }

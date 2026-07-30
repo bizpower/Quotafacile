@@ -690,7 +690,10 @@ views.faqDetail = (id) => {
 };
 
 /* ----- PREVENTIVO (cliente, multi-step) ----- */
-const quoteState = { step: 1, tipo: null, ramo: null, to: null };
+const quoteState = { step: 1, tipo: null, ramo: null, to: null, esito: null };
+function resetQuote() {
+  Object.assign(quoteState, { step: 1, tipo: null, ramo: null, to: null, esito: null });
+}
 views.preventivo = (query) => {
   setJsonLd(null);
   if (query?.to) quoteState.to = query.to;
@@ -748,16 +751,25 @@ views.preventivo = (query) => {
           </div>
         </form>` : ""}
 
-        ${s === 4 ? `
+        ${s === 4 ? (quoteState.esito && !quoteState.esito.consegnato ? `
+        <div style="text-align:center;padding:1.5rem 0">
+          <div class="icon-dot" style="margin:0 auto 1rem;width:64px;height:64px;font-size:2rem">✉️</div>
+          <h3>Ultimo passaggio: conferma l'invio</h3>
+          <p class="muted">Non siamo riusciti a recapitare la richiesta automaticamente. Nessun dato è andato perso: apri l'email già compilata e premi invio.</p>
+          <div style="display:flex;gap:.6rem;justify-content:center;margin-top:1rem;flex-wrap:wrap">
+            <a href="${quoteState.esito.fallback}" class="btn btn-gold">Apri l'email e invia</a>
+            <a href="#/" class="btn btn-outline">Torna alla home</a>
+          </div>
+        </div>` : `
         <div style="text-align:center;padding:1.5rem 0">
           <div class="icon-dot" style="margin:0 auto 1rem;width:64px;height:64px;font-size:2rem">✅</div>
           <h3>Richiesta inviata!</h3>
-          <p class="muted">${dest ? esc(dest.nome) + " riceverà" : "Gli intermediari specializzati in " + esc(quoteState.ramo || "polizze") + " riceveranno"} la tua richiesta di ${esc(quoteState.tipo || "preventivo")} e ti ricontatteranno a breve.</p>
+          <p class="muted">${dest ? esc(dest.nome) + " riceverà" : "Gli intermediari specializzati in " + esc(quoteState.ramo || "polizze") + " riceveranno"} la tua richiesta di ${esc(quoteState.tipo || "preventivo")} e ti ricontatteranno a breve ai recapiti che ci hai lasciato.</p>
           <div style="display:flex;gap:.6rem;justify-content:center;margin-top:1rem;flex-wrap:wrap">
             <a href="#/bacheca" class="btn btn-outline">Esplora la bacheca</a>
             <a href="#/" class="btn btn-primary">Torna alla home</a>
           </div>
-        </div>` : ""}
+        </div>`) : ""}
       </div>
       <p class="muted" style="font-size:.75rem;margin-top:.8rem">
         I tuoi dati vengono condivisi solo con gli intermediari pertinenti alla richiesta e conservati
@@ -789,8 +801,8 @@ function proFormHTML(p) {
       <div class="field"><label for="p-azienda">Ragione sociale *</label><input id="p-azienda" required value="${esc(p?.azienda || "")}" placeholder="LB Insurance Srl"></div>
       <div class="field"><label for="p-rui">Numero RUI *</label><input id="p-rui" required value="${esc(p?.rui || "")}" placeholder="B000123456"></div>
       <div class="field"><label for="p-citta">Città *</label><input id="p-citta" required value="${esc(p?.citta || "")}" placeholder="Milano"></div>
-      <div class="field"><label for="p-tel">Telefono professionale *</label><input id="p-tel" type="tel" required value="${esc(p?.tel || "")}" placeholder="+39 ..."></div>
-      <div class="field"><label for="p-email">Email professionale *</label><input id="p-email" type="email" required value="${esc(p?.email || "")}" placeholder="nome@azienda.it"></div>
+      <div class="field"><label for="p-tel">Cellulare * <span class="muted" style="font-weight:400">— qui ti chiamano</span></label><input id="p-tel" type="tel" required value="${esc(p?.tel || "")}" placeholder="+39 ..."></div>
+      <div class="field"><label for="p-email">Email * <span class="muted" style="font-weight:400">— qui arrivano le richieste</span></label><input id="p-email" type="email" required value="${esc(p?.email || "")}" placeholder="nome@azienda.it"></div>
       <div class="field"><label for="p-spec">Specializzazioni (max 3, separate da virgola)</label><input id="p-spec" value="${esc((p?.spec || []).join(", "))}" placeholder="Auto, Casa, Impresa"></div>
       <div class="field full"><label for="p-bio">About me (breve)</label><textarea id="p-bio" placeholder="Racconta in due righe come aiuti i tuoi clienti...">${esc(p?.bio || "")}</textarea></div>
       ${p ? "" : `
@@ -825,6 +837,14 @@ function proDashboardHTML(p) {
         <div class="stat"><strong>${nCons}</strong><span>💬 consulenze</span></div>
         <div class="stat"><strong>${p.viste ?? 0}</strong><span>👁 viste profilo</span></div>
       </div>
+      <div class="card recapiti-card" style="margin-top:1rem">
+        <h3>📬 Dove ti arrivano i contatti</h3>
+        <p class="muted" style="font-size:.85rem">Non c'è nessuna casella interna da controllare: le richieste degli utenti arrivano direttamente qui.</p>
+        <div class="recapiti-row"><span>📞 Chiamate al</span><strong>${campo(p.tel)}</strong></div>
+        <div class="recapiti-row"><span>✉️ Richieste via email a</span><strong>${campo(p.email)}</strong></div>
+        <p class="privacy-hint">Sono gli stessi recapiti pubblicati sulla tua QuotaPass: il pulsante <strong>CHIAMA</strong> compone quel numero, il modulo di consulenza scrive a quell'indirizzo. Per cambiarli vai in <a href="#/area-pro">Profilo &amp; QuotaPass</a>.</p>
+      </div>
+
       <div class="card" style="margin-top:1rem">
         <h3>Ultimi contatti ricevuti</h3>
         ${recent.length ? recent.map(l => `
@@ -1023,10 +1043,22 @@ function applicaSeo(page, path) {
   setSeo(s ? s[0] : null, s ? s[1] : null);
 }
 
+let ultimoHash = null;
+
 function render() {
   const { path, query } = parseHash();
   const page = path[0] || "home";
   let html, navKey = page || "home";
+
+  /* Dopo un invio completato, qualunque nuova navigazione riporta il
+     preventivo a un modulo vuoto: chi torna sulla pagina vuole fare
+     una nuova richiesta, non rivedere la conferma di quella prima.
+     Il confronto è sull'hash e non sulla pagina, perché anche il
+     passaggio da "#/preventivo?to=b1" a "#/preventivo" è una nuova
+     richiesta. I render successivi a hash invariato (invio, cambio
+     step) non azzerano nulla. */
+  if (ultimoHash !== null && location.hash !== ultimoHash && quoteState.step === 4) resetQuote();
+  ultimoHash = location.hash;
 
   if (page === "" || page === "home") { html = views.home(); navKey = "home"; }
   else if (page === "professionisti") html = views.professionisti();
@@ -1136,26 +1168,55 @@ function bind() {
   document.querySelectorAll("[data-step]").forEach(b =>
     b.addEventListener("click", () => { quoteState.step = +b.dataset.step; render(); }));
 
-  $("#quote-form")?.addEventListener("submit", e => {
+  $("#quote-form")?.addEventListener("submit", async e => {
     e.preventDefault();
     if (!$("#q-consenso").checked) { toast("Per inviare la richiesta serve il consenso al trattamento dei dati."); return; }
     registraConsenso("richiesta-preventivo", "Consenso alla trasmissione dei recapiti all'intermediario destinatario");
-    DB.richieste.push({ tipo: quoteState.tipo, ramo: quoteState.ramo, to: quoteState.to, nome: $("#q-nome").value, data: new Date().toISOString() });
+
+    const dest = quoteState.to ? broker(quoteState.to) : null;
+    const dati = {
+      "Tipo richiesta": quoteState.tipo || "preventivo",
+      "Ramo": quoteState.ramo || "-",
+      "Nome e cognome": $("#q-nome").value.trim(),
+      "Città": $("#q-citta").value.trim(),
+      "Email": $("#q-email").value.trim(),
+      "Telefono": $("#q-tel").value.trim(),
+      "Note": $("#q-note").value.trim(),
+      "Intermediario destinatario": dest ? `${dest.nome} (${dest.azienda})` : "nessuno — smistare per ramo"
+    };
+
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = "Invio in corso…"; }
+
+    const esito = await window.QFMailer.invia({
+      oggetto: `Nuova richiesta ${dati["Tipo richiesta"]} · ramo ${dati.Ramo} · ${dati["Nome e cognome"]}`,
+      dati,
+      destinatarioExtra: dest && dest.email && !DA_COMPILARE(dest.email) ? dest.email : null
+    });
+
+    DB.richieste.push({
+      tipo: quoteState.tipo, ramo: quoteState.ramo, to: quoteState.to,
+      nome: dati["Nome e cognome"], email: dati.Email, tel: dati.Telefono,
+      consegnato: esito.consegnato, data: new Date().toISOString()
+    });
     saveDB();
+    quoteState.esito = esito;
     quoteState.step = 4;
     render();
   });
 
   /* coming soon app: notifica lancio */
-  $("#notify-form")?.addEventListener("submit", e => {
+  $("#notify-form")?.addEventListener("submit", async e => {
     e.preventDefault();
     if (!$("#notify-consenso")?.checked) { toast("Spunta il consenso per ricevere l'avviso di lancio."); return; }
     registraConsenso("waitlist-app", "Consenso all'uso dell'email per la notifica di lancio dell'app");
+    const email = $("#notify-email").value.trim();
     DB.notifiche = DB.notifiche || [];
-    DB.notifiche.push({ email: $("#notify-email").value.trim(), data: new Date().toISOString() });
+    DB.notifiche.push({ email, data: new Date().toISOString() });
     saveDB();
     $("#notify-email").value = "";
     toast("Perfetto! Ti avvisiamo appena l'app è disponibile 📱");
+    window.QFMailer.invia({ oggetto: "Nuova iscrizione alla waitlist app", dati: { Email: email } });
   });
 
   /* nuova domanda in bacheca */
@@ -1163,9 +1224,11 @@ function bind() {
     e.preventDefault();
     if (!$("#ask-consenso").checked) { toast("Serve il consenso alla pubblicazione per pubblicare la domanda."); return; }
     registraConsenso("domanda-bacheca", "Consenso alla pubblicazione della domanda in bacheca");
-    DB.faqs.unshift({ id: "f" + Date.now(), cat: $("#ask-cat").value, autore: null, data: new Date().toISOString().slice(0, 10), domanda: $("#ask-q").value.trim(), risposte: [] });
+    const domanda = $("#ask-q").value.trim(), cat = $("#ask-cat").value;
+    DB.faqs.unshift({ id: "f" + Date.now(), cat, autore: null, data: new Date().toISOString().slice(0, 10), domanda, risposte: [] });
     saveDB(); render();
     toast("Domanda pubblicata! Un intermediario ti risponderà.");
+    window.QFMailer.invia({ oggetto: `Nuova domanda in bacheca · ${cat}`, dati: { Categoria: cat, Domanda: domanda } });
   });
 
   /* voto risposta */
@@ -1277,6 +1340,19 @@ function bind() {
       proTab = "dashboard";
       saveDB(); render();
       toast(wasNew ? "QuotaPass creata! Benvenuto su QuotaFacile 🎉" : "Profilo aggiornato.");
+      if (wasNew) {
+        const p = DB.proProfile;
+        window.QFMailer.invia({
+          oggetto: `Nuovo professionista iscritto · ${p.nome} · RUI da verificare`,
+          dati: {
+            "Nome": p.nome, "Ruolo": p.ruolo, "Ragione sociale": p.azienda,
+            "Numero RUI dichiarato": p.rui, "Città": p.citta,
+            "Cellulare": p.tel, "Email": p.email,
+            "Specializzazioni": (p.spec || []).join(", "),
+            "Da fare": "verificare l'iscrizione su servizi.ivass.it/RuirPubblica e approvare in #/admin"
+          }
+        });
+      }
     });
   }
 

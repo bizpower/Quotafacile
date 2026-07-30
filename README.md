@@ -15,6 +15,7 @@ quotafacile/
 │   ├── js/daily-questions.js     # ⭐ Pool 200 domande "del giorno" (qui vanno le tue keyword)
 │   ├── js/staff-questions.js     # 📌 Guide QuotaFacile: keyword SEO posizionate in bacheca
 │   ├── js/intermediari.js        # 🪪 Intermediari in vetrina (fonte di verità delle QuotaPass)
+│   ├── js/mailer.js              # 📬 Consegna delle richieste via email (config in cima)
 │   ├── js/admin.js               # 🔐 Console riservata (#/admin): KPI, moderazione, keyword
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
@@ -91,6 +92,36 @@ Poi su GitHub: **Settings → Pages → Source: main / root**. Il sito sarà su 
 **Nota importante:** questa v1 è una SPA con routing `#/`. Per sfruttare al massimo la genialata Q&A su Google, il passo successivo è servire ogni domanda come **pagina statica con URL proprio** (es. `/faq/classe-di-merito-auto-nuova/`), perché gli URL con `#` non vengono indicizzati come pagine separate. Opzioni, in ordine di sforzo:
 1. **Prerender/SSG**: uno script che genera un file HTML per ogni FAQ dal database (il markup c'è già).
 2. Migrazione a **Astro/Next.js** con backend (Supabase/Firebase) quando i contenuti diventano reali.
+
+## 📬 Consegna delle richieste via email
+
+Il sito è statico: non c'è un server che possa spedire email. La consegna passa da un servizio
+**form-to-email** configurato in cima a `assets/js/mailer.js`.
+
+| Evento | Destinatario |
+|---|---|
+| Richiesta di preventivo o consulenza | `destinatarioPiattaforma` + **la casella del professionista**, se la richiesta è indirizzata a lui (`#/preventivo?to=b1`) |
+| Nuova domanda in bacheca | `destinatarioPiattaforma` |
+| Registrazione di un professionista | `destinatarioPiattaforma`, con i recapiti e il promemoria di verificare il RUI |
+| Iscrizione alla waitlist dell'app | `destinatarioPiattaforma` |
+
+I recapiti che il professionista inserisce nel proprio profilo **sono le destinazioni**: il pulsante
+CHIAMA compone quel numero, le richieste di consulenza scrivono a quell'indirizzo. La sua dashboard
+lo dichiara esplicitamente — non esiste una casella interna da controllare.
+
+> ⚠️ **Attivazione, una volta sola.** Con FormSubmit la prima richiesta inviata a un indirizzo non
+> viene recapitata: arriva invece un'email di conferma con un link da cliccare. Vale per la casella
+> della piattaforma **e per quella di ogni professionista**. Fai una richiesta di prova e conferma.
+
+> 🔒 **Se la consegna fallisce nessun dato va perso:** l'utente vede una schermata con un `mailto:`
+> già compilato e un solo pulsante da premere, e la richiesta resta comunque registrata nei KPI.
+
+**Consigliato prima del traffico reale:** passare a Web3Forms (`provider: "web3forms"` + chiave
+gratuita) oppure all'alias FormSubmit — così l'indirizzo di destinazione non resta leggibile nel
+sorgente e non viene raccolto dagli spambot.
+
+Il fornitore è un **responsabile del trattamento** ex art. 28 GDPR ed è dichiarato nella Privacy
+Policy: cambiando provider va aggiornata anche quella sezione in `legal.js`.
 
 ## 🔐 Area Admin — `#/admin`
 
