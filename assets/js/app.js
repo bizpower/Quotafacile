@@ -308,12 +308,12 @@ views.home = () => {
   <section class="hero">
     <div class="container hero-inner">
       <div class="rise">
-        <span class="eyebrow">La vetrina degli intermediari assicurativi</span>
-        <h1>QuotaFacile — il primo marketplace per agenti assicurativi</h1>
-        <p class="lead">Agenti, broker e collaboratori iscritti al RUI mettono in vetrina competenza e recapiti. Chi cerca una polizza li trova, li confronta e li chiama direttamente: nessuna commissione, nessun intermediario nascosto.</p>
+        <span class="eyebrow">Marketplace assicurativo italiano</span>
+        <h1>QuotaFacile — Assicurazioni al miglior prezzo, in un solo marketplace.</h1>
+        <p class="lead">Trova l'intermediario giusto, confronta e risparmia sulle tue polizze. Professionisti verificati RUI, contatto diretto, zero costi per te.</p>
         <div class="hero-actions">
-          <a href="#/area-pro" class="btn btn-gold">Crea la tua QuotaPass — gratis</a>
-          <a href="#/preventivo" class="btn btn-light">Cerchi una polizza?</a>
+          <a href="#/preventivo" class="btn btn-gold">Richiedi un preventivo gratuito</a>
+          <a href="#/professionisti" class="btn btn-light">Sei un intermediario?</a>
         </div>
         <div class="hero-trust">
           <div><strong>${DB.brokers.length + (DB.proProfile ? 1 : 0)}</strong><span>intermediari iscritti</span></div>
@@ -454,8 +454,8 @@ views.professionisti = () => {
   <section class="hero">
     <div class="container hero-inner">
       <div class="rise">
-        <span class="eyebrow">Per agenti, broker e subagenti</span>
-        <h1>La tua vetrina digitale. I clienti ti trovano da soli.</h1>
+        <span class="eyebrow">Per agenti, broker e collaboratori</span>
+        <h1>QuotaFacile — il primo marketplace per agenti assicurativi</h1>
         <p class="lead">Su QuotaFacile non compri contatti: li conquisti. Crea il tuo profilo, rispondi alle domande degli utenti e fatti trovare da chi sta già cercando una polizza.</p>
         <div class="hero-actions">
           <a href="#/area-pro" class="btn btn-gold">Inizia gratis — crea la QuotaPass</a>
@@ -1017,7 +1017,7 @@ function parseHash() {
 const SEO_PAGINE = {
   "intermediari": ["Trova un intermediario assicurativo verificato RUI | QuotaFacile", "Agenti, broker e collaboratori iscritti al RUI in vetrina: ruolo, città, specializzazioni e numero di iscrizione. Contatta direttamente chi preferisci, gratis."],
   "bacheca": ["Bacheca Q&A: domande e risposte sulle assicurazioni | QuotaFacile", "Dubbi assicurativi reali con risposte firmate da intermediari iscritti al RUI. Una nuova domanda ogni giorno, tutte le risposte pubbliche e verificabili."],
-  "professionisti": ["Per agenti e broker: la tua vetrina digitale | QuotaFacile", "Crea la tua QuotaPass gratis, rispondi in bacheca e fatti trovare da chi cerca una polizza. Nessuna commissione sui contratti: il cliente è tuo."],
+  "professionisti": ["QuotaFacile — il primo marketplace per agenti assicurativi", "Crea la tua QuotaPass gratis, rispondi in bacheca e fatti trovare da chi cerca una polizza. Nessuna commissione sui contratti: il cliente è tuo."],
   "preventivo": ["Richiedi un preventivo assicurativo gratuito | QuotaFacile", "Compila in due minuti e ricevi il contatto di intermediari specializzati nel ramo che ti serve. Gratuito, senza impegno, senza registrazione."],
   "area-pro": ["Area Pro — dashboard intermediari | QuotaFacile", "Gestisci la tua QuotaPass, rispondi alle domande della bacheca e monitora i contatti ricevuti."],
   "privacy": ["Privacy Policy | QuotaFacile", "Informativa sul trattamento dei dati personali ai sensi degli artt. 13-14 del Regolamento (UE) 2016/679."],
