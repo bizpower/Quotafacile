@@ -19,16 +19,34 @@
     brand: "QuotaFacile",
     dominio: "www.quotafacile.it",
 
-    /* Identità del titolare del trattamento / gestore del sito */
-    ragioneSociale: "«Ragione sociale»",
-    sedeLegale: "«Via, CAP, Città (Provincia), Italia»",
-    /* Comunicata dal titolare e validata: 11 cifre, cifra di controllo
-       corretta secondo l'algoritmo di cui al DM 23/12/1976. */
-    piva: "13807830966",
-    cf: "«Codice fiscale»",
-    rea: "«Numero REA / Registro Imprese»",
-    pec: "«indirizzo PEC»",
-    foro: "«città del foro competente»",
+    /* Identità del titolare del trattamento / gestore del sito.
+       Dati da visura camerale CCIAA Milano Monza Brianza Lodi. */
+    ragioneSociale: "Riccardo Di Falco — impresa individuale",
+    /* Via comunicata dal titolare; comune, provincia e CAP sono quelli
+       della sede risultante in visura. Da confermare se il
+       trasferimento ha comportato anche un cambio di comune. */
+    sedeLegale: "Via Gramsci 16, 20073 Opera (MI), Italia",
+    piva: "11784600964",
+    cf: "DFLRCR00H02F205X",
+    rea: "MI - 2633479",
+    pec: "riccardo.difalco@pec.it",
+    foro: "Milano",
+
+    /* Il sito è gestito da un intermediario iscritto al RUI: è un fatto
+       che va dichiarato, non taciuto. Vedi la sezione "Natura
+       dell'attività" delle Note legali. */
+    gestoreIntermediario: {
+      nome: "Riccardo Di Falco",
+      sezioneRui: "E",
+      numeroRui: null,                 // ← da leggere sul RUI pubblico
+      iscrittoDal: "2021-06-21",
+      attivita: "addetto all'intermediazione assicurativa fuori dei locali dell'intermediario",
+      ateco: "66.22.03 — sub-agenti di assicurazioni",
+      /* La sezione E opera per conto di un intermediario iscritto in
+         sezione A, B o D, che risponde di lui verso l'IVASS: il
+         Reg. IVASS 40/2018 ne impone l'indicazione nelle comunicazioni. */
+      operaPerConto: "«intermediario di sezione A, B o D per cui operi»"
+    },
 
     /* Contatti operativi (devono essere caselle realmente attive) */
     emailInfo: "info@quotafacile.it",
@@ -46,6 +64,11 @@
     ultimoAggiornamento: "27 luglio 2026",
     versione: "1.0"
   };
+
+  /* Locale, per non dipendere da un binding globale definito altrove:
+     i valori arrivano dalla configurazione, ma restano dati. */
+  const esc = s => String(s ?? "").replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   const DA_COMPILARE = /^«.*»$/;
 
@@ -82,9 +105,16 @@
   const todo = v => (DA_COMPILARE.test(v) || invalidi().has(v))
     ? `<mark class="legal-todo">${v}</mark>`
     : v;
-  const mancanti = () => Object.entries(LEGAL_CONFIG)
-    .filter(([k, v]) => typeof v === "string" && (DA_COMPILARE.test(v) || nonValido(k, v)))
-    .map(([k]) => k);
+  /* Scandisce anche gli oggetti annidati (es. gestoreIntermediario):
+     un campo lasciato in sospeso lì dentro conta quanto uno di primo
+     livello. */
+  function mancanti(obj = LEGAL_CONFIG, prefisso = "") {
+    return Object.entries(obj).flatMap(([k, v]) => {
+      if (v && typeof v === "object" && !Array.isArray(v)) return mancanti(v, k + ".");
+      if (typeof v !== "string") return [];
+      return (DA_COMPILARE.test(v) || nonValido(k, v)) ? [prefisso + k] : [];
+    });
+  }
 
   const C = LEGAL_CONFIG;
 
@@ -392,11 +422,14 @@
     <p>${C.brand} è una <strong>piattaforma tecnologica di visibilità e messa in contatto</strong> tra
     utenti che cercano informazioni o preventivi assicurativi e intermediari iscritti al Registro
     Unico degli Intermediari assicurativi e riassicurativi (RUI) tenuto dall'IVASS.</p>
-    <p class="legal-callout"><strong>${C.brand} non è un intermediario assicurativo.</strong> Non svolge
-    attività di distribuzione assicurativa ai sensi dell'art. 106 del d.lgs. 209/2005 (Codice delle
-    Assicurazioni Private) e del Regolamento IVASS n. 40/2018, non è iscritta al RUI, non colloca
-    polizze, non presta consulenza assicurativa, non percepisce provvigioni sui contratti conclusi e
-    non partecipa in alcun modo al rapporto contrattuale che si instaura tra utente e intermediario.</p>
+    <p class="legal-callout"><strong>La piattaforma non svolge attività di distribuzione
+    assicurativa</strong> ai sensi dell'art. 106 del d.lgs. 209/2005 e del Regolamento IVASS n. 40/2018:
+    non colloca polizze, non percepisce provvigioni sui contratti conclusi e non partecipa al rapporto
+    contrattuale che si instaura tra utente e intermediario.<br>
+    <strong>Il gestore del sito è però un intermediario iscritto alla sezione
+    ${esc(C.gestoreIntermediario.sezioneRui)} del RUI ed è presente tra i professionisti in vetrina:</strong>
+    la circostanza è dichiarata per esteso nelle <a href="#/note-legali">note legali</a>, che ti invitiamo
+    a leggere prima di conferire i tuoi dati.</p>
 
     <h2>2. Definizioni</h2>
     <ul>
@@ -517,15 +550,31 @@
     </ul>
 
     <h2>2. Natura dell'attività — avvertenza fondamentale</h2>
-    <p class="legal-callout"><strong>${C.brand} non è un intermediario assicurativo e non è iscritta al
-    RUI.</strong> La piattaforma non svolge attività di distribuzione assicurativa ai sensi dell'art. 106
-    del Codice delle Assicurazioni Private (d.lgs. 209/2005), non propone né conclude contratti di
-    assicurazione, non presta assistenza o consulenza finalizzata alla loro conclusione, non incassa
-    premi e non percepisce provvigioni.</p>
-    <p>L'attività si esaurisce nella <strong>pubblicazione di contenuti informativi</strong> e nella
-    <strong>messa in contatto</strong> tra utente e intermediario, il quale opera in piena autonomia,
-    sotto la propria responsabilità e nel rispetto degli obblighi che la normativa di settore pone a
-    suo carico.</p>
+    <p class="legal-callout"><strong>La piattaforma ${C.brand} non svolge attività di distribuzione
+    assicurativa</strong> ai sensi dell'art. 106 del Codice delle Assicurazioni Private (d.lgs.
+    209/2005): non propone né conclude contratti di assicurazione, non incassa premi e non percepisce
+    provvigioni sui contratti conclusi dagli intermediari presenti. L'attività del sito si esaurisce
+    nella <strong>pubblicazione di contenuti informativi</strong> e nella <strong>messa in contatto</strong>
+    tra utente e intermediario.</p>
+    <p class="legal-callout"><strong>Il gestore del sito è però esso stesso un intermediario
+    assicurativo.</strong> ${todo(C.gestoreIntermediario.nome)} è iscritto alla <strong>sezione
+    ${esc(C.gestoreIntermediario.sezioneRui)}</strong> del Registro Unico degli Intermediari
+    ${C.gestoreIntermediario.iscrittoDal ? `dal ${new Date(C.gestoreIntermediario.iscrittoDal).toLocaleDateString("it-IT")}` : ""}
+    ${C.gestoreIntermediario.numeroRui ? `con il n. <strong>${esc(C.gestoreIntermediario.numeroRui)}</strong>` : `<span class="legal-todo">(numero di iscrizione da inserire)</span>`},
+    come ${esc(C.gestoreIntermediario.attivita)}, e opera per conto di
+    ${todo(C.gestoreIntermediario.operaPerConto)}, l'intermediario che risponde di lui nei confronti
+    dell'IVASS.</p>
+    <p>Ne discende un punto che riteniamo giusto dichiarare apertamente, invece di lasciarlo dedurre:
+    <strong>il gestore è anche uno dei professionisti presenti in vetrina</strong>. Quando lo contatti
+    tramite il sito, il rapporto che nasce è a tutti gli effetti un rapporto di intermediazione
+    assicurativa, soggetto agli obblighi di informativa, correttezza e trasparenza del d.lgs. 209/2005
+    e dei regolamenti IVASS n. 40/2018 e n. 41/2018 — obblighi che restano a suo carico esattamente
+    come per ogni altro intermediario iscritto.</p>
+    <p>Gli altri intermediari presenti operano in piena autonomia, sotto la propria responsabilità e
+    nel rispetto degli obblighi che la normativa di settore pone a loro carico. ${C.brand} non
+    percepisce alcun compenso dai professionisti in vetrina e non ne condiziona il posizionamento in
+    cambio di corrispettivi: l'ordinamento dei profili dipende esclusivamente dall'attività di
+    risposta e dai voti ricevuti dagli utenti.</p>
 
     <h2>3. Valore dei contenuti della bacheca</h2>
     <p>Le domande e le risposte pubblicate, comprese quelle a firma “Redazione ${C.brand}”, hanno

@@ -34,17 +34,21 @@
       id: "b1",
       nome: "Riccardo Di Falco",
       ruolo: "Collaboratore",
-      azienda: "«Ragione sociale dell'intermediario di riferimento»",
+      /* Dati da visura camerale CCIAA Milano Monza Brianza Lodi.
+         È anche il gestore del sito: la circostanza è dichiarata
+         nelle note legali. */
+      azienda: "Di Falco Riccardo — impresa individuale",
+      gestoreDelSito: true,
       /* Sezione E: collaboratore di un intermediario iscritto in
          sezione A, B o D, che risponde di lui verso l'IVASS. */
       ruiSezione: "E",
       ruiDal: "2021-06-21",         // data comunicata dal titolare
       rui: "E000000000",            // ← SEGNAPOSTO: sostituire col numero reale
       statoVerifica: "in_attesa",
-      citta: "«Città»",
+      citta: "Opera (MI)",
       tel: "«+39 ...»",
-      email: "«email professionale»",
-      bio: "«Due righe su come aiuti i tuoi clienti: rami di specializzazione, tipo di clientela, tempi di risposta.»",
+      email: "r.difalco@lori-crm.it",
+      bio: "Addetto all'intermediazione assicurativa fuori dei locali dell'intermediario, iscritto alla sezione E del RUI dal giugno 2021.",
       spec: ["Auto", "Casa", "Vita"],
       punti: 0,
       risposte: 0
