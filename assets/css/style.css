@@ -638,3 +638,9 @@ p { line-height: 1.6; }
   .admin-pro { grid-template-columns: 1fr; }
   .admin-pro-card { max-width: 380px; }
 }
+
+/* ---------- CTA presente ma non ancora attivabile ---------- */
+.btn-disabled {
+  opacity: .55; cursor: not-allowed; pointer-events: none;
+  box-shadow: none;
+}

@@ -262,6 +262,15 @@ function ruiLabel(b) {
   return `RUI sez. ${esc(b.ruiSezione || "—")}${dal} · <span class="rui-pending">n. in verifica</span>`;
 }
 
+/* CTA "CHIAMA": presente su ogni scheda. Finché il recapito non è
+   stato inserito resta visibile ma inattiva, così la scheda mostra
+   comunque l'azione principale senza offrire un link telefonico rotto. */
+function ctaChiama(b) {
+  return (!b.tel || DA_COMPILARE(b.tel))
+    ? `<span class="btn btn-primary btn-sm btn-disabled" aria-disabled="true" title="Recapito telefonico non ancora disponibile">📞 CHIAMA</span>`
+    : `<a class="btn btn-primary btn-sm" href="tel:${esc(b.tel)}">📞 CHIAMA</a>`;
+}
+
 /* QuotaPass component */
 function qpass(b, flat = false) {
   return `
@@ -300,7 +309,7 @@ views.home = () => {
     <div class="container hero-inner">
       <div class="rise">
         <span class="eyebrow">Marketplace assicurativo italiano</span>
-        <h1>Assicurazioni al miglior prezzo, in un solo marketplace.</h1>
+        <h1>QuotaFacile — il primo marketplace per agenti assicurativi</h1>
         <p class="lead">Trova l'intermediario giusto, confronta e risparmia sulle tue polizze. Professionisti verificati RUI, contatto diretto, zero costi per te.</p>
         <div class="hero-actions">
           <a href="#/preventivo" class="btn btn-gold">Richiedi un preventivo gratuito</a>
@@ -356,8 +365,8 @@ views.home = () => {
           <div class="pass-wrap">
             ${qpass(b, true)}
             <div class="pass-actions">
-              ${DA_COMPILARE(b.tel) ? "" : `<a class="btn btn-outline btn-sm" href="tel:${esc(b.tel)}">📞 Chiama</a>`}
-              <a class="btn btn-primary btn-sm" href="#/preventivo?to=${b.id}">Richiedi consulenza</a>
+              ${ctaChiama(b)}
+              <a class="btn btn-outline btn-sm" href="#/preventivo?to=${b.id}">Consulenza</a>
             </div>
           </div>`).join("")}
       </div>
@@ -515,9 +524,9 @@ views.intermediari = () => {
           ${qpass(b, true)}
           <p class="muted" style="font-size:.88rem;margin:.1rem 0">${campo(b.bio)}</p>
           <div class="pass-actions">
-            ${DA_COMPILARE(b.tel) ? "" : `<a class="btn btn-outline btn-sm" href="tel:${esc(b.tel)}">📞 Chiama</a>`}
+            ${ctaChiama(b)}
             ${DA_COMPILARE(b.email) ? "" : `<a class="btn btn-outline btn-sm" href="mailto:${esc(b.email)}">✉️ Email</a>`}
-            <a class="btn btn-primary btn-sm" href="#/preventivo?to=${b.id}">Consulenza</a>
+            <a class="btn btn-outline btn-sm" href="#/preventivo?to=${b.id}">Consulenza</a>
           </div>
         </div>`).join("") || `<p class="muted">Nessun intermediario per questa categoria (per ora).</p>`}
       </div>
@@ -657,8 +666,8 @@ views.faqDetail = (id) => {
             : `<p style="margin:.2rem 0">${esc(r.testo)}</p>`}
           ${r.auto ? `<p class="muted" style="font-size:.72rem;margin:.5rem 0 0">Contenuto redazionale a carattere divulgativo: non è consulenza personalizzata. Gli intermediari iscritti al RUI possono integrarlo qui sotto con la propria esperienza.</p>` : ""}
           ${!r.auto && a.id ? `<div class="pass-actions" style="margin-top:.7rem;max-width:340px">
-            ${a.tel ? `<a class="btn btn-outline btn-sm" href="tel:${esc(a.tel)}">📞 Chiama</a>` : ""}
-            <a class="btn btn-primary btn-sm" href="#/preventivo?to=${a.id}">Chiedi consulenza</a>
+            ${ctaChiama(a)}
+            <a class="btn btn-outline btn-sm" href="#/preventivo?to=${a.id}">Chiedi consulenza</a>
           </div>` : ""}
           <div class="answer-foot">
             <button class="report-btn" data-report="${f.id}:${i}" title="Segnala questo contenuto">🚩 Segnala</button>
