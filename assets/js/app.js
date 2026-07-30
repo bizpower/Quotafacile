@@ -522,6 +522,7 @@ views.intermediari = () => {
         ${list.map(b => `
         <div class="pass-wrap">
           ${qpass(b, true)}
+          ${b.operaPerConto ? `<p class="opera-per">Opera per conto di <strong>${campo(b.operaPerConto)}</strong></p>` : ""}
           ${b.gestoreDelSito ? `<p class="nota-gestore">ℹ️ Gestisce QuotaFacile ed è presente in vetrina come intermediario: <a href="#/note-legali">leggi cosa comporta</a>.</p>` : ""}
           <p class="muted" style="font-size:.88rem;margin:.1rem 0">${campo(b.bio)}</p>
           <div class="pass-actions">
