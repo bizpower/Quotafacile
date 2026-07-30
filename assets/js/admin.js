@@ -66,7 +66,6 @@
   }
 
   /* ---------------- UTILITÀ DATI ---------------- */
-  const d = DB => DB;
   const giorniFa = n => new Date(Date.now() - n * 86400000);
 
   /* Accesso unificato alle risposte, qualunque sia il tipo di domanda */

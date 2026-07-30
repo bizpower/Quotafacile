@@ -308,12 +308,12 @@ views.home = () => {
   <section class="hero">
     <div class="container hero-inner">
       <div class="rise">
-        <span class="eyebrow">Marketplace assicurativo italiano</span>
+        <span class="eyebrow">La vetrina degli intermediari assicurativi</span>
         <h1>QuotaFacile — il primo marketplace per agenti assicurativi</h1>
-        <p class="lead">Trova l'intermediario giusto, confronta e risparmia sulle tue polizze. Professionisti verificati RUI, contatto diretto, zero costi per te.</p>
+        <p class="lead">Agenti, broker e collaboratori iscritti al RUI mettono in vetrina competenza e recapiti. Chi cerca una polizza li trova, li confronta e li chiama direttamente: nessuna commissione, nessun intermediario nascosto.</p>
         <div class="hero-actions">
-          <a href="#/preventivo" class="btn btn-gold">Richiedi un preventivo gratuito</a>
-          <a href="#/professionisti" class="btn btn-light">Sei un intermediario?</a>
+          <a href="#/area-pro" class="btn btn-gold">Crea la tua QuotaPass — gratis</a>
+          <a href="#/preventivo" class="btn btn-light">Cerchi una polizza?</a>
         </div>
         <div class="hero-trust">
           <div><strong>${DB.brokers.length + (DB.proProfile ? 1 : 0)}</strong><span>intermediari iscritti</span></div>
