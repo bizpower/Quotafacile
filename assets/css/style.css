@@ -650,3 +650,11 @@ p { line-height: 1.6; }
 .recapiti-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .55rem 0; border-bottom: 1px solid var(--line); font-size: .9rem; flex-wrap: wrap; }
 .recapiti-row:last-of-type { border-bottom: 0; }
 .recapiti-row strong { font-family: var(--font-body); color: var(--green-800); }
+
+/* ---------- Trasparenza: gestore del sito in vetrina ---------- */
+.nota-gestore {
+  font-size: .78rem; line-height: 1.5; margin: .1rem 0 0;
+  background: var(--gold-100); border: 1px solid rgba(226,166,61,.45);
+  border-radius: 10px; padding: .5rem .7rem; color: #7A5410;
+}
+.nota-gestore a { color: #7A5410; text-decoration: underline; }
