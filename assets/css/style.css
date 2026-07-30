@@ -658,3 +658,7 @@ p { line-height: 1.6; }
   border-radius: 10px; padding: .5rem .7rem; color: #7A5410;
 }
 .nota-gestore a { color: #7A5410; text-decoration: underline; }
+
+/* ---------- Sezione E: intermediario per cui si opera ---------- */
+.opera-per { font-size: .8rem; color: var(--ink-soft); margin: .1rem 0 0; }
+.opera-per strong { color: var(--ink); font-weight: 600; }

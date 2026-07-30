@@ -45,6 +45,10 @@
       ruiDal: "2021-06-21",         // data comunicata dal titolare
       rui: "E000000000",            // ← SEGNAPOSTO: sostituire col numero reale
       statoVerifica: "in_attesa",
+      /* La sezione E opera per conto di un intermediario iscritto in
+         sezione A, B o D: il Reg. IVASS 40/2018 impone di indicarlo
+         nelle comunicazioni rivolte al pubblico. */
+      operaPerConto: "Colombo & Partners S.r.l., Cernusco sul Naviglio (MI)",
       citta: "Opera (MI)",
       tel: "«+39 ...»",
       email: "r.difalco@lori-crm.it",
@@ -62,6 +66,7 @@
       ruiDal: "2022-03-15",         // ← data provvisoria, da confermare
       rui: "E000000000",            // ← SEGNAPOSTO: sostituire col numero reale
       statoVerifica: "in_attesa",
+      operaPerConto: "«intermediario di sez. A, B o D per cui opera»",
       citta: "«Città»",
       tel: "«+39 ...»",
       email: "«email professionale»",

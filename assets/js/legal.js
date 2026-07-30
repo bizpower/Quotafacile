@@ -45,7 +45,7 @@
       /* La sezione E opera per conto di un intermediario iscritto in
          sezione A, B o D, che risponde di lui verso l'IVASS: il
          Reg. IVASS 40/2018 ne impone l'indicazione nelle comunicazioni. */
-      operaPerConto: "«intermediario di sezione A, B o D per cui operi»"
+      operaPerConto: "Colombo & Partners S.r.l., Cernusco sul Naviglio (MI)"
     },
 
     /* Contatti operativi (devono essere caselle realmente attive) */
@@ -103,8 +103,8 @@
   const invalidi = () => new Set(Object.entries(LEGAL_CONFIG)
     .filter(([k, v]) => nonValido(k, v)).map(([, v]) => v));
   const todo = v => (DA_COMPILARE.test(v) || invalidi().has(v))
-    ? `<mark class="legal-todo">${v}</mark>`
-    : v;
+    ? `<mark class="legal-todo">${esc(v)}</mark>`
+    : esc(v);
   /* Scandisce anche gli oggetti annidati (es. gestoreIntermediario):
      un campo lasciato in sospeso lì dentro conta quanto uno di primo
      livello. */

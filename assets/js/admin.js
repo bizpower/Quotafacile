@@ -175,6 +175,7 @@
             <tr><th>Numero RUI</th><td>${b.rui ? `<code>${esc(b.rui)}</code>` : `<span class="rui-pending">non ancora inserito</span>`}</td></tr>
             <tr><th>Sezione</th><td>${esc(b.ruiSezione || "—")}</td></tr>
             <tr><th>Iscritto dal</th><td>${b.ruiDal ? new Date(b.ruiDal).toLocaleDateString("it-IT") : "—"}</td></tr>
+            <tr><th>Opera per conto di</th><td>${b.operaPerConto ? QF().campo(b.operaPerConto) : "—"}</td></tr>
             <tr><th>Contatti</th><td>${QF().campo(b.tel)} · ${QF().campo(b.email)}</td></tr>
             <tr><th>Attività</th><td>${b.risposte || 0} risposte · ${b.punti || 0} punti · ${QF().livello(b.punti || 0)}</td></tr>
           </table>
