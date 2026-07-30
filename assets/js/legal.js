@@ -230,7 +230,15 @@
       dati come autonomo titolare</strong>, per finalità proprie e sotto la propria responsabilità, con
       una propria informativa che sei invitato a richiedergli. ${C.brand} non risponde dei
       trattamenti da lui effettuati.</li>
-      <li><strong>A fornitori tecnici</strong> (hosting, posta elettronica, eventuale invio email), nominati
+      <li><strong>Al servizio che recapita i moduli via email.</strong> Il sito non dispone di un server
+      proprio: i dati inseriti nei moduli (richiesta di preventivo, domanda in bacheca, registrazione
+      professionista, iscrizione alla lista d'attesa dell'app) transitano da un fornitore
+      <em>form-to-email</em> che li inoltra alle caselle di destinazione. Il fornitore è nominato
+      <strong>responsabile del trattamento</strong> ai sensi dell'art. 28 GDPR, tratta i dati solo per
+      la consegna e non li utilizza per finalità proprie. Il nome del fornitore in uso è indicato in
+      <code>assets/js/mailer.js</code> ed è comunicato su richiesta a
+      <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>.</li>
+      <li><strong>Ad altri fornitori tecnici</strong> (hosting, posta elettronica), anch'essi nominati
       responsabili del trattamento ai sensi dell'art. 28 GDPR.</li>
       <li><strong>All'Autorità giudiziaria o alle autorità di vigilanza</strong>, quando previsto per legge.</li>
     </ul>
@@ -239,7 +247,10 @@
     di marketing.</p>
 
     <h2>6. Trasferimento fuori dall'Unione Europea</h2>
-    <p>Il sito è ospitato su ${C.hosting}. ${C.hostingNota}. Eventuali trasferimenti verso paesi terzi
+    <p>Il sito è ospitato su ${C.hosting}. ${C.hostingNota}. Anche il servizio che recapita i moduli via
+    email può avere infrastruttura negli Stati Uniti: verifica il fornitore effettivamente configurato
+    e la base giuridica del trasferimento prima di raccogliere dati da utenti reali.
+    Eventuali trasferimenti verso paesi terzi
     avvengono sulla base di una decisione di adeguatezza della Commissione europea o delle Clausole
     Contrattuali Standard (art. 46 GDPR). L'elenco aggiornato dei fornitori è disponibile su richiesta
     a <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>.</p>
