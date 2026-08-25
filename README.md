@@ -19,7 +19,11 @@ quotafacile/
 │   ├── js/admin.js               # 🔐 Console riservata (#/admin): KPI, moderazione, keyword
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
-├── robots.txt
+├── api/invia.js                  # 📮 Funzione serverless di consegna (Vercel)
+├── .github/workflows/            # Pubblicazione su Pages, attivazione casella email
+├── llms.txt                      # 🤖 Presentazione del sito per i motori generativi
+├── vercel.json                   # Intestazioni di sicurezza e cache
+├── robots.txt                    # Include le regole per i crawler AI
 ├── sitemap.xml
 └── README.md
 ```
@@ -49,7 +53,8 @@ Puoi anche azzerare tutto e mettere 200 voci CURATED: il sistema pubblica in ord
 | **Directory** | Griglia di QuotaPass filtrabile per ramo, con Chiama / Email / Consulenza |
 | **Bacheca Q&A** | Domanda del giorno + domande della community, risposte firmate, voti "utile", classifica esperti live |
 
-> Nota demo: alla creazione del profilo la dashboard viene popolata con lead di esempio; in produzione andranno tracciati i contatti reali (click su Chiama/Email, form consulenza).
+> La dashboard del professionista mostra **solo contatti reali**: nessun lead di esempio precaricato.
+> I click su CHIAMA ed Email non sono ancora tracciati — servirebbe un backend.
 
 ## Avvio locale
 
@@ -61,37 +66,42 @@ open index.html
 npx serve .
 ```
 
-## Deploy su GitHub Pages
+## 🚀 Pubblicazione
 
-```bash
-git init
-git add .
-git commit -m "QuotaFacile v1"
-git branch -M main
-git remote add origin https://github.com/TUO-USERNAME/quotafacile.git
-git push -u origin main
-```
+Il progetto è servibile così com'è: nessun passaggio di build.
 
-Poi su GitHub: **Settings → Pages → Source: main / root**. Il sito sarà su `https://TUO-USERNAME.github.io/quotafacile/`.
+### GitHub Pages
+`.github/workflows/deploy-pages.yml` pubblica ad ogni push su `main`. **Pages va abilitato a mano
+una volta sola** — Settings → Pages → Source: `GitHub Actions` — perché crearlo richiede permessi
+di amministrazione che il token delle Actions non possiede. Finché non è fatto il workflow si ferma
+con un avviso esplicativo invece di fallire.
 
-> Aggiorna `sitemap.xml`, i tag `canonical`/`og:url` in `index.html` con il dominio definitivo.
+Su Pages le funzioni serverless non esistono: `api/invia.js` non gira e il sito ripiega
+sull'invio diretto dal browser.
+
+### Vercel
+`vercel.json` è già presente, con intestazioni di sicurezza e cache degli asset. Collegando il
+repository si ottiene anche `api/invia.js` funzionante: ricordarsi di impostare
+`QF_WEB3FORMS_KEY` fra le variabili d'ambiente del progetto.
 
 ### Gamification (la SEO del portale)
 - **+10 pt** risposta pubblicata · **+5 pt** voto utile · **+25 pt** migliore risposta
 - Livelli: Novizio → Consulente (50) → Esperto (150) → **Top Advisor (300)**
 - I Top Advisor finiscono in evidenza in home → incentivo a produrre contenuto → contenuto = pagine indicizzabili
 
-## SEO: cosa c'è e prossimo step
+## SEO: il limite che resta
 
-**Già incluso:**
-- Meta title/description/keywords come da brief, Open Graph, Twitter card, canonical
-- JSON-LD statico (`Organization`, `WebSite` + `SearchAction`)
-- JSON-LD **dinamico `FAQPage`** rigenerato ad ogni navigazione della bacheca e delle singole domande
-- `robots.txt` + `sitemap.xml`
+Questa è una SPA con routing `#/`. Gli URL con il cancelletto **non vengono indicizzati come
+pagine separate**: per Google esiste una sola pagina, e tutto il lavoro sulle guide vale meno di
+quanto potrebbe. È il collo di bottiglia più serio rimasto sul fronte organico.
 
-**Nota importante:** questa v1 è una SPA con routing `#/`. Per sfruttare al massimo la genialata Q&A su Google, il passo successivo è servire ogni domanda come **pagina statica con URL proprio** (es. `/faq/classe-di-merito-auto-nuova/`), perché gli URL con `#` non vengono indicizzati come pagine separate. Opzioni, in ordine di sforzo:
-1. **Prerender/SSG**: uno script che genera un file HTML per ogni FAQ dal database (il markup c'è già).
-2. Migrazione a **Astro/Next.js** con backend (Supabase/Firebase) quando i contenuti diventano reali.
+Le due strade, in ordine di sforzo:
+
+1. **Prerender** — uno script che genera un file HTML statico per ogni guida (`/guide/assicurazione-monopattino-elettrico-obbligatoria/`). Il markup e i dati strutturati esistono già: serve solo scriverli su disco.
+2. **Migrazione ad Astro o Next.js** con backend, quando i contenuti diventano reali e condivisi.
+
+Fino ad allora le guide restano ottime per chi arriva sul sito e per i motori generativi (che
+leggono la pagina renderizzata), ma partono handicappate sulla ricerca tradizionale.
 
 ## 📬 Consegna delle richieste via email
 
@@ -109,16 +119,37 @@ I recapiti che il professionista inserisce nel proprio profilo **sono le destina
 CHIAMA compone quel numero, le richieste di consulenza scrivono a quell'indirizzo. La sua dashboard
 lo dichiara esplicitamente — non esiste una casella interna da controllare.
 
-> ⚠️ **Attivazione, una volta sola.** Con FormSubmit la prima richiesta inviata a un indirizzo non
-> viene recapitata: arriva invece un'email di conferma con un link da cliccare. Vale per la casella
-> della piattaforma **e per quella di ogni professionista**. Fai una richiesta di prova e conferma.
+### Le due strade
+
+1. **`api/invia.js`** — funzione serverless (Vercel o equivalente). È la strada da preferire:
+   l'indirizzo di destinazione non compare nel sorgente della pagina, niente CORS, niente chiavi
+   lato client. Il browser la chiama e, se l'host non ha funzioni serverless, ripiega da solo.
+2. **Invio diretto dal browser** — ripiego automatico, usato su host puramente statici come
+   GitHub Pages.
+
+### ⚠️ Usa Web3Forms, non FormSubmit
+
+**Verificato sul campo** eseguendo il workflow di attivazione su un runner GitHub: FormSubmit è
+dietro una protezione Cloudflare che alle chiamate **provenienti da server** risponde con una
+pagina di sfida (`Just a moment…`) invece che con l'API. Dai browser degli utenti passa, da un
+datacenter no — e la funzione serverless gira proprio su un datacenter.
+
+Per renderla operativa:
+
+1. registra una chiave gratuita su [web3forms.com](https://web3forms.com) (nessuna carta richiesta);
+2. impostala come variabile d'ambiente `QF_WEB3FORMS_KEY` sull'host;
+3. opzionale: `QF_DESTINATARIO` per cambiare la casella della piattaforma.
+
+Con Web3Forms **non serve alcuna attivazione per indirizzo**, né per la piattaforma né per i
+professionisti. Con FormSubmit invece la prima richiesta verso ogni nuovo indirizzo non viene
+recapitata: arriva un'email di conferma con un link da cliccare, e quella prima richiesta deve
+partire da un browser vero (il workflow
+`.github/workflows/attiva-casella-email.yml` esiste per questo, ma da runner viene bloccato).
 
 > 🔒 **Se la consegna fallisce nessun dato va perso:** l'utente vede una schermata con un `mailto:`
 > già compilato e un solo pulsante da premere, e la richiesta resta comunque registrata nei KPI.
-
-**Consigliato prima del traffico reale:** passare a Web3Forms (`provider: "web3forms"` + chiave
-gratuita) oppure all'alias FormSubmit — così l'indirizzo di destinazione non resta leggibile nel
-sorgente e non viene raccolto dagli spambot.
+> La consegna non viene mai data per riuscita basandosi sul solo stato HTTP: questi servizi
+> rispondono `200` anche quando non hanno recapitato nulla.
 
 Il fornitore è un **responsabile del trattamento** ex art. 28 GDPR ed è dichiarato nella Privacy
 Policy: cambiando provider va aggiornata anche quella sezione in `legal.js`.
