@@ -2,6 +2,15 @@ name: Pubblica su GitHub Pages
 
 # Il sito è HTML/CSS/JS statico senza build: la cartella viene
 # pubblicata così com'è ad ogni push su main.
+#
+# ⚠️ Prima esecuzione utile: GitHub Pages va abilitato a mano una volta
+# sola, perché crearlo richiede permessi di amministrazione che il token
+# delle Actions non ha. Finché non è fatto, questo workflow si ferma
+# subito con un avviso esplicativo invece di fallire: un errore rosso ad
+# ogni merge non aiuta nessuno a capire cosa manca.
+#
+# Come abilitarlo: Settings → Pages → Source: "GitHub Actions".
+
 on:
   push:
     branches: [main]
@@ -17,7 +26,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verifica:
+    runs-on: ubuntu-latest
+    outputs:
+      attivo: ${{ steps.stato.outputs.attivo }}
+    steps:
+      - name: Pages è già abilitato?
+        id: stato
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CODICE=$(curl -sS -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pages")
+
+          if [ "$CODICE" = "200" ]; then
+            echo "attivo=si" >> "$GITHUB_OUTPUT"
+            echo "GitHub Pages è abilitato: procedo con la pubblicazione."
+          else
+            echo "attivo=no" >> "$GITHUB_OUTPUT"
+            echo "::warning::GitHub Pages non è ancora abilitato su questo repository (risposta $CODICE), quindi non c'è nulla da pubblicare. Abilitalo una volta sola in Settings → Pages → Source: \"GitHub Actions\", poi rilancia questo workflow. Da quel momento ogni push su main pubblicherà automaticamente."
+          fi
+
   deploy:
+    needs: verifica
+    if: needs.verifica.outputs.attivo == 'si'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -26,9 +60,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Configura Pages
         uses: actions/configure-pages@v5
-        with:
-          # crea il sito Pages se non è ancora stato attivato a mano
-          enablement: true
       - name: Prepara l'artefatto
         uses: actions/upload-pages-artifact@v3
         with:
