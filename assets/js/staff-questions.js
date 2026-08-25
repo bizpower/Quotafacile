@@ -248,6 +248,159 @@
 
         <p>Questa è materia di confine tra diritto e assicurazione: prima di firmare, fatti analizzare il contratto da un intermediario che lavori abitualmente sul ramo vita e, se il patrimonio è rilevante, affiancagli un legale. La differenza tra una polizza protetta e una attaccabile sta in clausole che si leggono in dieci minuti — se sai dove guardare.</p>
       `
+    },
+    /* ---------------------------------------------------------
+       KEYWORD 6-9 — query PROCEDURALI.
+       Sono la miniera meno sfruttata del settore: chi cerca
+       "come faccio a…" ha un problema aperto adesso, e la SERP
+       risponde con definizioni generiche invece che con la
+       procedura. Valgono doppio anche per i motori generativi
+       (ChatGPT, Perplexity, AI Overviews), che citano
+       volentieri chi espone passaggi numerati, termini precisi
+       e riferimenti normativi verificabili.
+       --------------------------------------------------------- */
+    {
+      id: "k6",
+      cat: "Auto",
+      keyword: "classe di merito sbagliata come farla correggere",
+      titolo: "Classe di merito sbagliata: come farla correggere",
+      volume: "≈ 400–1.200/mese",
+      difficolta: "Bassa",
+      intento: "Procedurale, problema aperto",
+      data: "2026-07-31",
+      domanda: "La mia classe di merito è sbagliata: come faccio a farla correggere?",
+      meta: "L'errore va contestato alla compagnia che ha emesso l'attestato di rischio. La procedura passo per passo e cosa fare se non risponde.",
+      risposta: `
+        <p><strong>L'errore va contestato per iscritto alla compagnia che ha emesso l'attestato di rischio, non a quella nuova.</strong> È lei l'unica che può correggere il dato nella banca dati ANIA, ed è tenuta a farlo se la segnalazione è fondata. Nel frattempo continui a pagare un premio più alto del dovuto, quindi la fretta è giustificata.</p>
+
+        <h4>Prima verifica di avere ragione</h4>
+        <p>La classe che conta è la <strong>CU (Classe Universale)</strong>, non la classe interna della compagnia: sono due numeri diversi e vengono confusi in continuazione. La classe interna è un parametro commerciale della singola impresa e può peggiorare senza che la CU cambi. Controlla la CU sull'attestato di rischio, che la compagnia deve mettere a disposizione nell'area riservata <strong>almeno 30 giorni prima della scadenza</strong>.</p>
+
+        <h4>La procedura, nell'ordine</h4>
+        <ol>
+          <li><strong>Recupera i documenti:</strong> attestato di rischio contestato, quello dell'anno precedente e, se l'errore riguarda un sinistro, la documentazione che ne dimostra l'esito.</li>
+          <li><strong>Scrivi un reclamo formale alla compagnia emittente</strong>, via PEC o raccomandata: indica numero di polizza, targa, il dato errato e quello corretto. Chiedi espressamente la rettifica nella banca dati ANIA.</li>
+          <li><strong>Aspetta 45 giorni.</strong> È il termine massimo entro cui la compagnia deve rispondere a un reclamo.</li>
+          <li><strong>Se non risponde o rifiuta</strong>, presenta reclamo all'<strong>IVASS</strong> allegando quello inviato alla compagnia e l'eventuale risposta.</li>
+        </ol>
+
+        <h4>I due errori più frequenti</h4>
+        <ul>
+          <li><strong>Un sinistro attribuito per intero quando la responsabilità era paritaria.</strong> Con il concorso di colpa il malus si applica in proporzione: se ti hanno applicato il 100% controlla la constatazione amichevole.</li>
+          <li><strong>La classe non ereditata dopo una Legge Bersani o RC familiare.</strong> Capita quando lo stato di famiglia non risultava aggiornato alla data di decorrenza.</li>
+        </ul>
+
+        <h4>Cosa recuperi</h4>
+        <p>Ottenuta la rettifica hai diritto al <strong>ricalcolo del premio</strong> e alla restituzione della differenza pagata in eccesso. Su una RC auto media parliamo di 150-400 euro l'anno, per ogni anno in cui l'errore ha prodotto effetti. Un intermediario iscritto al RUI può scrivere il reclamo al posto tuo e seguirlo: è esattamente il tipo di pratica in cui conoscere il linguaggio giusto accorcia i tempi.</p>
+      `
+    },
+    {
+      id: "k7",
+      cat: "Impresa",
+      keyword: "reclamo assicurazione IVASS come funziona",
+      titolo: "Reclamo contro l'assicurazione: la procedura completa",
+      volume: "≈ 700–2.000/mese",
+      difficolta: "Bassa",
+      intento: "Procedurale, alta urgenza",
+      data: "2026-07-31",
+      domanda: "L'assicurazione non mi risponde: come si presenta un reclamo e a chi?",
+      meta: "Prima alla compagnia, che ha 45 giorni per rispondere. Poi IVASS o Arbitro Assicurativo. Termini, indirizzi e cosa scrivere.",
+      risposta: `
+        <p><strong>Il reclamo si presenta sempre prima all'impresa o all'intermediario, che hanno 45 giorni per rispondere.</strong> Solo dopo — o se il termine scade nel silenzio — puoi rivolgerti all'IVASS. Saltare il primo passaggio fa respingere il reclamo per improcedibilità: è l'errore che vediamo più spesso.</p>
+
+        <h4>Passo 1 — Il reclamo all'impresa</h4>
+        <p>Va inviato per iscritto all'ufficio reclami, tramite PEC o raccomandata A/R. Deve contenere: i tuoi dati, il numero di polizza o di sinistro, una descrizione ordinata dei fatti, cosa chiedi e i documenti a supporto. Conserva la ricevuta: da lì decorrono i 45 giorni.</p>
+
+        <h4>Passo 2 — Il reclamo all'IVASS</h4>
+        <p>Se la risposta non arriva o non ti soddisfa, scrivi a <strong>IVASS — Servizio Tutela del Consumatore, Via del Quirinale 21, 00187 Roma</strong>, allegando copia del reclamo già inviato e dell'eventuale risposta. L'IVASS interviene sui comportamenti di imprese e intermediari: trasparenza, correttezza, rispetto dei termini.</p>
+
+        <h4>Cosa l'IVASS non può fare</h4>
+        <p class="muted">È il punto che fa perdere più tempo. <strong>L'IVASS non liquida i sinistri e non decide chi ha ragione nel merito economico</strong>: vigila sul comportamento. Se la contestazione riguarda l'<em>importo</em> del risarcimento o l'interpretazione di una clausola, gli strumenti sono altri:</p>
+        <ul>
+          <li><strong>Arbitro Assicurativo</strong>, per le controversie di valore contenuto, con procedura gratuita per il consumatore;</li>
+          <li><strong>Negoziazione assistita</strong>, obbligatoria prima della causa in materia di risarcimento da circolazione di veicoli;</li>
+          <li><strong>Giudice ordinario</strong>, per il resto.</li>
+        </ul>
+
+        <h4>I tre errori che affossano un reclamo valido</h4>
+        <ol>
+          <li><strong>Scriverlo per email ordinaria:</strong> senza PEC o raccomandata non hai prova della data, e i 45 giorni non decorrono.</li>
+          <li><strong>Raccontare i fatti in ordine sparso:</strong> date, numeri di sinistro e importi in sequenza valgono più di tre pagine di argomentazioni.</li>
+          <li><strong>Non allegare nulla:</strong> un reclamo senza documenti riceve una risposta interlocutoria e ricomincia da capo.</li>
+        </ol>
+
+        <p>Se il rapporto è nato tramite un intermediario iscritto al RUI, coinvolgilo: ha accesso diretto ai referenti della compagnia e spesso risolve prima che i 45 giorni scadano.</p>
+      `
+    },
+    {
+      id: "k8",
+      cat: "Auto",
+      keyword: "risarcimento sinistro troppo basso cosa fare",
+      titolo: "Risarcimento troppo basso: come contestare la perizia",
+      volume: "≈ 500–1.500/mese",
+      difficolta: "Bassa",
+      intento: "Procedurale, alto valore economico",
+      data: "2026-07-31",
+      domanda: "Il risarcimento offerto è troppo basso: posso contestare la perizia?",
+      meta: "Sì, e non sei obbligato ad accettare. Perito di parte, quietanza da non firmare e i passaggi per ottenere di più.",
+      risposta: `
+        <p><strong>Sì, puoi contestarla, e soprattutto non sei obbligato ad accettare la prima offerta.</strong> La perizia della compagnia è una valutazione di parte, non una sentenza. La regola d'oro è una sola: <strong>non firmare la quietanza finché non sei convinto</strong>, perché con quella firma dichiari il sinistro chiuso e rinunci a chiedere altro.</p>
+
+        <h4>Cosa fare, in ordine</h4>
+        <ol>
+          <li><strong>Chiedi la perizia per iscritto.</strong> Hai diritto a conoscere come è stato calcolato l'importo: voci, valori, coefficienti applicati.</li>
+          <li><strong>Confronta con preventivi reali.</strong> Due o tre preventivi di carrozzerie o di imprese sono il modo più semplice per dimostrare uno scostamento.</li>
+          <li><strong>Nomina un perito di parte.</strong> Costa in genere qualche centinaio di euro e in molti casi si ripaga da solo. Molte polizze prevedono il <strong>rimborso delle spese peritali</strong>: controlla, spesso c'è e nessuno lo usa.</li>
+          <li><strong>Attiva la tutela legale</strong>, se ce l'hai in polizza: copre perito e avvocato, e ha un massimale spesso ampio.</li>
+          <li><strong>Formalizza la contestazione</strong> con una richiesta motivata di riesame, allegando la perizia di parte.</li>
+        </ol>
+
+        <h4>Le voci che vengono dimenticate più spesso</h4>
+        <ul>
+          <li><strong>Svalutazione commerciale</strong> del veicolo incidentato, su danni rilevanti;</li>
+          <li><strong>Fermo tecnico</strong>, per i giorni in cui non hai potuto usare il mezzo;</li>
+          <li><strong>Spese di soccorso, custodia e demolizione</strong>;</li>
+          <li>sul danno alla persona, il <strong>danno morale</strong> e la <strong>personalizzazione</strong> del danno biologico, che non sono automatici e vanno chiesti.</li>
+        </ul>
+
+        <h4>Quando conviene fermarsi</h4>
+        <p>Se lo scostamento è di poche centinaia di euro e ti hanno già offerto una cifra coerente con i preventivi, insistere costa più di quanto rende. Se invece parliamo di migliaia di euro, di danno alla persona o di un veicolo dichiarato antieconomico, il confronto tecnico ha quasi sempre senso. Un intermediario iscritto al RUI può leggere la perizia con te e dirti in mezz'ora da che parte pende il conto.</p>
+      `
+    },
+    {
+      id: "k9",
+      cat: "Casa",
+      keyword: "polizza catastrofale immobile affittato chi paga",
+      titolo: "Polizza catastrofale su immobile affittato: chi paga",
+      volume: "≈ 250–800/mese",
+      difficolta: "Molto bassa",
+      intento: "Informativo → consulenza",
+      data: "2026-07-31",
+      domanda: "Ho un immobile affittato a un'impresa: la polizza catastrofale la pago io o l'inquilino?",
+      meta: "Dipende da chi ha il bene a bilancio. Proprietario, inquilino e il caso più frequente: entrambi, su cose diverse.",
+      risposta: `
+        <p><strong>L'obbligo segue chi ha il bene iscritto tra le immobilizzazioni materiali di bilancio.</strong> Se il fabbricato è tuo, l'obbligo sul fabbricato è tuo; l'impresa che lo occupa deve assicurare ciò che è suo — impianti, macchinari e attrezzature che ha installato. Nel caso più frequente <strong>entrambi hanno un obbligo, su cose diverse</strong>, ed è per questo che la domanda genera tanta confusione.</p>
+
+        <h4>Come si divide, in pratica</h4>
+        <ul>
+          <li><strong>Proprietario (impresa o società immobiliare):</strong> terreni e fabbricati iscritti a bilancio.</li>
+          <li><strong>Conduttore:</strong> impianti, macchinari, attrezzature di sua proprietà presenti nell'immobile, comprese le migliorie capitalizzate su bene di terzi.</li>
+          <li><strong>Persona fisica che affitta a un'impresa:</strong> non ha immobilizzazioni d'impresa, quindi <strong>l'obbligo di legge non lo riguarda</strong>. Il che non significa che sia protetto: senza copertura, un evento catastrofale sul fabbricato resta a suo carico per intero.</li>
+        </ul>
+
+        <h4>Il punto che il contratto d'affitto deve chiarire</h4>
+        <p>Un contratto ben scritto dice espressamente <strong>chi assicura cosa</strong>, con quali massimali, e prevede la <strong>rinuncia alla rivalsa</strong> reciproca tra le parti. Senza quella clausola, dopo un sinistro l'assicuratore di uno può rivalersi sull'altro: il classico contenzioso tra proprietario e inquilino che entrambi credevano impossibile.</p>
+
+        <h4>Da controllare subito</h4>
+        <ol>
+          <li>Che cosa risulta esattamente nelle <strong>immobilizzazioni materiali</strong> del tuo bilancio.</li>
+          <li>Se il contratto d'affitto contiene già obblighi assicurativi, e se sono conformi al nuovo obbligo.</li>
+          <li>Che i <strong>valori assicurati siano aggiornati</strong>: se fermi al costo storico, in caso di sinistro scatta la regola proporzionale e l'indennizzo viene ridotto.</li>
+          <li>Se hai <strong>bandi o incentivi pubblici</strong> in programma: senza polizza conforme la domanda viene respinta e le agevolazioni già concesse possono essere revocate.</li>
+        </ol>
+
+        <p>È la materia in cui una lettura incrociata di bilancio e contratto d'affitto vale più di qualunque preventivo online: falla fare a un intermediario prima di firmare.</p>
+      `
     }
   ];
 

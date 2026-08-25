@@ -1,0 +1,54 @@
+name: Attiva una casella per la ricezione delle richieste
+
+# Il servizio form-to-email richiede una conferma una tantum per ogni
+# indirizzo di destinazione: la manda solo quando riceve il primo invio
+# verso quella casella. Questo workflow produce quel primo invio, così
+# non serve attendere che il sito sia online né compilare un modulo.
+#
+# Da usare anche per ogni professionista che si iscrive: la sua casella
+# va attivata allo stesso modo prima che possa ricevere le richieste.
+#
+# Uso: Actions → questo workflow → "Run workflow" → indirizzo → Run.
+# Poi apri la casella indicata e clicca il link di conferma.
+
+on:
+  workflow_dispatch:
+    inputs:
+      indirizzo:
+        description: "Casella da attivare (deve poter ricevere posta)"
+        required: true
+        default: "r.difalco@lori-crm.it"
+
+jobs:
+  attiva:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Invia la richiesta di attivazione
+        env:
+          INDIRIZZO: ${{ inputs.indirizzo }}
+        run: |
+          set -euo pipefail
+          echo "Invio la richiesta di attivazione a: $INDIRIZZO"
+
+          RISPOSTA=$(curl -sS -X POST \
+            "https://formsubmit.co/ajax/$INDIRIZZO" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json" \
+            --max-time 45 \
+            -d "{
+              \"_subject\": \"QuotaFacile - attivazione della casella per le richieste\",
+              \"_template\": \"table\",
+              \"_captcha\": \"false\",
+              \"Messaggio\": \"Attivazione della casella che ricevera le richieste di preventivo dal sito QuotaFacile.\",
+              \"Origine\": \"Workflow di attivazione, repository bizpower/Quotafacile\"
+            }")
+
+          echo "Risposta del servizio:"
+          echo "$RISPOSTA"
+          echo ""
+
+          if echo "$RISPOSTA" | grep -qi '"success": *"\?true'; then
+            echo "::notice::Consegna riuscita: la casella $INDIRIZZO risulta gia attivata."
+          else
+            echo "::notice::Richiesta accettata. Ora apri $INDIRIZZO: dovresti trovare un'email di conferma (controlla anche nello spam) con un link da cliccare. Dopo quel clic le richieste del sito arriveranno normalmente."
+          fi
