@@ -169,6 +169,49 @@ mostra `RUI sez. E · dal gg/mm/aaaa · n. in verifica` e il badge "In verifica"
 I campi ancora da compilare si scrivono tra virgolette basse (`«Città»`) e vengono evidenziati in
 giallo nell'interfaccia invece di essere stampati come se fossero veri.
 
+## 🔎 Keyword map
+
+Il criterio non è il volume: è il **rapporto fra intento e concorrenza**. Le head keyword
+assicurative italiane sono presidiate da Facile.it, Segugio e Prima con budget a sei zeri —
+inseguirle è bruciare soldi. Si vince dove la SERP è occupata da chi *non* è del settore.
+
+| # | Keyword | Volume stimato | Difficoltà | Perché |
+|---|---|---|---|---|
+| k1 | assicurazione monopattino elettrico obbligatoria | 1.500–4.000 | Molto bassa | Obbligo dal 16/07/2026: SERP di sole notizie, nessuna pagina evergreen. Finestra a tempo |
+| k2 | polizza catastrofale obbligatoria micro imprese | 800–2.500 | Bassa | SERP di portali fiscali, zero intermediari. Lead B2B |
+| k3 | assicurazione casalinghe INAIL obbligatoria | 500–1.500 | Bassa | Obbligo che quasi nessuno conosce. Porta all'infortuni privato |
+| k4 | assicurazione cane obbligatoria | 1.000–2.500 | Medio-bassa | Comparatori con risposte di tre righe: si vince sulle esclusioni |
+| k5 | polizza vita pignorabile | 300–900 | Bassa | SERP di soli studi legali. Il lead più prezioso |
+| k6 | classe di merito sbagliata come farla correggere | 400–1.200 | Bassa | Procedurale: problema aperto adesso |
+| k7 | reclamo assicurazione IVASS come funziona | 700–2.000 | Bassa | Procedurale ad alta urgenza |
+| k8 | risarcimento sinistro troppo basso cosa fare | 500–1.500 | Bassa | Procedurale, alto valore economico |
+| k9 | polizza catastrofale immobile affittato chi paga | 250–800 | Molto bassa | Nicchia B2B senza risposte chiare in SERP |
+
+> ⚠️ I volumi sono **stime ragionate** su SERP e stagionalità, non dati di Keyword Planner.
+> La gerarchia relativa regge; i valori assoluti vanno confermati con Keyword Planner,
+> Ahrefs o Semrush prima di costruirci sopra un piano editoriale.
+
+**Le query procedurali (k6-k9) sono la miniera meno sfruttata del settore.** Chi cerca
+"come faccio a…" ha un problema aperto adesso, e la SERP gli risponde con definizioni.
+Valgono doppio sui motori generativi, che citano volentieri chi espone passaggi numerati,
+termini precisi e riferimenti normativi verificabili.
+
+## 🤖 GEO — farsi citare dai motori generativi
+
+L'ottimizzazione per ChatGPT, Perplexity e le AI Overviews non è SEO con un altro nome:
+lì non si "posiziona", si **viene citati**. Cosa è stato fatto:
+
+| Intervento | A cosa serve |
+|---|---|
+| `llms.txt` | Presentazione del sito in formato leggibile dalle macchine: cosa è, chi lo gestisce, indice ragionato delle guide, come citarle |
+| `robots.txt` con i crawler AI | GPTBot, ClaudeBot, PerplexityBot, Google-Extended, CCBot, Applebot-Extended e altri sono **esplicitamente ammessi**: senza, molti non leggono nulla |
+| `Organization` con dati reali | Ragione sociale, P. IVA, indirizzo, fondatore con qualifica RUI: è così che un motore capisce che dietro i contenuti c'è un soggetto identificabile |
+| `FAQPage` con date e autore | Ogni risposta porta data e firma. La freschezza e l'attribuzione sono i due segnali che più pesano nella scelta di cosa citare |
+| `BreadcrumbList` | Gerarchia esplicita delle pagine |
+| `InsuranceAgency` in directory | Gli intermediari sono entità tipizzate, non righe di testo |
+| Risposta secca in apertura | Ogni guida risponde nella prima frase, in grassetto: è il frammento che i motori estraggono |
+| Guide correlate | Contesto tematico fra pagine, che una pagina isolata non ha |
+
 ## 📌 Guide QuotaFacile (keyword SEO in bacheca)
 
 `assets/js/staff-questions.js` contiene le domande che la redazione pubblica per presidiare keyword

@@ -231,20 +231,133 @@ function setSeo(title, desc) {
 function setJsonLd(obj) {
   $("#jsonld-dynamic").textContent = obj ? JSON.stringify(obj) : "";
 }
+/* ---------------- DATI STRUTTURATI ----------------
+   Schema.org non serve solo ai risultati arricchiti di Google:
+   è il modo in cui i motori generativi capiscono chi ha scritto
+   una risposta, quando, e con quale titolo per firmarla. È la
+   differenza fra essere citati e restare un risultato anonimo. */
+const SITO = () => location.origin + location.pathname;
+
+/* Identità dell'editore: dichiarata una volta e richiamata per
+   riferimento da tutti gli altri nodi del grafo. */
+function editoreJsonLd() {
+  const C = window.QF_LEGAL?.CONFIG;
+  const base = SITO();
+  const org = {
+    "@type": "Organization",
+    "@id": base + "#org",
+    "name": "QuotaFacile",
+    "url": base,
+    "description": "Marketplace italiano degli intermediari assicurativi iscritti al RUI: profili verificabili, risposte firmate, preventivi gratuiti.",
+    "knowsLanguage": "it-IT",
+    "areaServed": { "@type": "Country", "name": "Italia" }
+  };
+  if (C && !/^«/.test(C.ragioneSociale)) {
+    org.legalName = C.ragioneSociale;
+    org.vatID = C.piva;
+    org.taxID = C.cf;
+    org.email = C.emailInfo;
+    const m = /^(.+?),\s*(\d{5})\s+(.+?)\s*\((\w{2})\)/.exec(C.sedeLegale);
+    if (m) org.address = {
+      "@type": "PostalAddress", "streetAddress": m[1], "postalCode": m[2],
+      "addressLocality": m[3], "addressRegion": m[4], "addressCountry": "IT"
+    };
+    const g = C.gestoreIntermediario;
+    if (g) org.founder = {
+      "@type": "Person", "name": g.nome,
+      "jobTitle": "Intermediario assicurativo — sezione " + g.sezioneRui + " del RUI",
+      "worksFor": /^«/.test(g.operaPerConto) ? undefined : { "@type": "Organization", "name": g.operaPerConto }
+    };
+  }
+  return org;
+}
+
 function faqJsonLd(faqs) {
+  const base = SITO();
+  /* Sulle pagine di elenco le domande sono molte: se ne dichiarano
+     al massimo 25, altrimenti il blocco di dati strutturati pesa più
+     della pagina che descrive. Ogni domanda ha comunque la propria
+     pagina, dove è descritta per intero. */
+  const utili = faqs.filter(f => f.risposte.length).slice(0, 25);
   return {
     "@context": "https://schema.org",
-    "@type": "FAQPage",
-    "mainEntity": faqs.filter(f => f.risposte.length).map(f => ({
-      "@type": "Question",
-      "name": f.domanda,
-      "answerCount": f.risposte.length,
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": (f.risposte.find(r => r.accettata) || f.risposte[0]).testo,
-        "author": { "@type": "Person", "name": broker((f.risposte.find(r => r.accettata) || f.risposte[0]).autore)?.nome || "Intermediario QuotaFacile" }
+    "@graph": [
+      editoreJsonLd(),
+      {
+        "@type": "FAQPage",
+        "@id": base + location.hash + "#faq",
+        "inLanguage": "it-IT",
+        "isPartOf": { "@id": base + "#org" },
+        "publisher": { "@id": base + "#org" },
+        "mainEntity": utili.map(f => {
+          const best = f.risposte.find(r => r.accettata) || f.risposte[0];
+          const a = broker(best.autore);
+          const autore = a && !a.auto
+            ? { "@type": "Person", "name": a.nome, "jobTitle": a.ruolo, "worksFor": { "@type": "Organization", "name": a.azienda } }
+            : { "@type": "Organization", "name": "Redazione QuotaFacile", "@id": base + "#org" };
+          return {
+            "@type": "Question",
+            "@id": base + "#/faq/" + f.id,
+            "name": f.domanda,
+            "answerCount": f.risposte.length,
+            "datePublished": f.data,
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": best.testo,
+              "url": base + "#/faq/" + f.id,
+              "datePublished": f.data,
+              "upvoteCount": best.voti || 0,
+              "author": autore
+            }
+          };
+        })
       }
+    ]
+  };
+}
+
+/* Percorso di navigazione: aiuta i motori a capire la gerarchia
+   e compare nello snippet al posto dell'URL con il cancelletto. */
+function breadcrumbJsonLd(voci) {
+  const base = SITO();
+  return {
+    "@type": "BreadcrumbList",
+    "itemListElement": voci.map((v, i) => ({
+      "@type": "ListItem", "position": i + 1, "name": v.nome, "item": base + (v.hash || "")
     }))
+  };
+}
+
+/* Directory: elenco di professionisti con la loro qualifica.
+   InsuranceAgency è il tipo che i motori associano al settore. */
+function directoryJsonLd(lista) {
+  const base = SITO();
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      editoreJsonLd(),
+      breadcrumbJsonLd([{ nome: "Home", hash: "#/" }, { nome: "Intermediari", hash: "#/intermediari" }]),
+      {
+        "@type": "ItemList",
+        "name": "Intermediari assicurativi su QuotaFacile",
+        "numberOfItems": lista.length,
+        "itemListElement": lista.map((b, i) => ({
+          "@type": "ListItem",
+          "position": i + 1,
+          "item": {
+            "@type": "InsuranceAgency",
+            "name": b.nome,
+            "description": DA_COMPILARE(b.bio) ? undefined : b.bio,
+            "areaServed": DA_COMPILARE(b.citta) ? undefined : b.citta,
+            "telephone": DA_COMPILARE(b.tel) ? undefined : b.tel,
+            "email": DA_COMPILARE(b.email) ? undefined : b.email,
+            "knowsAbout": b.spec,
+            "parentOrganization": b.operaPerConto && !DA_COMPILARE(b.operaPerConto)
+              ? { "@type": "Organization", "name": b.operaPerConto } : undefined
+          }
+        }))
+      }
+    ]
   };
 }
 
@@ -507,9 +620,9 @@ views.professionisti = () => {
 /* ----- DIRECTORY INTERMEDIARI ----- */
 let dirFilter = "Tutti";
 views.intermediari = () => {
-  setJsonLd(null);
   const cats = ["Tutti", "Auto", "Casa", "Vita", "Impresa", "Salute", "Cyber"];
   const list = DB.brokers.filter(b => dirFilter === "Tutti" || b.spec.includes(dirFilter));
+  setJsonLd(directoryJsonLd(list));
   return `
   <section class="section">
     <div class="container">
@@ -626,11 +739,41 @@ views.bacheca = () => {
   </section>`;
 };
 
+/* Collegamenti interni fra guide: tengono il lettore sul sito,
+   distribuiscono autorità fra le pagine e danno ai motori il
+   contesto tematico che una pagina isolata non ha. Prima le
+   guide della stessa categoria, poi le altre. */
+function guideCorrelate(f, quante = 3) {
+  const tutte = staffFaqs().filter(g => g.id !== f.id);
+  const ordinate = [
+    ...tutte.filter(g => g.cat === f.cat),
+    ...tutte.filter(g => g.cat !== f.cat)
+  ].slice(0, quante);
+  if (!ordinate.length) return "";
+  return `
+  <nav class="correlate" aria-label="Guide correlate">
+    <h3>Continua a leggere</h3>
+    ${ordinate.map(g => `
+      <a href="#/faq/${g.id}" class="correlata">
+        <span class="correlata-cat">${esc(g.cat)}</span>
+        <span class="correlata-titolo">${esc(g.titolo || g.domanda)}</span>
+        ${g.meta ? `<span class="correlata-meta">${esc(g.meta)}</span>` : ""}
+      </a>`).join("")}
+  </nav>`;
+}
+
 /* ----- DETTAGLIO FAQ ----- */
 views.faqDetail = (id) => {
   const f = getFaqById(id);
   if (!f) return `<section class="section"><div class="container"><h2>Domanda non trovata</h2><a href="#/bacheca" class="btn btn-outline">← Torna alla bacheca</a></div></section>`;
-  setJsonLd(faqJsonLd([f]));
+  const ld = faqJsonLd([f]);
+  ld["@graph"].push(breadcrumbJsonLd([
+    { nome: "Home", hash: "#/" },
+    { nome: "Bacheca Q&A", hash: "#/bacheca" },
+    { nome: f.cat, hash: "#/bacheca" },
+    { nome: f.domanda, hash: "#/faq/" + f.id }
+  ]));
+  setJsonLd(ld);
   const pro = DB.proProfile;
   return `
   <section class="section">
@@ -676,6 +819,8 @@ views.faqDetail = (id) => {
           </div>
         </div>`;
       }).join("") : `<p class="muted" style="font-style:italic">Ancora nessuna risposta.</p>`}
+
+      ${guideCorrelate(f)}
 
       <div class="card" style="margin-top:1.8rem">
         <h3>Sei un intermediario? ${f.daily ? "Integra la risposta automatica" : "Rispondi"} (+10 pt)</h3>

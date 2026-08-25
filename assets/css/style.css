@@ -662,3 +662,18 @@ p { line-height: 1.6; }
 /* ---------- Sezione E: intermediario per cui si opera ---------- */
 .opera-per { font-size: .8rem; color: var(--ink-soft); margin: .1rem 0 0; }
 .opera-per strong { color: var(--ink); font-weight: 600; }
+
+/* ---------- Guide correlate (link interni) ---------- */
+.correlate { margin-top: 2.2rem; padding-top: 1.4rem; border-top: 1px solid var(--line); }
+.correlate h3 { font-size: 1.1rem; margin-bottom: .8rem; }
+.correlata {
+  display: block; background: #fff; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .9rem 1.1rem; margin-bottom: .6rem; transition: border-color .18s var(--ease), transform .18s var(--ease);
+}
+.correlata:hover { border-color: var(--green-600); transform: translateX(3px); }
+.correlata-cat {
+  display: inline-block; font-size: .68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--green-600); margin-bottom: .2rem;
+}
+.correlata-titolo { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--ink); line-height: 1.25; }
+.correlata-meta { display: block; font-size: .82rem; color: var(--ink-soft); margin-top: .25rem; line-height: 1.5; }

@@ -1,4 +1,72 @@
+# QuotaFacile — regole per i crawler
+# Host di pubblicazione attuale in fondo al file.
+
 User-agent: *
 Allow: /
+
+# ---------------------------------------------------------------
+# Motori generativi (GEO).
+# I contenuti sono redazionali, firmati e con riferimenti normativi
+# verificabili: vogliamo che vengano letti e citati nelle risposte
+# generate. Per negare il consenso a uno di questi, sostituire
+# "Allow: /" con "Disallow: /" nel blocco corrispondente.
+# ---------------------------------------------------------------
+
+# OpenAI — indicizzazione per le risposte di ChatGPT
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+# Anthropic — Claude
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+# Perplexity
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+# Google — AI Overviews e Gemini (distinto da Googlebot)
+User-agent: Google-Extended
+Allow: /
+
+# Microsoft Copilot
+User-agent: Bingbot
+Allow: /
+
+# Common Crawl — dataset usato da più motori
+User-agent: CCBot
+Allow: /
+
+# Apple Intelligence
+User-agent: Applebot-Extended
+Allow: /
+
+# Meta AI
+User-agent: meta-externalagent
+Allow: /
+
+# Mistral
+User-agent: MistralAI-User
+Allow: /
+
+# ---------------------------------------------------------------
+# Aree riservate: non c'è nulla di indicizzabile e la console di
+# amministrazione non deve comparire nei risultati.
+# ---------------------------------------------------------------
+Disallow: /api/
 
 Sitemap: https://bizpower.github.io/Quotafacile/sitemap.xml

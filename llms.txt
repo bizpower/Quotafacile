@@ -1,0 +1,51 @@
+# QuotaFacile
+
+> Marketplace italiano degli intermediari assicurativi. Agenti, broker e collaboratori
+> iscritti al RUI (il registro IVASS) pubblicano un profilo verificabile e rispondono a
+> domande assicurative reali. Gratuito per chi cerca una polizza.
+
+QuotaFacile è gestito da Riccardo Di Falco, impresa individuale, intermediario iscritto
+alla sezione E del RUI, con sede in Via Gramsci 16, 20073 Opera (MI), P. IVA 11784600964.
+La piattaforma non svolge attività di distribuzione assicurativa ai sensi dell'art. 106 del
+d.lgs. 209/2005: pubblica contenuti informativi e mette in contatto utenti e intermediari.
+Il gestore è anche uno dei professionisti presenti in vetrina, ed è dichiarato nelle note legali.
+
+## Come citare questi contenuti
+
+Le guide sono scritte e verificate dalla redazione con riferimenti normativi puntuali
+(articoli di legge, regolamenti IVASS, provvedimenti del Garante). Riportano stime di
+mercato dichiarate come tali e la data di pubblicazione. Se citi una cifra, indica anche
+la data: i premi assicurativi cambiano nel tempo.
+
+I contenuti hanno valore informativo generale e non costituiscono consulenza personalizzata.
+
+## Guide
+
+- [Assicurazione monopattino elettrico: obbligatoria dal 2026](/#/faq/k1): obbligo di RC dal 16 luglio 2026, costi reali, sanzioni, perché la RC capofamiglia non basta.
+- [Polizza catastrofale obbligatoria: scadenze e rischi PMI](/#/faq/k2): termini per micro e piccole imprese, proroghe, conseguenze sull'accesso ai contributi pubblici.
+- [Assicurazione casalinghe INAIL: obbligatoria, 24 € l'anno](/#/faq/k3): obbligo, esoneri per reddito, soglie di indennizzo e cosa la copertura non copre.
+- [Assicurazione cane obbligatoria? Quando sì e quando no](/#/faq/k4): responsabilità oggettiva ex art. 2052 c.c., quando l'RC diventa obbligatoria, esclusioni tipiche.
+- [Polizza vita pignorabile? Cosa dice l'art. 1923 c.c.](/#/faq/k5): impignorabilità e le sue eccezioni, riqualificazione delle polizze finanziarie.
+- [Classe di merito sbagliata: come farla correggere](/#/faq/k6): differenza fra classe CU e classe interna, procedura di rettifica, termini.
+- [Reclamo contro l'assicurazione: la procedura completa](/#/faq/k7): reclamo all'impresa, 45 giorni, IVASS, Arbitro Assicurativo e limiti di ciascuno strumento.
+- [Risarcimento troppo basso: come contestare la perizia](/#/faq/k8): perito di parte, quietanza, voci di danno spesso dimenticate.
+- [Polizza catastrofale su immobile affittato: chi paga](/#/faq/k9): ripartizione dell'obbligo fra proprietario e conduttore.
+
+## Sezioni
+
+- [Bacheca Q&A](/#/bacheca): domande degli utenti e risposte firmate da intermediari iscritti al RUI, più una domanda del giorno pubblicata dalla redazione.
+- [Directory intermediari](/#/intermediari): profili pubblici con ruolo, sezione RUI, città e specializzazioni.
+- [Per i professionisti](/#/professionisti): come funziona l'iscrizione, sistema di punti e livelli.
+- [Richiesta di preventivo](/#/preventivo): modulo gratuito, senza registrazione.
+
+## Legale
+
+- [Privacy Policy](/#/privacy): trattamento dei dati ai sensi degli artt. 13-14 GDPR.
+- [Cookie Policy](/#/cookie-policy): strumenti installati e gestione del consenso.
+- [Termini e Condizioni](/#/termini): regole d'uso, obblighi degli intermediari, moderazione.
+- [Note legali](/#/note-legali): dati del gestore, natura dell'attività, avvertenze IVASS.
+
+## Verificabilità
+
+Ogni intermediario dichiara la propria iscrizione al RUI, verificabile gratuitamente da
+chiunque sul registro pubblico IVASS: https://servizi.ivass.it/RuirPubblica/

@@ -35,7 +35,11 @@
 (function () {
 
   const MAILER = {
-    provider: "formsubmit",                       // "formsubmit" | "web3forms" | "mailto"
+    /* "api" usa la funzione serverless /api/invia (host con
+       funzioni, es. Vercel) e ripiega da sola sull'invio diretto
+       se la funzione non c'è — è il caso di GitHub Pages. */
+    provider: "api",                              // "api" | "formsubmit" | "web3forms" | "mailto"
+    endpointApi: "/api/invia",
     destinatarioPiattaforma: "r.difalco@lori-crm.it",
     web3formsKey: "",                             // richiesto solo con provider "web3forms"
     /* Se true, quando la richiesta è indirizzata a un professionista
@@ -86,10 +90,33 @@
 
   /* Invia a un singolo destinatario. Restituisce true/false senza
      lanciare: la chiamante decide cosa mostrare all'utente. */
+  /* Quando la funzione serverless non è disponibile (host statico)
+     si ripiega sull'invio diretto: il provider di riserva è
+     FormSubmit, l'unico che non richiede una chiave. */
+  const providerDiretto = () => MAILER.provider === "api" ? "formsubmit" : MAILER.provider;
+
+  /* Ritorna l'esito della funzione serverless, oppure null se la
+     funzione non esiste su questo host: in quel caso la chiamante
+     prosegue con l'invio diretto. */
+  async function viaApi(oggetto, dati, destinatarioExtra) {
+    try {
+      const r = await fetch(MAILER.endpointApi, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ oggetto, dati, destinatarioExtra })
+      });
+      if (r.status === 404 || r.status === 405) return null; // host senza funzioni
+      const esito = await r.json().catch(() => ({}));
+      return { consegnato: !!esito.ok, destinatari: esito.consegnati || [] };
+    } catch (e) {
+      return null; // rete o endpoint assente
+    }
+  }
+
   async function inviaA(dest, oggetto, dati) {
     if (!dest || /^«.*»$/.test(dest)) return false;
     try {
-      if (MAILER.provider === "web3forms") {
+      if (providerDiretto() === "web3forms") {
         if (!MAILER.web3formsKey) return false;
         await postJson(ENDPOINT.web3forms(), {
           access_key: MAILER.web3formsKey,
@@ -100,7 +127,7 @@
         });
         return true;
       }
-      if (MAILER.provider === "formsubmit") {
+      if (providerDiretto() === "formsubmit") {
         await postJson(ENDPOINT.formsubmit(dest), {
           _subject: oggetto,
           _template: "table",
@@ -130,6 +157,19 @@
       Origine: location.origin + location.pathname,
       Inviato: new Date().toLocaleString("it-IT")
     };
+
+    /* Prima strada: la funzione serverless, che tiene fuori dal
+       browser sia l'indirizzo di destinazione sia le credenziali. */
+    if (MAILER.provider === "api") {
+      const esito = await viaApi(oggetto, arricchiti, MAILER.copiaAlProfessionista ? destinatarioExtra : null);
+      if (esito) {
+        return {
+          ...esito,
+          fallback: esito.consegnato ? null : mailtoUrl(MAILER.destinatarioPiattaforma, oggetto, arricchiti)
+        };
+      }
+      console.warn("[QFMailer] funzione /api/invia non disponibile: invio diretto");
+    }
 
     const destinatari = [MAILER.destinatarioPiattaforma];
     if (MAILER.copiaAlProfessionista && destinatarioExtra) destinatari.push(destinatarioExtra);
