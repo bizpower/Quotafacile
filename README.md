@@ -19,7 +19,8 @@ quotafacile/
 │   ├── js/admin.js               # 🔐 Console riservata (#/admin): KPI, moderazione, keyword
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
-├── api/invia.js                  # 📮 Funzione serverless di consegna (Vercel)
+├── api/invia.js                  # 📮 Consegna: SMTP proprio, Resend, Web3Forms, Telegram
+├── package.json                  # Solo per la funzione serverless (nodemailer)
 ├── .github/workflows/            # Pubblicazione su Pages, attivazione casella email
 ├── llms.txt                      # 🤖 Presentazione del sito per i motori generativi
 ├── vercel.json                   # Intestazioni di sicurezza e cache
@@ -81,8 +82,8 @@ sull'invio diretto dal browser.
 
 ### Vercel
 `vercel.json` è già presente, con intestazioni di sicurezza e cache degli asset. Collegando il
-repository si ottiene anche `api/invia.js` funzionante: ricordarsi di impostare
-`QF_WEB3FORMS_KEY` fra le variabili d'ambiente del progetto.
+repository si ottiene anche `api/invia.js` funzionante: ricordarsi di impostare le variabili
+d'ambiente del canale di consegna scelto (vedi più sotto).
 
 ### Gamification (la SEO del portale)
 - **+10 pt** risposta pubblicata · **+5 pt** voto utile · **+25 pt** migliore risposta
@@ -127,24 +128,33 @@ lo dichiara esplicitamente — non esiste una casella interna da controllare.
 2. **Invio diretto dal browser** — ripiego automatico, usato su host puramente statici come
    GitHub Pages.
 
-### ⚠️ Usa Web3Forms, non FormSubmit
+### Perché serve una credenziale, sempre
 
-**Verificato sul campo** eseguendo il workflow di attivazione su un runner GitHub: FormSubmit è
-dietro una protezione Cloudflare che alle chiamate **provenienti da server** risponde con una
-pagina di sfida (`Just a moment…`) invece che con l'API. Dai browser degli utenti passa, da un
-datacenter no — e la funzione serverless gira proprio su un datacenter.
+Spedire email richiede un'**identità autenticata**: nessun servizio accetta posta da un mittente
+anonimo, altrimenti sarebbe un relay di spam. Non è un limite di questo codice, è il funzionamento
+della posta elettronica (SPF, DKIM, DMARC). Quello che si sceglie è *quale* credenziale usare — e
+la meno onerosa è quasi sempre una che si possiede già.
 
-Per renderla operativa:
+`api/invia.js` supporta quattro canali email e li prova in quest'ordine, usando il primo
+configurato. Basta impostare le variabili d'ambiente sull'host.
 
-1. registra una chiave gratuita su [web3forms.com](https://web3forms.com) (nessuna carta richiesta);
-2. impostala come variabile d'ambiente `QF_WEB3FORMS_KEY` sull'host;
-3. opzionale: `QF_DESTINATARIO` per cambiare la casella della piattaforma.
+| Canale | Variabili | Cosa comporta |
+|---|---|---|
+| **SMTP della propria casella** ⭐ | `QF_SMTP_HOST` `QF_SMTP_PORT` `QF_SMTP_USER` `QF_SMTP_PASS` (`QF_SMTP_FROM`) | **Consigliato.** Nessun account nuovo, nessun servizio terzo, i dati degli utenti non passano da nessuno: un responsabile del trattamento in meno da dichiarare. Le credenziali sono quelle della casella che già usi |
+| **Resend** | `QF_RESEND_KEY` `QF_RESEND_FROM` | API moderna, dominio verificabile, ottima recapitabilità |
+| **Web3Forms** | `QF_WEB3FORMS_KEY` | Chiave gratuita, nessuna attivazione per indirizzo |
+| **FormSubmit** | nessuna | Ultimo ripiego. **È dietro Cloudflare e rifiuta le chiamate da server**, verificato eseguendo il workflow di attivazione su un runner GitHub: dai browser passa, da un datacenter no |
 
-Con Web3Forms **non serve alcuna attivazione per indirizzo**, né per la piattaforma né per i
-professionisti. Con FormSubmit invece la prima richiesta verso ogni nuovo indirizzo non viene
-recapitata: arriva un'email di conferma con un link da cliccare, e quella prima richiesta deve
-partire da un browser vero (il workflow
-`.github/workflows/attiva-casella-email.yml` esiste per questo, ma da runner viene bloccato).
+Il messaggio parte con **`Reply-To` impostato sull'email dell'utente**: rispondendo dalla propria
+casella si scrive direttamente al cliente.
+
+### Telegram — canale aggiuntivo, non alternativo
+
+`QF_TELEGRAM_TOKEN` e `QF_TELEGRAM_CHAT` attivano una notifica immediata sul telefono, che si
+**affianca** all'email invece di sostituirla. Il token si ottiene da
+[@BotFather](https://t.me/BotFather) in trenta secondi, senza registrazioni né indirizzi email.
+Per un marketplace di preventivi, sapere di un contatto entro pochi secondi vale spesso più
+dell'email stessa. Se configurato, anche la sola notifica Telegram conta come consegna riuscita.
 
 > 🔒 **Se la consegna fallisce nessun dato va perso:** l'utente vede una schermata con un `mailto:`
 > già compilato e un solo pulsante da premere, e la richiesta resta comunque registrata nei KPI.
