@@ -677,3 +677,6 @@ p { line-height: 1.6; }
 }
 .correlata-titolo { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--ink); line-height: 1.25; }
 .correlata-meta { display: block; font-size: .82rem; color: var(--ink-soft); margin-top: .25rem; line-height: 1.5; }
+
+/* Qualifica di chi ha firmato una risposta arrivata dal database */
+.badge-qualifica { background: var(--green-50); color: var(--green-800); font-weight: 600; }

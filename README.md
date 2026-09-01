@@ -16,6 +16,7 @@ quotafacile/
 │   ├── js/staff-questions.js     # 📌 Guide QuotaFacile: keyword SEO posizionate in bacheca
 │   ├── js/intermediari.js        # 🪪 Intermediari in vetrina (fonte di verità delle QuotaPass)
 │   ├── js/mailer.js              # 📬 Invio dei contatti alla Edge Function Supabase
+│   ├── js/bacheca.js             # 💬 Bacheca condivisa: lettura e scrittura sul database
 │   ├── js/admin.js               # 🔐 Console riservata (#/admin): KPI, moderazione, keyword
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
@@ -147,6 +148,38 @@ Se la richiesta è indirizzata a un intermediario, l'avviso parte **anche alla s
 
 L'utente vede un `mailto:` già compilato con un solo pulsante da premere. Compare **solo** quando il
 salvataggio non è riuscito: un errore di validazione si corregge nel modulo, non riscrivendo a mano.
+
+## 💬 Bacheca condivisa
+
+Domande e risposte vivono nel database e sono **uguali per tutti i visitatori**: prima stavano nel
+`localStorage`, quindi ognuno vedeva soltanto le proprie e per i motori di ricerca non esisteva nulla.
+
+| Contenuto | Dove vive | Perché |
+|---|---|---|
+| Le 9 guide editoriali | `assets/js/staff-questions.js` | Scritte con cura e versionate in git |
+| Domanda del giorno | `assets/js/daily-questions.js` | Generata dalla data, non serve un database |
+| Domande degli utenti | tabella `domande` | Contenuto pubblico condiviso |
+| Guide pubblicate dall'Admin | tabella `domande` (`tipo = 'guida'`) | Create senza toccare il codice |
+| Risposte dei professionisti | tabella `risposte` | Condivise, ordinate per voti |
+| Voti "utile" | tabella `voti` | Un voto per dispositivo, garantito da un vincolo di unicità |
+
+Una risposta può riferirsi a una domanda del database (`domanda_id`) **oppure** a un contenuto del
+repository (`domanda_chiave`, es. `k1` o `d12`): un vincolo assicura che sia valorizzato uno solo dei due.
+
+### ⚠️ Le risposte passano dalla moderazione
+
+Non è una scelta di prudenza, è una necessità: **senza autenticazione chiunque potrebbe firmarsi con
+il nome di un intermediario reale**. Su un sito il cui valore sta nell'identità verificabile sarebbe
+il danno peggiore possibile. Una risposta nasce quindi `in_attesa` e diventa pubblica solo dopo
+l'approvazione dall'area Admin.
+
+Il passo che toglie questo collo di bottiglia è l'autenticazione dei professionisti (Supabase Auth):
+a quel punto chi risponde è chi dice di essere, e l'approvazione manuale non serve più.
+
+### Se il servizio non risponde
+
+Il sito continua a funzionare: guide e domanda del giorno vivono nel codice e non dipendono dalla
+rete. Manca solo ciò che è condiviso.
 
 ## 🔐 Area Admin — `#/admin`
 
