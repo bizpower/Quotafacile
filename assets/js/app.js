@@ -898,13 +898,17 @@ views.preventivo = (query) => {
           </div>
         </form>` : ""}
 
-        ${s === 4 ? (quoteState.esito && !quoteState.esito.consegnato ? `
+        ${s === 4 ? (quoteState.esito && !quoteState.esito.salvato ? `
         <div style="text-align:center;padding:1.5rem 0">
           <div class="icon-dot" style="margin:0 auto 1rem;width:64px;height:64px;font-size:2rem">✉️</div>
           <h3>Ultimo passaggio: conferma l'invio</h3>
-          <p class="muted">Non siamo riusciti a recapitare la richiesta automaticamente. Nessun dato è andato perso: apri l'email già compilata e premi invio.</p>
+          <p class="muted">${quoteState.esito.fallback
+            ? "Non siamo riusciti a registrare la richiesta: il servizio non risponde. Nessun dato è andato perso, apri l'email già compilata e premi invio."
+            : esc(quoteState.esito.errore || "Controlla i dati inseriti e riprova.")}</p>
           <div style="display:flex;gap:.6rem;justify-content:center;margin-top:1rem;flex-wrap:wrap">
-            <a href="${quoteState.esito.fallback}" class="btn btn-gold">Apri l'email e invia</a>
+            ${quoteState.esito.fallback
+              ? `<a href="${quoteState.esito.fallback}" class="btn btn-gold">Apri l'email e invia</a>`
+              : `<button class="btn btn-gold" data-step="3">← Correggi e riprova</button>`}
             <a href="#/" class="btn btn-outline">Torna alla home</a>
           </div>
         </div>` : `
@@ -1278,18 +1282,16 @@ function apriSegnalazione(target) {
     el.addEventListener("click", e => { if (e.target === el) chiudi(); }));
   host.querySelector("#report-form").addEventListener("submit", e => {
     e.preventDefault();
-    DB.segnalazioni.unshift({
-      id: "s" + Date.now(),
-      target,
+    const seg = {
       motivo: host.querySelector("#rep-motivo").value,
       dettaglio: host.querySelector("#rep-det").value.trim(),
-      email: host.querySelector("#rep-mail").value.trim(),
-      data: new Date().toISOString(),
-      stato: "aperta"
-    });
+      email: host.querySelector("#rep-mail").value.trim()
+    };
+    DB.segnalazioni.unshift({ id: "s" + Date.now(), target, ...seg, data: new Date().toISOString(), stato: "aperta" });
     saveDB();
     chiudi();
     toast("Segnalazione ricevuta. La esamineremo al più presto.");
+    window.QFMailer.invia("segnalazione", { target, ...seg });
   });
 }
 
@@ -1322,29 +1324,34 @@ function bind() {
 
     const dest = quoteState.to ? broker(quoteState.to) : null;
     const dati = {
-      "Tipo richiesta": quoteState.tipo || "preventivo",
-      "Ramo": quoteState.ramo || "-",
-      "Nome e cognome": $("#q-nome").value.trim(),
-      "Città": $("#q-citta").value.trim(),
-      "Email": $("#q-email").value.trim(),
-      "Telefono": $("#q-tel").value.trim(),
-      "Note": $("#q-note").value.trim(),
-      "Intermediario destinatario": dest ? `${dest.nome} (${dest.azienda})` : "nessuno — smistare per ramo"
+      tipo: quoteState.tipo || "preventivo",
+      ramo: quoteState.ramo || null,
+      nome: $("#q-nome").value.trim(),
+      citta: $("#q-citta").value.trim(),
+      email: $("#q-email").value.trim(),
+      telefono: $("#q-tel").value.trim(),
+      note: $("#q-note").value.trim(),
+      destinatarioId: dest ? dest.id : null,
+      destinatarioNome: dest ? `${dest.nome} (${dest.azienda})` : null,
+      destinatarioEmail: dest && dest.email && !DA_COMPILARE(dest.email) ? dest.email : null,
+      consenso: true,
+      consensoTesto: "Consenso alla trasmissione dei recapiti all'intermediario destinatario",
+      origine: location.origin + location.pathname
     };
 
     const btn = e.target.querySelector('button[type="submit"]');
     if (btn) { btn.disabled = true; btn.textContent = "Invio in corso…"; }
 
-    const esito = await window.QFMailer.invia({
-      oggetto: `Nuova richiesta ${dati["Tipo richiesta"]} · ramo ${dati.Ramo} · ${dati["Nome e cognome"]}`,
-      dati,
-      destinatarioExtra: dest && dest.email && !DA_COMPILARE(dest.email) ? dest.email : null
+    const esito = await window.QFMailer.invia("richiesta", dati, {
+      oggettoRipiego: `Richiesta ${dati.tipo} · ramo ${dati.ramo || "-"} · ${dati.nome}`
     });
 
+    /* La richiesta resta anche nei dati locali: l'area admin la
+       mostra subito, senza attendere il collegamento al database. */
     DB.richieste.push({
       tipo: quoteState.tipo, ramo: quoteState.ramo, to: quoteState.to,
-      nome: dati["Nome e cognome"], email: dati.Email, tel: dati.Telefono,
-      consegnato: esito.consegnato, data: new Date().toISOString()
+      nome: dati.nome, email: dati.email, tel: dati.telefono,
+      consegnato: esito.salvato, data: new Date().toISOString()
     });
     saveDB();
     quoteState.esito = esito;
@@ -1363,7 +1370,7 @@ function bind() {
     saveDB();
     $("#notify-email").value = "";
     toast("Perfetto! Ti avvisiamo appena l'app è disponibile 📱");
-    window.QFMailer.invia({ oggetto: "Nuova iscrizione alla waitlist app", dati: { Email: email } });
+    window.QFMailer.invia("waitlist", { email, consenso: true });
   });
 
   /* nuova domanda in bacheca */
@@ -1375,7 +1382,9 @@ function bind() {
     DB.faqs.unshift({ id: "f" + Date.now(), cat, autore: null, data: new Date().toISOString().slice(0, 10), domanda, risposte: [] });
     saveDB(); render();
     toast("Domanda pubblicata! Un intermediario ti risponderà.");
-    window.QFMailer.invia({ oggetto: `Nuova domanda in bacheca · ${cat}`, dati: { Categoria: cat, Domanda: domanda } });
+    /* Le domande della bacheca restano per ora nel browser di chi
+       le scrive: passano al database insieme a tutta la bacheca,
+       che è il prossimo passo. */
   });
 
   /* voto risposta */
@@ -1489,15 +1498,13 @@ function bind() {
       toast(wasNew ? "QuotaPass creata! Benvenuto su QuotaFacile 🎉" : "Profilo aggiornato.");
       if (wasNew) {
         const p = DB.proProfile;
-        window.QFMailer.invia({
-          oggetto: `Nuovo professionista iscritto · ${p.nome} · RUI da verificare`,
-          dati: {
-            "Nome": p.nome, "Ruolo": p.ruolo, "Ragione sociale": p.azienda,
-            "Numero RUI dichiarato": p.rui, "Città": p.citta,
-            "Cellulare": p.tel, "Email": p.email,
-            "Specializzazioni": (p.spec || []).join(", "),
-            "Da fare": "verificare l'iscrizione su servizi.ivass.it/RuirPubblica e approvare in #/admin"
-          }
+        window.QFMailer.invia("iscrizione-pro", {
+          nome: p.nome, ruolo: p.ruolo, azienda: p.azienda,
+          rui: p.rui, ruiSezione: p.ruiSezione || null,
+          operaPerConto: p.operaPerConto || null,
+          citta: p.citta, telefono: p.tel, email: p.email,
+          spec: p.spec || [], bio: p.bio || null,
+          consensoRui: true, consensoTermini: true
         });
       }
     });
