@@ -15,12 +15,10 @@ quotafacile/
 │   ├── js/daily-questions.js     # ⭐ Pool 200 domande "del giorno" (qui vanno le tue keyword)
 │   ├── js/staff-questions.js     # 📌 Guide QuotaFacile: keyword SEO posizionate in bacheca
 │   ├── js/intermediari.js        # 🪪 Intermediari in vetrina (fonte di verità delle QuotaPass)
-│   ├── js/mailer.js              # 📬 Consegna delle richieste via email (config in cima)
+│   ├── js/mailer.js              # 📬 Invio dei contatti alla Edge Function Supabase
 │   ├── js/admin.js               # 🔐 Console riservata (#/admin): KPI, moderazione, keyword
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
-├── api/invia.js                  # 📮 Consegna: SMTP proprio, Resend, Web3Forms, Telegram
-├── package.json                  # Solo per la funzione serverless (nodemailer)
 ├── .github/workflows/            # Pubblicazione su Pages, attivazione casella email
 ├── llms.txt                      # 🤖 Presentazione del sito per i motori generativi
 ├── vercel.json                   # Intestazioni di sicurezza e cache
@@ -77,13 +75,12 @@ una volta sola** — Settings → Pages → Source: `GitHub Actions` — perché
 di amministrazione che il token delle Actions non possiede. Finché non è fatto il workflow si ferma
 con un avviso esplicativo invece di fallire.
 
-Su Pages le funzioni serverless non esistono: `api/invia.js` non gira e il sito ripiega
-sull'invio diretto dal browser.
+La consegna dei contatti non dipende dall'host: passa da Supabase e funziona anche qui, dove
+funzioni serverless proprie non esistono.
 
 ### Vercel
-`vercel.json` è già presente, con intestazioni di sicurezza e cache degli asset. Collegando il
-repository si ottiene anche `api/invia.js` funzionante: ricordarsi di impostare le variabili
-d'ambiente del canale di consegna scelto (vedi più sotto).
+`vercel.json` è già presente, con intestazioni di sicurezza e cache degli asset. Nessuna variabile
+d'ambiente da impostare: la consegna dei contatti passa da Supabase in ogni caso.
 
 ### Gamification (la SEO del portale)
 - **+10 pt** risposta pubblicata · **+5 pt** voto utile · **+25 pt** migliore risposta
@@ -104,65 +101,52 @@ Le due strade, in ordine di sforzo:
 Fino ad allora le guide restano ottime per chi arriva sul sito e per i motori generativi (che
 leggono la pagina renderizzata), ma partono handicappate sulla ricerca tradizionale.
 
-## 📬 Consegna delle richieste via email
+## 📬 Contatti e consegna — Supabase
 
-Il sito è statico: non c'è un server che possa spedire email. La consegna passa da un servizio
-**form-to-email** configurato in cima a `assets/js/mailer.js`.
+Le richieste vengono inviate alla Edge Function **`qf-contatti`** sul progetto Supabase
+`QuotaFacile` (regione Francoforte, UE). Il principio che regge tutto:
 
-| Evento | Destinatario |
+> **Salva prima, notifica poi.**
+
+Finché la consegna dipendeva da un servizio di posta, una richiesta poteva sparire senza che nessuno
+se ne accorgesse. Ora il contatto è scritto nel database *prima* che si provi a spedire alcunché: se
+l'avviso fallisce, il lead resta al sicuro. Cambia di conseguenza anche cosa si dice all'utente —
+"richiesta ricevuta" significa *salvata*, non "email partita".
+
+| Cosa arriva | Tabella |
 |---|---|
-| Richiesta di preventivo o consulenza | `destinatarioPiattaforma` + **la casella del professionista**, se la richiesta è indirizzata a lui (`#/preventivo?to=b1`) |
-| Nuova domanda in bacheca | `destinatarioPiattaforma` |
-| Registrazione di un professionista | `destinatarioPiattaforma`, con i recapiti e il promemoria di verificare il RUI |
-| Iscrizione alla waitlist dell'app | `destinatarioPiattaforma` |
+| Richieste di preventivo e consulenza | `richieste` |
+| Iscrizioni dei professionisti (RUI da verificare) | `iscrizioni_pro` |
+| Lista d'attesa dell'app | `waitlist` |
+| Segnalazioni di contenuti (art. 16 DSA) | `segnalazioni` |
+| Prova dei consensi raccolti (art. 7.1 GDPR) | `consensi` |
 
-I recapiti che il professionista inserisce nel proprio profilo **sono le destinazioni**: il pulsante
-CHIAMA compone quel numero, le richieste di consulenza scrivono a quell'indirizzo. La sua dashboard
-lo dichiara esplicitamente — non esiste una casella interna da controllare.
+**Sicurezza.** RLS attiva su tutte le tabelle e nessuna policy: le chiavi che vivono nel browser non
+leggono né scrivono nulla — verificato, il ruolo `anon` riceve `permission denied`. Si passa solo
+dalla Edge Function, che valida lato server e usa il service role. Il sito non contiene alcuna
+chiave Supabase.
 
-### Le due strade
+**Freno anti-abuso.** L'endpoint è pubblico per necessità: un modulo di preventivo non può chiedere
+di autenticarsi. `qf_troppe_richieste()` blocca oltre 5 richieste dallo stesso indirizzo in un'ora
+(`429`), senza ostacolare chi ne manda due per rami diversi.
 
-1. **`api/invia.js`** — funzione serverless (Vercel o equivalente). È la strada da preferire:
-   l'indirizzo di destinazione non compare nel sorgente della pagina, niente CORS, niente chiavi
-   lato client. Il browser la chiama e, se l'host non ha funzioni serverless, ripiega da solo.
-2. **Invio diretto dal browser** — ripiego automatico, usato su host puramente statici come
-   GitHub Pages.
+### Notifiche (opzionali)
 
-### Perché serve una credenziale, sempre
+Nessuna configurata = il sito funziona lo stesso, i contatti si leggono dall'area admin. Da
+impostare fra i *secrets* delle Edge Function del progetto Supabase:
 
-Spedire email richiede un'**identità autenticata**: nessun servizio accetta posta da un mittente
-anonimo, altrimenti sarebbe un relay di spam. Non è un limite di questo codice, è il funzionamento
-della posta elettronica (SPF, DKIM, DMARC). Quello che si sceglie è *quale* credenziale usare — e
-la meno onerosa è quasi sempre una che si possiede già.
+| Variabile | A cosa serve |
+|---|---|
+| `QF_RESEND_KEY`, `QF_RESEND_FROM` | Avviso via email. Parte con `Reply-To` sull'indirizzo dell'utente: rispondendo si scrive al cliente |
+| `QF_TELEGRAM_TOKEN`, `QF_TELEGRAM_CHAT` | Avviso immediato sul telefono. Il token si ottiene da [@BotFather](https://t.me/BotFather) senza registrazioni |
+| `QF_DESTINATARIO` | Casella della piattaforma (default `r.difalco@lori-crm.it`) |
 
-`api/invia.js` supporta quattro canali email e li prova in quest'ordine, usando il primo
-configurato. Basta impostare le variabili d'ambiente sull'host.
+Se la richiesta è indirizzata a un intermediario, l'avviso parte **anche alla sua casella**.
 
-| Canale | Variabili | Cosa comporta |
-|---|---|---|
-| **SMTP della propria casella** ⭐ | `QF_SMTP_HOST` `QF_SMTP_PORT` `QF_SMTP_USER` `QF_SMTP_PASS` (`QF_SMTP_FROM`) | **Consigliato.** Nessun account nuovo, nessun servizio terzo, i dati degli utenti non passano da nessuno: un responsabile del trattamento in meno da dichiarare. Le credenziali sono quelle della casella che già usi |
-| **Resend** | `QF_RESEND_KEY` `QF_RESEND_FROM` | API moderna, dominio verificabile, ottima recapitabilità |
-| **Web3Forms** | `QF_WEB3FORMS_KEY` | Chiave gratuita, nessuna attivazione per indirizzo |
-| **FormSubmit** | nessuna | Ultimo ripiego. **È dietro Cloudflare e rifiuta le chiamate da server**, verificato eseguendo il workflow di attivazione su un runner GitHub: dai browser passa, da un datacenter no |
+### Se il servizio non risponde
 
-Il messaggio parte con **`Reply-To` impostato sull'email dell'utente**: rispondendo dalla propria
-casella si scrive direttamente al cliente.
-
-### Telegram — canale aggiuntivo, non alternativo
-
-`QF_TELEGRAM_TOKEN` e `QF_TELEGRAM_CHAT` attivano una notifica immediata sul telefono, che si
-**affianca** all'email invece di sostituirla. Il token si ottiene da
-[@BotFather](https://t.me/BotFather) in trenta secondi, senza registrazioni né indirizzi email.
-Per un marketplace di preventivi, sapere di un contatto entro pochi secondi vale spesso più
-dell'email stessa. Se configurato, anche la sola notifica Telegram conta come consegna riuscita.
-
-> 🔒 **Se la consegna fallisce nessun dato va perso:** l'utente vede una schermata con un `mailto:`
-> già compilato e un solo pulsante da premere, e la richiesta resta comunque registrata nei KPI.
-> La consegna non viene mai data per riuscita basandosi sul solo stato HTTP: questi servizi
-> rispondono `200` anche quando non hanno recapitato nulla.
-
-Il fornitore è un **responsabile del trattamento** ex art. 28 GDPR ed è dichiarato nella Privacy
-Policy: cambiando provider va aggiornata anche quella sezione in `legal.js`.
+L'utente vede un `mailto:` già compilato con un solo pulsante da premere. Compare **solo** quando il
+salvataggio non è riuscito: un errore di validazione si corregge nel modulo, non riscrivendo a mano.
 
 ## 🔐 Area Admin — `#/admin`
 

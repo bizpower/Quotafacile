@@ -1,188 +1,87 @@
 /* ============================================================
-   QuotaFacile — Consegna delle richieste via email
+   QuotaFacile — Consegna delle richieste
    ------------------------------------------------------------
-   Il sito è statico: non c'è un server che possa spedire email.
-   La consegna passa quindi da un servizio form-to-email di terza
-   parte, che riceve i dati del modulo e li inoltra alla casella
-   indicata.
+   Le richieste vengono inviate a una funzione serverless su
+   Supabase che le SALVA in un database e solo dopo tenta di
+   avvisare per email o Telegram.
 
-   COSA SUCCEDE AI DATI
-   Il servizio scelto diventa un RESPONSABILE DEL TRATTAMENTO ai
-   sensi dell'art. 28 GDPR: riceve nome, email, telefono e note
-   dell'utente. È dichiarato nella Privacy Policy, sezione
-   "A chi comunichiamo i dati". Se cambi provider, aggiorna anche
-   quella sezione in assets/js/legal.js.
+   Perché conta l'ordine: finché la consegna dipendeva da un
+   servizio di posta, una richiesta poteva sparire senza che
+   nessuno se ne accorgesse. Ora il contatto è registrato prima
+   che si provi a spedire alcunché. Se l'avviso fallisce, il
+   lead resta comunque nel database e nell'area admin.
 
-   ⚠️ PRIMA CHE FUNZIONI: UN'ATTIVAZIONE DA FARE UNA VOLTA SOLA
-   Con FormSubmit la prima richiesta inviata a un indirizzo non
-   viene recapitata: arriva invece un'email di conferma a quella
-   casella, con un link da cliccare. Da quel momento in poi tutte
-   le richieste arrivano normalmente. Vale per la casella della
-   piattaforma e per quella di ogni professionista.
+   Di conseguenza cambia anche cosa comunichiamo all'utente:
+   "richiesta ricevuta" significa salvata, non "email partita".
+   Il ripiego con il mailto compare solo se nemmeno il
+   salvataggio è riuscito — cioè se il servizio è irraggiungibile.
 
-   COME PASSARE A UN ALTRO PROVIDER
-   - Web3Forms (consigliato: non espone l'indirizzo nel sorgente)
-     registra una chiave gratuita su web3forms.com, incollala in
-     `web3formsKey` e porta `provider` a "web3forms".
-   - FormSubmit con alias: dopo l'attivazione, FormSubmit fornisce
-     un alias del tipo "el/xxxxxxxx". Incollalo in
-     `destinatarioPiattaforma` al posto dell'indirizzo email: le
-     richieste continuano ad arrivare, ma l'indirizzo non è più
-     leggibile nel codice sorgente (meno spam).
+   Il database non è raggiungibile dal browser: questa pagina
+   parla solo con la funzione, che valida lato server.
    ============================================================ */
 "use strict";
 
 (function () {
 
-  const MAILER = {
-    /* "api" usa la funzione serverless /api/invia (host con
-       funzioni, es. Vercel) e ripiega da sola sull'invio diretto
-       se la funzione non c'è — è il caso di GitHub Pages. */
-    provider: "api",                              // "api" | "formsubmit" | "web3forms" | "mailto"
-    endpointApi: "/api/invia",
-    destinatarioPiattaforma: "r.difalco@lori-crm.it",
-    web3formsKey: "",                             // richiesto solo con provider "web3forms"
-    /* Se true, quando la richiesta è indirizzata a un professionista
-       una copia parte anche verso la sua casella. */
-    copiaAlProfessionista: true,
-    mittenteEtichetta: "QuotaFacile"
+  const CONFIG = {
+    endpoint: "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-contatti",
+    /* Usato solo per comporre il mailto di ripiego quando il
+       servizio non risponde. */
+    emailRipiego: "r.difalco@lori-crm.it",
+    timeoutMs: 15000
   };
 
-  const ENDPOINT = {
-    formsubmit: dest => `https://formsubmit.co/ajax/${encodeURIComponent(dest)}`,
-    web3forms: () => "https://api.web3forms.com/submit"
-  };
+  const corpoTesto = dati => Object.entries(dati)
+    .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "")
+    .map(([k, v]) => `${k}: ${v}`).join("\n");
 
-  /* Corpo leggibile: il servizio inoltra i campi così come arrivano,
-     quindi le etichette devono essere comprensibili in una email. */
-  function corpo(dati) {
-    return Object.entries(dati)
-      .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== "")
-      .map(([k, v]) => `${k}: ${v}`)
-      .join("\n");
-  }
+  const mailtoRipiego = (oggetto, dati) =>
+    `mailto:${CONFIG.emailRipiego}?subject=${encodeURIComponent(oggetto)}&body=${encodeURIComponent(corpoTesto(dati))}`;
 
-  function mailtoUrl(dest, oggetto, dati) {
-    return `mailto:${dest}?subject=${encodeURIComponent(oggetto)}&body=${encodeURIComponent(corpo(dati))}`;
-  }
-
-  /* Attenzione: questi servizi rispondono 200 anche quando NON hanno
-     recapitato nulla — è il caso della casella non ancora attivata, in
-     cui la risposta contiene success:false e il messaggio di conferma.
-     Fermarsi allo stato HTTP significherebbe dire all'utente
-     "richiesta inviata" mentre il contatto non è arrivato a nessuno. */
-  async function postJson(url, payload) {
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const esito = await r.json().catch(() => ({}));
-    const ok = esito.success === true || esito.success === "true";
-    if ("success" in esito && !ok) {
-      const e = new Error(esito.message || "Consegna non riuscita");
-      e.rispostaServizio = esito;
-      throw e;
-    }
-    return esito;
-  }
-
-  /* Invia a un singolo destinatario. Restituisce true/false senza
-     lanciare: la chiamante decide cosa mostrare all'utente. */
-  /* Quando la funzione serverless non è disponibile (host statico)
-     si ripiega sull'invio diretto: il provider di riserva è
-     FormSubmit, l'unico che non richiede una chiave. */
-  const providerDiretto = () => MAILER.provider === "api" ? "formsubmit" : MAILER.provider;
-
-  /* Ritorna l'esito della funzione serverless, oppure null se la
-     funzione non esiste su questo host: in quel caso la chiamante
-     prosegue con l'invio diretto. */
-  async function viaApi(oggetto, dati, destinatarioExtra) {
+  /* Il timeout evita che l'utente resti su "invio in corso" a
+     tempo indeterminato se la rete è lenta o il servizio è giù. */
+  async function chiama(payload) {
+    const stop = new AbortController();
+    const t = setTimeout(() => stop.abort(), CONFIG.timeoutMs);
     try {
-      const r = await fetch(MAILER.endpointApi, {
+      const r = await fetch(CONFIG.endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({ oggetto, dati, destinatarioExtra })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: stop.signal
       });
-      if (r.status === 404 || r.status === 405) return null; // host senza funzioni
       const esito = await r.json().catch(() => ({}));
-      return { consegnato: !!esito.ok, destinatari: esito.consegnati || [] };
+      return { ok: r.ok && esito.ok === true, status: r.status, ...esito };
     } catch (e) {
-      return null; // rete o endpoint assente
-    }
-  }
-
-  async function inviaA(dest, oggetto, dati) {
-    if (!dest || /^«.*»$/.test(dest)) return false;
-    try {
-      if (providerDiretto() === "web3forms") {
-        if (!MAILER.web3formsKey) return false;
-        await postJson(ENDPOINT.web3forms(), {
-          access_key: MAILER.web3formsKey,
-          subject: oggetto,
-          from_name: MAILER.mittenteEtichetta,
-          to: dest,
-          ...dati
-        });
-        return true;
-      }
-      if (providerDiretto() === "formsubmit") {
-        await postJson(ENDPOINT.formsubmit(dest), {
-          _subject: oggetto,
-          _template: "table",
-          _captcha: "false",
-          ...dati
-        });
-        return true;
-      }
-      return false; // provider "mailto": gestito dal fallback
-    } catch (e) {
-      /* Utile in console per capire se il problema è la casella non
-         ancora attivata o altro. Non blocca nulla: la chiamante mostra
-         comunque il ripiego con il mailto già compilato. */
-      console.warn("[QFMailer] consegna a " + dest + " non riuscita:", e.message);
-      return false;
+      return { ok: false, status: 0, errore: e.name === "AbortError" ? "Tempo scaduto" : e.message };
+    } finally {
+      clearTimeout(t);
     }
   }
 
   /* API pubblica.
-     `dest` aggiuntivo = casella del professionista destinatario.
-     Esito: { consegnato, fallback } — `fallback` è un mailto: da
-     proporre all'utente quando la consegna automatica non riesce,
-     così una richiesta non va mai persa in silenzio. */
-  async function invia({ oggetto, dati, destinatarioExtra = null }) {
-    const arricchiti = {
-      ...dati,
-      Origine: location.origin + location.pathname,
-      Inviato: new Date().toLocaleString("it-IT")
-    };
-
-    /* Prima strada: la funzione serverless, che tiene fuori dal
-       browser sia l'indirizzo di destinazione sia le credenziali. */
-    if (MAILER.provider === "api") {
-      const esito = await viaApi(oggetto, arricchiti, MAILER.copiaAlProfessionista ? destinatarioExtra : null);
-      if (esito) {
-        return {
-          ...esito,
-          fallback: esito.consegnato ? null : mailtoUrl(MAILER.destinatarioPiattaforma, oggetto, arricchiti)
-        };
-      }
-      console.warn("[QFMailer] funzione /api/invia non disponibile: invio diretto");
+     tipo: "richiesta" | "iscrizione-pro" | "waitlist" | "segnalazione"
+     Esito: { salvato, notificata, errore, fallback }
+       salvato   → il contatto è al sicuro, si può confermare all'utente
+       notificata→ è partito anche l'avviso (informativa, non critica)
+       fallback  → mailto da proporre solo se il salvataggio è fallito */
+  async function invia(tipo, dati, { oggettoRipiego = "Richiesta da QuotaFacile", datiRipiego = null } = {}) {
+    const esito = await chiama({ tipo, dati });
+    if (esito.ok) {
+      return { salvato: true, notificata: esito.notificata !== false, errore: null, fallback: null };
     }
-
-    const destinatari = [MAILER.destinatarioPiattaforma];
-    if (MAILER.copiaAlProfessionista && destinatarioExtra) destinatari.push(destinatarioExtra);
-
-    const esiti = await Promise.all(destinatari.map(d => inviaA(d, oggetto, arricchiti)));
-    const consegnato = esiti.some(Boolean);
-
     return {
-      consegnato,
-      destinatari: destinatari.filter((_, i) => esiti[i]),
-      fallback: consegnato ? null : mailtoUrl(MAILER.destinatarioPiattaforma, oggetto, arricchiti)
+      salvato: false,
+      notificata: false,
+      errore: esito.errore || "Servizio non raggiungibile",
+      /* Un errore di validazione (400) non si risolve riscrivendo
+         a mano: si risolve correggendo il modulo. Il ripiego ha
+         senso solo quando è il servizio a non rispondere. */
+      fallback: esito.status >= 400 && esito.status < 500
+        ? null
+        : mailtoRipiego(oggettoRipiego, datiRipiego || dati)
     };
   }
 
-  window.QFMailer = { invia, config: MAILER };
+  window.QFMailer = { invia, config: CONFIG };
 })();

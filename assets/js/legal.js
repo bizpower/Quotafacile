@@ -260,14 +260,17 @@
       dati come autonomo titolare</strong>, per finalità proprie e sotto la propria responsabilità, con
       una propria informativa che sei invitato a richiedergli. ${C.brand} non risponde dei
       trattamenti da lui effettuati.</li>
-      <li><strong>Al servizio che recapita i moduli via email.</strong> Il sito non dispone di un server
-      proprio: i dati inseriti nei moduli (richiesta di preventivo, domanda in bacheca, registrazione
-      professionista, iscrizione alla lista d'attesa dell'app) transitano da un fornitore
-      <em>form-to-email</em> che li inoltra alle caselle di destinazione. Il fornitore è nominato
-      <strong>responsabile del trattamento</strong> ai sensi dell'art. 28 GDPR, tratta i dati solo per
-      la consegna e non li utilizza per finalità proprie. Il nome del fornitore in uso è indicato in
-      <code>assets/js/mailer.js</code> ed è comunicato su richiesta a
-      <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>.</li>
+      <li><strong>Al fornitore dell'infrastruttura dati.</strong> I dati inseriti nei moduli (richiesta
+      di preventivo, registrazione professionista, iscrizione alla lista d'attesa dell'app,
+      segnalazione di contenuti) sono registrati in un database gestito da
+      <strong>Supabase</strong>, con server ubicati in <strong>Francoforte, Unione Europea</strong>.
+      Il fornitore è nominato <strong>responsabile del trattamento</strong> ai sensi dell'art. 28 GDPR,
+      tratta i dati esclusivamente per conto del Titolare e non li utilizza per finalità proprie.</li>
+      <li><strong>Al servizio che invia le notifiche.</strong> Alla ricezione di una richiesta viene
+      inviato un avviso al Titolare e, se la richiesta è indirizzata a un intermediario specifico,
+      a quest'ultimo. L'avviso è recapitato tramite un fornitore di posta elettronica o di
+      messaggistica, anch'esso responsabile del trattamento. Il nome del fornitore in uso è
+      comunicato su richiesta a <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>.</li>
       <li><strong>Ad altri fornitori tecnici</strong> (hosting, posta elettronica), anch'essi nominati
       responsabili del trattamento ai sensi dell'art. 28 GDPR.</li>
       <li><strong>All'Autorità giudiziaria o alle autorità di vigilanza</strong>, quando previsto per legge.</li>
@@ -277,10 +280,11 @@
     di marketing.</p>
 
     <h2>6. Trasferimento fuori dall'Unione Europea</h2>
-    <p>Il sito è ospitato su ${C.hosting}. ${C.hostingNota}. Anche il servizio che recapita i moduli via
-    email può avere infrastruttura negli Stati Uniti: verifica il fornitore effettivamente configurato
-    e la base giuridica del trasferimento prima di raccogliere dati da utenti reali.
-    Eventuali trasferimenti verso paesi terzi
+    <p>Il sito è ospitato su ${C.hosting}. ${C.hostingNota}.
+    <strong>I dati dei moduli sono invece conservati su server situati nell'Unione Europea</strong>
+    (Francoforte): per le richieste degli utenti non avviene alcun trasferimento verso paesi terzi.
+    Un trasferimento può interessare il solo servizio di notifica, se configurato con un fornitore
+    extra-UE. Eventuali trasferimenti verso paesi terzi
     avvengono sulla base di una decisione di adeguatezza della Commissione europea o delle Clausole
     Contrattuali Standard (art. 46 GDPR). L'elenco aggiornato dei fornitori è disponibile su richiesta
     a <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>.</p>
