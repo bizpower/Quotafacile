@@ -124,9 +124,9 @@ function consentBox(id, testo, obbligatorio = true) {
 /* Conteggi reali: i numeri esposti al pubblico devono essere veri
    (art. 21 d.lgs. 206/2005 — pratiche commerciali ingannevoli). */
 function contaRisposte() {
-  const daBacheca = DB.faqs.reduce((n, f) => n + f.risposte.length, 0);
-  const daGiornaliere = Object.values(DB.dailyExtra).reduce((n, r) => n + r.length, 0);
-  return daBacheca + daGiornaliere + dailyPublishedCount();
+  const daCommunity = domandeCommunity().reduce((n, f) => n + f.risposte.length, 0);
+  const daGuide = staffFaqs().reduce((n, f) => n + f.risposte.length, 0);
+  return daCommunity + daGuide + dailyPublishedCount();
 }
 
 function livello(punti) {
@@ -157,7 +157,7 @@ function dailyFaq(i) {
   const id = "d" + i;
   const risposte = [
     { autore: "qf", testo: src.rispostaAuto, voti: DB.autoVotes[id] || 0, accettata: true, auto: true },
-    ...(DB.dailyExtra[id] || [])
+    ...(window.QFBacheca?.risposteDi(id, true) || [])
   ];
   return { id, daily: true, num: i + 1, cat: src.cat, keyword: src.keyword, autore: "qf", data: d.toISOString().slice(0, 10), domanda: src.domanda, risposte };
 }
@@ -175,18 +175,55 @@ function publishedDaily() {
 const spoglia = html => String(html || "")
   .replace(/<\/(p|li|h4|ol|ul)>/g, " ").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
 
+/* Le domande della community arrivano dal database: sono
+   pubbliche, uguali per tutti. DB.faqs resta solo come copia
+   locale di ciò che questo browser ha inviato, utile finché la
+   bacheca remota non ha risposto. */
+function domandeCommunity() {
+  const remote = window.QFBacheca?.stato.caricata ? window.QFBacheca.domandeUtente() : [];
+  if (remote.length) return remote;
+  return window.QFBacheca?.stato.caricata ? [] : DB.faqs.filter(f => !f.staff);
+}
+
+/* Autore di una risposta: può arrivare dal database (porta con
+   sé nome e qualifica) oppure essere un profilo locale. */
+/* Il livello ("Novizio", "Esperto") misura l'attività su questo
+   browser: per una risposta arrivata dal database non esiste, e
+   mostrarlo accanto a un professionista reale sarebbe fuorviante.
+   Al suo posto si mostra la qualifica dichiarata. */
+function etichettaAutore(a) {
+  if (a.remoto) {
+    const q = [a.ruolo, a.azienda].filter(x => x && !DA_COMPILARE(x)).join(" · ");
+    return q ? `<span class="level-badge badge-qualifica">${esc(q)}</span>` : "";
+  }
+  return `<span class="level-badge">${livello(a.punti)}</span>`;
+}
+
+function autoreDi(r) {
+  if (r.autoreNome) {
+    return {
+      nome: r.autoreNome, ruolo: r.autoreRuolo || "Intermediario",
+      azienda: r.autoreAzienda, rui: r.autoreRui, punti: 0, remoto: true
+    };
+  }
+  return broker(r.autore);
+}
+
 function staffFaqs() {
-  /* Guide scritte nel repo + guide create dall'area Admin,
-     meno quelle ritirate dall'Admin. */
+  /* Guide scritte nel repo + guide pubblicate dall'area Admin,
+     meno quelle ritirate. */
   const base = (window.STAFF_FAQS || []).filter(s => !(DB.staffHidden || []).includes(s.id));
-  return [...(DB.staffCustom || []), ...base].map(s => ({
+  const remote = window.QFBacheca?.stato.caricata ? window.QFBacheca.guideRemote() : [];
+  return [...remote, ...base.map(s => ({
     id: s.id, staff: true, cat: s.cat, keyword: s.keyword, meta: s.meta, titolo: s.titolo,
     autore: "qf", data: s.data, domanda: s.domanda,
     risposte: [
       { autore: "qf", testo: s.testo || spoglia(s.risposta), rich: s.risposta, voti: DB.staffVotes[s.id] || 0, accettata: true, auto: true, staff: true },
-      ...(DB.staffExtra[s.id] || [])
+      /* le integrazioni dei professionisti arrivano dal database,
+         una volta approvate: prima non sono pubbliche */
+      ...(window.QFBacheca?.risposteDi(s.id, true) || [])
     ]
-  }));
+  }))];
 }
 
 function getFaqById(id) {
@@ -194,7 +231,10 @@ function getFaqById(id) {
     const i = +id.slice(1);
     return i < dailyPublishedCount() ? dailyFaq(i) : null;
   }
-  if (/^k/.test(id)) return staffFaqs().find(x => x.id === id) || null;
+  /* "k" guide del repository, "g" guide pubblicate dall'Admin,
+     "q" domande degli utenti: le ultime due vengono dal database. */
+  if (/^[kg]/.test(id)) return staffFaqs().find(x => x.id === id) || null;
+  if (/^q/.test(id)) return domandeCommunity().find(x => x.id === id) || null;
   return DB.faqs.find(x => x.id === id) || null;
 }
 function hoursToNextDaily() {
@@ -291,7 +331,7 @@ function faqJsonLd(faqs) {
         "publisher": { "@id": base + "#org" },
         "mainEntity": utili.map(f => {
           const best = f.risposte.find(r => r.accettata) || f.risposte[0];
-          const a = broker(best.autore);
+          const a = autoreDi(best);
           const autore = a && !a.auto
             ? { "@type": "Person", "name": a.nome, "jobTitle": a.ruolo, "worksFor": { "@type": "Organization", "name": a.azienda } }
             : { "@type": "Organization", "name": "Redazione QuotaFacile", "@id": base + "#org" };
@@ -415,7 +455,7 @@ const views = {};
 /* ----- HOME ----- */
 views.home = () => {
   const featured = [...DB.brokers].sort((a, b) => b.punti - a.punti).slice(0, 3);
-  const topFaq = [...staffFaqs().slice(0, 2), publishedDaily()[0], ...DB.faqs.filter(f => f.risposte.length)].filter(Boolean).slice(0, 3);
+  const topFaq = [...staffFaqs().slice(0, 2), publishedDaily()[0], ...domandeCommunity().filter(f => f.risposte.length)].filter(Boolean).slice(0, 3);
   setJsonLd(faqJsonLd(topFaq));
   return `
   <section class="hero">
@@ -653,7 +693,7 @@ views.intermediari = () => {
 let boardFilter = "Tutte";
 function qaCard(f) {
   const best = f.risposte.find(r => r.accettata) || f.risposte[0];
-  const a = best ? broker(best.autore) : null;
+  const a = best ? autoreDi(best) : null;
   const proCount = f.risposte.filter(r => !r.auto).length;
   return `
   <article class="card qa-card ${f.daily ? "qa-daily" : ""}${f.staff ? " qa-staff" : ""}" data-goto="#/faq/${f.id}">
@@ -669,7 +709,7 @@ function qaCard(f) {
     <div class="qa-foot">
       ${a ? (a.auto
         ? `<span class="qa-author"><span class="mini-avatar mini-qf">QF</span>${esc(a.nome)} <span class="level-badge badge-auto">risposta automatica</span></span>`
-        : `<span class="qa-author"><span class="mini-avatar">${esc(initials(a.nome))}</span>${esc(a.nome)} <span class="level-badge">${livello(a.punti)}</span></span>`) : `<span></span>`}
+        : `<span class="qa-author"><span class="mini-avatar">${esc(initials(a.nome))}</span>${esc(a.nome)} ${etichettaAutore(a)}</span>`) : `<span></span>`}
       ${best ? `<span class="pts">▲ ${best.voti} utile</span>` : `<span class="pts">+10 pt per chi risponde</span>`}
     </div>
   </article>`;
@@ -679,7 +719,7 @@ views.bacheca = () => {
   const cats = ["Tutte", "Auto", "Casa", "Vita", "Impresa", "Salute", "Viaggi"];
   /* Le domande Staff restano in cima: sono le pagine su cui
      puntiamo il posizionamento, devono essere le prime viste. */
-  const merged = [...staffFaqs(), ...publishedDaily(), ...DB.faqs.filter(f => !f.staff)];
+  const merged = [...staffFaqs(), ...publishedDaily(), ...domandeCommunity()];
   const list = merged.filter(f => boardFilter === "Tutte" || f.cat === boardFilter);
   const leaders = [...DB.brokers, ...(DB.proProfile ? [DB.proProfile] : [])].sort((a, b) => b.punti - a.punti).slice(0, 5);
   const nDaily = dailyPublishedCount();
@@ -793,7 +833,7 @@ views.faqDetail = (id) => {
       </p>
 
       ${f.risposte.length ? f.risposte.map((r, i) => {
-        const a = broker(r.autore) || { nome: "Intermediario", punti: 0 };
+        const a = autoreDi(r) || { nome: "Intermediario", punti: 0 };
         const voted = DB.votati.includes(f.id + ":" + i);
         return `
         <div class="answer ${r.auto ? "answer-auto" : ""}">
@@ -801,7 +841,7 @@ views.faqDetail = (id) => {
             <span class="qa-author">
               ${r.auto
                 ? `<span class="mini-avatar mini-qf">QF</span>${esc(a.nome)} <span class="level-badge badge-auto">${r.staff ? "guida redazionale" : "risposta automatica"}</span>`
-                : `<span class="mini-avatar">${esc(initials(a.nome))}</span>${esc(a.nome)} <span class="level-badge">${livello(a.punti)}</span>`}
+                : `<span class="mini-avatar">${esc(initials(a.nome))}</span>${esc(a.nome)} ${etichettaAutore(a)}`}
               ${r.accettata && !r.auto ? `<span class="badge-cat" style="background:var(--gold-100);color:#9A6B14">★ Migliore risposta</span>` : ""}
             </span>
             <button class="vote-btn" data-vote="${f.id}:${i}" ${voted ? "disabled" : ""}>▲ Utile (${r.voti})</button>
@@ -1040,9 +1080,9 @@ function proDashboardHTML(p) {
 }
 
 function proBoardHTML() {
-  const daily = publishedDaily().filter(f => !(DB.dailyExtra[f.id] || []).some(r => r.autore === "me")).slice(0, 6);
-  const staff = staffFaqs().filter(f => !(DB.staffExtra[f.id] || []).some(r => r.autore === "me"));
-  const community = DB.faqs.filter(f => !f.risposte.some(r => r.autore === "me"));
+  const daily = publishedDaily().slice(0, 6);
+  const staff = staffFaqs();
+  const community = domandeCommunity().filter(f => !f.risposte.length);
   const row = f => `
     <div class="lead-row" data-goto="#/faq/${f.id}" style="cursor:pointer">
       <span class="lead-icon">${f.staff ? "📌" : f.daily ? "☀️" : "🙋"}</span>
@@ -1374,48 +1414,52 @@ function bind() {
   });
 
   /* nuova domanda in bacheca */
-  $("#ask-form")?.addEventListener("submit", e => {
+  $("#ask-form")?.addEventListener("submit", async e => {
     e.preventDefault();
     if (!$("#ask-consenso").checked) { toast("Serve il consenso alla pubblicazione per pubblicare la domanda."); return; }
-    registraConsenso("domanda-bacheca", "Consenso alla pubblicazione della domanda in bacheca");
     const domanda = $("#ask-q").value.trim(), cat = $("#ask-cat").value;
-    DB.faqs.unshift({ id: "f" + Date.now(), cat, autore: null, data: new Date().toISOString().slice(0, 10), domanda, risposte: [] });
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = "Pubblicazione…"; }
+
+    const esito = await window.QFBacheca.nuovaDomanda({ domanda, categoria: cat, consenso: true });
+    if (!esito.ok) {
+      if (btn) { btn.disabled = false; btn.textContent = "Pubblica la domanda"; }
+      toast(esito.errore || "Non è stato possibile pubblicare la domanda.");
+      return;
+    }
+    registraConsenso("domanda-bacheca", "Consenso alla pubblicazione della domanda in bacheca");
     saveDB(); render();
-    toast("Domanda pubblicata! Un intermediario ti risponderà.");
-    /* Le domande della bacheca restano per ora nel browser di chi
-       le scrive: passano al database insieme a tutta la bacheca,
-       che è il prossimo passo. */
+    toast("Domanda pubblicata! Ora è visibile a tutti gli intermediari.");
   });
 
   /* voto risposta */
   document.querySelectorAll("[data-vote]").forEach(b =>
-    b.addEventListener("click", () => {
+    b.addEventListener("click", async () => {
       const key = b.dataset.vote;
       if (DB.votati.includes(key)) return;
       const sep = key.lastIndexOf(":");
       const fid = key.slice(0, sep), idx = +key.slice(sep + 1);
-      if (/^k/.test(fid) || /^d\d+$/.test(fid)) {
-        /* domanda del giorno (d) o domanda Staff (k, incluse le
-           kc… create dall'Admin): la prima risposta è quella
-           redazionale, le altre sono dei professionisti */
-        const staff = fid[0] === "k";
-        const voti = staff ? DB.staffVotes : DB.autoVotes;
-        const extra = staff ? DB.staffExtra : DB.dailyExtra;
-        if (idx === 0) {
-          voti[fid] = (voti[fid] || 0) + 1;
-        } else {
-          const r = (extra[fid] || [])[idx - 1];
-          if (!r) return;
-          r.voti++;
-          const a = broker(r.autore); if (a) a.punti += 5;
-        }
-      } else {
-        const f = DB.faqs.find(x => x.id === fid);
-        const r = f?.risposte[idx];
-        if (!r) return;
-        r.voti++;
-        const a = broker(r.autore); if (a) a.punti += 5;
+      const f = getFaqById(fid);
+      const r = f?.risposte[idx];
+      if (!r) return;
+
+      if (r.remota) {
+        /* Le risposte pubblicate vivono nel database: il voto va
+           lì, così lo vedono tutti. Il vincolo di unicità impedisce
+           che lo stesso dispositivo voti due volte. */
+        b.disabled = true;
+        const esito = await window.QFBacheca.vota(r.id);
+        if (!esito.ok) { b.disabled = false; toast(esito.errore || "Voto non registrato."); return; }
+        DB.votati.push(key);
+        saveDB(); render();
+        toast(esito.gia ? "Avevi già votato questa risposta." : "Grazie del feedback!");
+        return;
       }
+
+      /* Contenuti redazionali: il voto resta un segnale locale,
+         non c'è un autore a cui attribuire punti. */
+      if (/^k/.test(fid)) DB.staffVotes[fid] = (DB.staffVotes[fid] || 0) + 1;
+      else if (/^d\d+$/.test(fid)) DB.autoVotes[fid] = (DB.autoVotes[fid] || 0) + 1;
       DB.votati.push(key);
       saveDB(); render();
       toast("Grazie del feedback!");
@@ -1429,25 +1473,36 @@ function bind() {
     b.addEventListener("click", () => apriSegnalazione(b.dataset.report)));
 
   /* risposta a una FAQ (pro) — community o domanda del giorno */
-  $("#answer-form")?.addEventListener("submit", e => {
+  $("#answer-form")?.addEventListener("submit", async e => {
     e.preventDefault();
     const { path } = parseHash();
     const id = path[1];
-    if (!DB.proProfile) return;
-    const testo = $("#ans-t").value.trim();
-    if (/^k/.test(id) || /^d\d+$/.test(id)) {
-      const extra = id[0] === "k" ? DB.staffExtra : DB.dailyExtra;
-      if (!extra[id]) extra[id] = [];
-      extra[id].push({ autore: "me", testo, voti: 0, accettata: false });
-    } else {
-      const f = DB.faqs.find(x => x.id === id);
-      if (!f) return;
-      f.risposte.push({ autore: "me", testo, voti: 0, accettata: false });
+    const p = DB.proProfile;
+    if (!p) return;
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = "Invio…"; }
+
+    /* Le domande del database hanno un identificativo proprio; le
+       guide del repository e le domande del giorno si riferiscono
+       per chiave ("k1", "d12"). */
+    const f = getFaqById(id);
+    const dati = {
+      testo: $("#ans-t").value.trim(),
+      autoreNome: p.nome, autoreRuolo: p.ruolo, autoreAzienda: p.azienda,
+      autoreRui: p.rui, autoreEmail: p.email,
+      ...(f && f.uuid ? { domandaId: f.uuid } : { domandaChiave: id })
+    };
+
+    const esito = await window.QFBacheca.nuovaRisposta(dati);
+    if (!esito.ok) {
+      if (btn) { btn.disabled = false; btn.textContent = "Pubblica risposta · +10 pt"; }
+      toast(esito.errore || "Risposta non inviata.");
+      return;
     }
     DB.proProfile.punti += 10;
     DB.proProfile.risposte = (DB.proProfile.risposte || 0) + 1;
     saveDB(); render();
-    toast("Risposta pubblicata! +10 punti 🏅");
+    toast("Risposta inviata! Sarà pubblica dopo la verifica. +10 punti 🏅");
   });
 
   /* profilo pro: salvataggio + anteprima live */
@@ -1538,3 +1593,10 @@ window.QF = {
 
 window.addEventListener("hashchange", render);
 render();
+
+/* La bacheca è contenuto condiviso: si carica dal database e la
+   pagina si ridisegna appena arriva. Il primo render non aspetta,
+   così guide e domanda del giorno — che vivono nel codice — sono
+   visibili subito anche con una rete lenta. */
+window.QFBacheca?.onAggiorna(() => render());
+window.QFBacheca?.carica();
