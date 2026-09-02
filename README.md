@@ -17,9 +17,15 @@ quotafacile/
 │   ├── js/intermediari.js        # 🪪 Intermediari in vetrina (fonte di verità delle QuotaPass)
 │   ├── js/mailer.js              # 📬 Invio dei contatti alla Edge Function Supabase
 │   ├── js/bacheca.js             # 💬 Bacheca condivisa: lettura e scrittura sul database
-│   ├── js/admin.js               # 🔐 Console riservata (#/admin): KPI, moderazione, keyword
+│   ├── js/admin.js               # 🔐 Console riservata (#/admin): legge e modera i dati veri
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
+├── supabase/
+│   ├── schema.sql                # 🗄️ Tabelle, RLS, trigger: lo schema del database
+│   └── functions/                # ☁️ Edge Function (Deno) — il backend, versionato qui
+│       ├── qf-contatti/          #     riceve i contatti: salva prima, notifica poi
+│       ├── qf-bacheca/           #     legge e scrive la bacheca condivisa
+│       └── qf-admin/             #     moderazione, protetta da chiave
 ├── .github/workflows/            # Pubblicazione su Pages, attivazione casella email
 ├── llms.txt                      # 🤖 Presentazione del sito per i motori generativi
 ├── vercel.json                   # Intestazioni di sicurezza e cache
@@ -183,35 +189,57 @@ rete. Manca solo ciò che è condiviso.
 
 ## 🔐 Area Admin — `#/admin`
 
-Console riservata, non linkata da nessuna parte nel sito. Cinque sezioni:
+Console riservata, non linkata da nessuna parte nel sito. Legge e modera **i dati veri del
+database**: quello che vedi qui è quello che vedrebbe chiunque altro aprisse la console.
 
 | Sezione | Cosa fa |
 |---|---|
-| **📊 KPI** | Iscritti e stato di verifica, domande e risposte per tipo, richieste ricevute (totali, ultimi 30 giorni, per ramo), voti "utile", domande scoperte, segnalazioni aperte, waitlist app, copertura della bacheca, classifica professionisti |
-| **🪪 Professionisti** | Ogni iscritto con la sua QuotaPass, dati RUI e attività. Stato di verifica impostabile su Verificato / In attesa / Respinto, con link diretto al registro IVASS |
-| **💬 Bacheca** | Tutte le domande (utenti, guide, del giorno) con le rispettive risposte. Badge **★ Migliore risposta** (+25 pt all'autore), rimozione risposte e domande, filtri per tipo e per "senza risposta" |
-| **🎯 Keyword → Staff** | Pubblica una keyword come domanda Staff: campi SEO con contatori di lunghezza, editor con formattazione leggera, anteprima dello snippet Google, pubblicazione immediata in cima alla bacheca e ritiro |
-| **🚩 Segnalazioni** | Coda DSA alimentata dal pulsante *Segnala*. Accogli (rimuove il contenuto) o respingi, sempre con motivazione registrata |
+| **📊 KPI** | Richieste ricevute (totali, ultimi 30 giorni, per ramo), iscrizioni e stato di verifica, domande degli utenti e copertura, risposte pubblicate e coda di approvazione, voti "utile", guide, segnalazioni aperte, waitlist. Avvisa se un contatto è arrivato ma l'avviso non è partito |
+| **📥 Richieste** | I lead, con recapiti, note, prova del consenso e stato di lavorazione (nuova / presa in carico / chiusa). È il posto da cui si lavorano, non la casella di posta |
+| **🪚 Professionisti** | Ogni iscrizione ricevuta dal sito, con i dati RUI dichiarati. Verificato / In attesa / Respinto, con link al registro IVASS e una conferma esplicita prima di attestare un'iscrizione |
+| **💬 Bacheca** | Domande e risposte, comprese quelle **in attesa di approvazione** e quelle rimosse (con la loro motivazione). Pubblica, ripristina, assegna il badge ★ Migliore risposta, rimuove |
+| **🎯 Keyword → Guida** | Pubblica una keyword come guida: campi SEO con contatori, editor con formattazione leggera, anteprima dello snippet Google, pubblicazione immediata in bacheca |
+| **🚩 Segnalazioni** | Coda DSA alimentata dal pulsante *Segnala*. Accogli (rimuove davvero il contenuto) o respingi, sempre con motivazione registrata |
 
-Ogni rimozione richiede una motivazione, archiviata in `DB.moderazioni`: serve per rispondere
-all'autore, come previsto dall'art. 17 del Digital Services Act.
+Ogni rimozione richiede una motivazione, conservata sulla riga rimossa: serve per rispondere
+all'autore, come previsto dall'art. 17 del Digital Services Act. Ciò che è stato rimosso resta
+visibile in console, in secondo piano — serve a ricostruire una decisione, non a riproporla.
 
 **Editor delle guide** — nel campo risposta: `## titolo`, `- elenco`, `1. elenco numerato`,
 `**grassetto**`. Viene convertito in HTML da `mdToHtml()`.
 
-> 🔓 **Sull'accesso, senza giri di parole.** La passphrase è confrontata nel browser contro il suo
-> hash SHA-256 scritto in `admin.js`. Tiene fuori chi arriva per caso o prova a indovinare la rotta;
-> **non** ferma chi apre i sorgenti. È un deterrente, non un controllo di accesso: diventa sicurezza
-> vera solo con un login server-side. La passphrase in uso è stata impostata dal titolare; per
-> sostituirla:
-> ```bash
-> node -e "console.log(require('crypto').createHash('sha256').update('LA-TUA-PASSPHRASE').digest('hex'))"
-> ```
-> e incolla il risultato in `PASS_HASH`. Finché resta quella di default la console mostra un avviso.
+### 🔑 L'accesso
 
-> 📊 **Sui numeri.** Senza backend la console legge il `localStorage` del browser da cui la apri:
-> mostra le iscrizioni e le domande create lì, non quelle degli altri visitatori. Diventano dati
-> reali con il database.
+La chiave **non** viene confrontata nel browser: viaggia nell'intestazione `x-qf-admin` verso la
+funzione `qf-admin`, che ne calcola l'impronta SHA-256 e la confronta a tempo costante lato server.
+Nel sito e nel repository la chiave non compare mai, e senza di essa ogni azione riceve `401`.
+
+Due modi di configurarla, in quest'ordine di precedenza:
+
+1. il segreto **`QF_ADMIN_TOKEN`** fra i secrets del progetto Supabase — la via preferita, perché la
+   chiave non tocca il database;
+2. l'impronta conservata in `impostazioni_admin` — ripiego attivo, che permette alla console di
+   funzionare senza passaggi manuali nel pannello.
+
+Se non è configurata né l'una né l'altra la funzione risponde `503` e **nessuna** moderazione è
+possibile: meglio una console inattiva che una aperta a chiunque.
+
+Per ruotare la chiave conservata nel database:
+
+```sql
+update impostazioni_admin
+   set token_hash = encode(digest('LA-TUA-NUOVA-CHIAVE','sha256'),'hex'),
+       aggiornato_il = now()
+ where id = 1;
+```
+
+La chiave resta in `sessionStorage` fino alla chiusura della scheda.
+
+### Cosa **non** si modifica da qui
+
+Le nove guide di `staff-questions.js` e le tessere di `intermediari.js` vivono nel repository e
+compaiono in console in sola lettura: si modificano nel codice, dove ogni cambiamento resta
+tracciato e rivedibile.
 
 ## 🪪 Intermediari in vetrina
 
@@ -304,13 +332,11 @@ per 6 mesi dopo un rifiuto. Revoca sempre disponibile dal footer o via `QFConsen
 > in cima: nessun dato societario inventato viene mai pubblicato al posto di quelli reali.
 
 **Segnalazione contenuti (DSA)** — ogni risposta in bacheca ha un pulsante 🚩 *Segnala* che apre il
-modulo di notice & action (art. 16 Reg. UE 2022/2065). Le segnalazioni finiscono in
-`DB.segnalazioni` per la coda di moderazione.
+modulo di notice & action (art. 16 Reg. UE 2022/2065). Le segnalazioni finiscono nella tabella
+`segnalazioni` ed escono nella coda dell'area Admin. Il bersaglio è l'identificativo della risposta:
+la posizione nell'elenco cambia appena ne arriva una nuova, e chi modera si troverebbe davanti un
+contenuto diverso da quello segnalato.
 
 **Consensi** — ogni form (preventivo, domanda in bacheca, waitlist app, registrazione pro) ha una
-checkbox non precompilata con informativa contestuale; l'evento è registrato in `DB.consensi`
-(accountability, art. 7.1 GDPR).
-
-## Backend (non incluso, per design)
-
-I dati sono in `localStorage` con seed demo: perfetto per validare UX e pitch. Per andare in produzione servono: auth intermediari, verifica RUI (registro IVASS), database Q&A, notifiche richieste preventivo.
+checkbox non precompilata con informativa contestuale; l'evento è registrato nella tabella
+`consensi` insieme al testo esatto accettato (accountability, art. 7.1 GDPR).

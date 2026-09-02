@@ -605,8 +605,6 @@ p { line-height: 1.6; }
 .bar-val { text-align: right; font-weight: 700; color: var(--green-800); }
 
 /* Professionisti */
-.admin-pro { display: grid; grid-template-columns: 300px 1fr; gap: 1.4rem; align-items: start; margin-bottom: 1rem; }
-.admin-pro-card { width: 100%; }
 .admin-kv { width: 100%; border-collapse: collapse; font-size: .86rem; }
 .admin-kv th { text-align: left; font-weight: 600; color: var(--ink-soft); padding: .3rem .8rem .3rem 0; white-space: nowrap; vertical-align: top; width: 8.5rem; }
 .admin-kv td { padding: .3rem 0; }
@@ -614,6 +612,9 @@ p { line-height: 1.6; }
 
 /* Moderazione */
 .admin-q { margin-bottom: 1rem; }
+/* Ciò che è stato rimosso resta visibile in console, in secondo
+   piano: serve a ricostruire una decisione, non a riproporla. */
+.admin-rimossa { opacity: .68; border-left: 3px solid var(--line); }
 .admin-q-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .8rem; }
 .btn.danger { color: var(--danger); }
 .btn.danger:hover { background: #FCEDED; }
@@ -633,11 +634,6 @@ p { line-height: 1.6; }
 .admin-seg { margin-bottom: .8rem; border-left: 3px solid var(--danger); }
 .admin-seg.accolta { border-left-color: var(--green-600); }
 .admin-seg.respinta { border-left-color: var(--line); opacity: .75; }
-
-@media (max-width: 860px) {
-  .admin-pro { grid-template-columns: 1fr; }
-  .admin-pro-card { max-width: 380px; }
-}
 
 /* ---------- CTA presente ma non ancora attivabile ---------- */
 .btn-disabled {
