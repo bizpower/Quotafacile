@@ -855,7 +855,11 @@ views.faqDetail = (id) => {
             <a class="btn btn-outline btn-sm" href="#/preventivo?to=${a.id}">Chiedi consulenza</a>
           </div>` : ""}
           <div class="answer-foot">
-            <button class="report-btn" data-report="${f.id}:${i}" title="Segnala questo contenuto">🚩 Segnala</button>
+            <!-- Il bersaglio della segnalazione è l'identificativo della
+                 risposta quando esiste: la posizione nell'elenco cambia
+                 appena arriva una risposta nuova, e chi modera si
+                 troverebbe davanti un contenuto diverso da quello segnalato. -->
+            <button class="report-btn" data-report="${r.remota && r.id ? "risposta:" + r.id : f.id + ":" + i}" title="Segnala questo contenuto">🚩 Segnala</button>
           </div>
         </div>`;
       }).join("") : `<p class="muted" style="font-style:italic">Ancora nessuna risposta.</p>`}
