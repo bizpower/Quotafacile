@@ -1,7 +1,7 @@
 /* ============================================================
    QuotaFacile — Area Admin (riservata)
    ------------------------------------------------------------
-   Rotta: #/admin — non è linkata da nessuna parte nel sito.
+   Rotta: #/admin, raggiungibile dal footer.
 
    Fino a ieri questa console leggeva il localStorage: mostrava
    ciò che era stato creato in *questo* browser, e la passphrase
@@ -10,9 +10,11 @@
 
    ACCESSO — la chiave di amministrazione non è confrontata qui:
    viaggia nell'intestazione x-qf-admin verso la funzione
-   qf-admin, che la confronta con il segreto QF_ADMIN_TOKEN del
-   progetto Supabase. Quel segreto non compare nel sito né nel
-   repository, e senza di esso nessuna azione va a buon fine —
+   qf-admin, che ne calcola l'impronta SHA-256 e la confronta a
+   tempo costante con quella configurata (il segreto
+   QF_ADMIN_TOKEN del progetto, o in mancanza l'impronta in
+   impostazioni_admin). La chiave non compare nel sito né nel
+   repository, e senza di essa nessuna azione va a buon fine —
    nemmeno leggendo questo file. È un controllo vero.
 
    DATI — tutto ciò che vedi arriva dal database: richieste,
@@ -108,9 +110,9 @@
             <button class="btn btn-primary btn-block" style="margin-top:1rem" type="submit">Entra</button>
           </form>
           <p class="privacy-hint" style="margin-top:1.2rem">
-            La chiave viene verificata dal server, non da questa pagina: è il segreto
-            <code>QF_ADMIN_TOKEN</code> del progetto Supabase. Resta in memoria fino alla
-            chiusura della scheda e non viene mai salvata sul dispositivo in modo permanente.
+            La chiave viene verificata dal server, non da questa pagina: qui non c'è nulla
+            con cui confrontarla. Resta in memoria fino alla chiusura della scheda e non
+            viene mai salvata sul dispositivo in modo permanente.
           </p>
         </div>
       </div>
@@ -326,15 +328,25 @@
     <div class="card" style="margin-top:1.4rem">
       <h3>🪪 Tessere in vetrina (${vetrina.length})</h3>
       <p class="muted" style="font-size:.85rem">Queste schede vivono nel repository, in <code>assets/js/intermediari.js</code>: si modificano nel codice, dove ogni cambiamento resta tracciato. Da qui sono in sola lettura.</p>
-      ${vetrina.map(b => `
+      ${vetrina.map(b => {
+        /* I campi non compilati non compaiono più sulla tessera
+           pubblica. Il promemoria di cosa manca sta qui, dove lo
+           legge chi può rimediare. */
+        const mancanti = [
+          ["azienda", b.azienda], ["città", b.citta], ["telefono", b.tel],
+          ["email", b.email], ["presentazione", b.bio],
+          ["intermediario per cui opera", b.operaPerConto]
+        ].filter(([, v]) => !v || QF().DA_COMPILARE(v)).map(([k]) => k);
+        return `
         <div class="lead-row">
           <span class="mini-avatar">${esc(QF().initials(b.nome))}</span>
           <span class="leader-info">
             <strong>${esc(b.nome)}</strong>
-            <span>${esc(b.ruolo || "—")} · ${QF().ruiLabel ? QF().ruiLabel(b) : esc(b.rui || "RUI non inserito")}</span>
+            <span>${esc(b.ruolo || "—")} · ${QF().ruiLabel ? QF().ruiLabel(b) : esc(b.rui || "RUI non inserito")}${mancanti.length ? ` · <em>da compilare: ${esc(mancanti.join(", "))}</em>` : ""}</span>
           </span>
           <span class="pill">${STATI[b.statoVerifica] || "⏳ In attesa"}</span>
-        </div>`).join("") || `<p class="muted">Nessuna tessera.</p>`}
+        </div>`;
+      }).join("") || `<p class="muted">Nessuna tessera.</p>`}
     </div>`;
   }
 

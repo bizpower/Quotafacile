@@ -189,7 +189,7 @@ rete. Manca solo ciò che è condiviso.
 
 ## 🔐 Area Admin — `#/admin`
 
-Console riservata, non linkata da nessuna parte nel sito. Legge e modera **i dati veri del
+Console riservata, raggiungibile dal footer. Legge e modera **i dati veri del
 database**: quello che vedi qui è quello che vedrebbe chiunque altro aprisse la console.
 
 | Sezione | Cosa fa |

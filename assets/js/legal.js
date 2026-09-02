@@ -38,8 +38,8 @@
     gestoreIntermediario: {
       nome: "Riccardo Di Falco",
       sezioneRui: "E",
-      numeroRui: null,                 // ← da leggere sul RUI pubblico
-      iscrittoDal: "2021-06-21",
+      numeroRui: "E000688335",         // letto sul RUI pubblico
+      iscrittoDal: "2021-06-24",       // idem: il registro fa fede
       attivita: "addetto all'intermediazione assicurativa fuori dei locali dell'intermediario",
       ateco: "66.22.03 — sub-agenti di assicurazioni",
       /* La sezione E opera per conto di un intermediario iscritto in
