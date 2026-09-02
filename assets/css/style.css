@@ -552,6 +552,14 @@ p { line-height: 1.6; }
   color: #A9C8B6; font: inherit; font-size: .88rem; cursor: pointer; text-align: left;
 }
 .footer-linkbtn:hover { color: #fff; }
+/* Un filo staccata dalle voci legali: non è una pagina del sito,
+   è la porta di servizio. */
+.footer-riservata {
+  margin-top: .7rem; padding-top: .55rem;
+  border-top: 1px solid rgba(255,255,255,.12);
+  opacity: .72; font-size: .82rem;
+}
+.footer-riservata:hover { opacity: 1; }
 .footer-bottom p { margin: 0 0 .6rem; }
 .footer-bottom a { display: inline; text-decoration: underline; }
 .footer-disclaimer { font-size: .74rem; line-height: 1.55; opacity: .75; max-width: 68ch; }
