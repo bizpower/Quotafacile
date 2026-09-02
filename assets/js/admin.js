@@ -326,15 +326,25 @@
     <div class="card" style="margin-top:1.4rem">
       <h3>🪪 Tessere in vetrina (${vetrina.length})</h3>
       <p class="muted" style="font-size:.85rem">Queste schede vivono nel repository, in <code>assets/js/intermediari.js</code>: si modificano nel codice, dove ogni cambiamento resta tracciato. Da qui sono in sola lettura.</p>
-      ${vetrina.map(b => `
+      ${vetrina.map(b => {
+        /* I campi non compilati non compaiono più sulla tessera
+           pubblica. Il promemoria di cosa manca sta qui, dove lo
+           legge chi può rimediare. */
+        const mancanti = [
+          ["azienda", b.azienda], ["città", b.citta], ["telefono", b.tel],
+          ["email", b.email], ["presentazione", b.bio],
+          ["intermediario per cui opera", b.operaPerConto]
+        ].filter(([, v]) => !v || QF().DA_COMPILARE(v)).map(([k]) => k);
+        return `
         <div class="lead-row">
           <span class="mini-avatar">${esc(QF().initials(b.nome))}</span>
           <span class="leader-info">
             <strong>${esc(b.nome)}</strong>
-            <span>${esc(b.ruolo || "—")} · ${QF().ruiLabel ? QF().ruiLabel(b) : esc(b.rui || "RUI non inserito")}</span>
+            <span>${esc(b.ruolo || "—")} · ${QF().ruiLabel ? QF().ruiLabel(b) : esc(b.rui || "RUI non inserito")}${mancanti.length ? ` · <em>da compilare: ${esc(mancanti.join(", "))}</em>` : ""}</span>
           </span>
           <span class="pill">${STATI[b.statoVerifica] || "⏳ In attesa"}</span>
-        </div>`).join("") || `<p class="muted">Nessuna tessera.</p>`}
+        </div>`;
+      }).join("") || `<p class="muted">Nessuna tessera.</p>`}
     </div>`;
   }
 

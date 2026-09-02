@@ -438,7 +438,12 @@ function qpass(b, flat = false) {
         <div class="qpass-avatar">${esc(initials(b.nome))}</div>
         <div>
           <div class="qpass-name">${esc(b.nome)}</div>
-          <div class="qpass-role">${esc(b.ruolo)} · ${campo(b.azienda)} · ${campo(b.citta)}</div>
+          <!-- Un campo non ancora compilato semplicemente non
+               compare: stampare «Città» accanto al badge
+               "Verificato RUI" farebbe sembrare incerto anche ciò
+               che incerto non è. Il promemoria di cosa manca sta
+               nella console, dove serve a chi deve compilarlo. -->
+          <div class="qpass-role">${[b.ruolo, b.azienda, b.citta].filter(v => v && !DA_COMPILARE(v)).map(esc).join(" · ")}</div>
         </div>
       </div>
     </div>
@@ -677,7 +682,7 @@ views.intermediari = () => {
           ${qpass(b, true)}
           ${b.operaPerConto ? `<p class="opera-per">Opera per conto di <strong>${campo(b.operaPerConto)}</strong></p>` : ""}
           ${b.gestoreDelSito ? `<p class="nota-gestore">ℹ️ Gestisce QuotaFacile ed è presente in vetrina come intermediario: <a href="#/note-legali">leggi cosa comporta</a>.</p>` : ""}
-          <p class="muted" style="font-size:.88rem;margin:.1rem 0">${campo(b.bio)}</p>
+          ${DA_COMPILARE(b.bio) ? "" : `<p class="muted" style="font-size:.88rem;margin:.1rem 0">${esc(b.bio)}</p>`}
           <div class="pass-actions">
             ${ctaChiama(b)}
             ${DA_COMPILARE(b.email) ? "" : `<a class="btn btn-outline btn-sm" href="mailto:${esc(b.email)}">✉️ Email</a>`}
