@@ -439,6 +439,76 @@ create policy "documenti: ognuno elimina i propri"
          or crm_interno.vede_tutto()));
 
 -- ------------------------------------------------------------
+-- 7e. CRM: lead locali
+-- ------------------------------------------------------------
+-- Attività raccolte dalle API ufficiali Google (Places +
+-- Geocoding). Niente scraping: è il vincolo che il progetto
+-- cercalead si era già dato, ed è anche ciò che tiene la
+-- raccolta di dati d'impresa dentro il perimetro del legittimo
+-- interesse invece che fuori.
+--
+-- Per la stessa ragione ogni riga porta con sé la propria
+-- provenienza: da quale fonte, con quale ricerca, in che giorno.
+-- Se un domani qualcuno chiede "dove avete preso il mio
+-- recapito", la risposta è una riga di database, non un ricordo.
+
+create table if not exists public.crm_lead (
+  id            uuid primary key default gen_random_uuid(),
+  creato_il     timestamptz not null default now(),
+
+  -- identificativo Google: è ciò che impedisce di salvare due
+  -- volte la stessa attività trovata da due ricerche diverse
+  place_id      text unique,
+
+  nome          text not null,
+  categoria     text,
+  indirizzo     text,
+  citta         text,
+  provincia     text,
+  cap           text,
+  telefono      text,
+  sito          text,
+  valutazione   numeric(2,1),
+  recensioni    integer,
+  lat           double precision,
+  lng           double precision,
+
+  -- ---- provenienza ----
+  fonte         text not null default 'google_places',
+  raccolto_il   timestamptz not null default now(),
+  query_origine text,
+
+  -- ---- lavorazione ----
+  stato         text not null default 'nuovo'
+                  check (stato in ('nuovo','contattato','in_trattativa','cliente','scartato')),
+  assegnato_a   uuid references public.crm_collaboratori(id) on delete set null,
+  note          text,
+  contattato_il timestamptz
+);
+comment on table public.crm_lead is
+  'Attività raccolte dalle API ufficiali Google. Ogni riga conserva la propria provenienza: fonte, ricerca che l''ha prodotta, data di raccolta.';
+
+alter table public.crm_lead enable row level security;
+
+create index if not exists crm_lead_stato_idx on public.crm_lead (stato, creato_il desc);
+create index if not exists crm_lead_assegnato_idx on public.crm_lead (assegnato_a) where assegnato_a is not null;
+
+drop policy if exists "ognuno vede i lead che gli sono assegnati" on public.crm_lead;
+create policy "ognuno vede i lead che gli sono assegnati"
+  on public.crm_lead for select to authenticated
+  using (assegnato_a = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto());
+
+-- Chi lavora un lead può aggiornarne stato e note, non
+-- riassegnarselo né cambiarne i dati di provenienza: quelli
+-- raccontano da dove viene, e riscriverli cancellerebbe la
+-- risposta a "dove avete preso il mio recapito".
+drop policy if exists "ognuno aggiorna i lead che gli sono assegnati" on public.crm_lead;
+create policy "ognuno aggiorna i lead che gli sono assegnati"
+  on public.crm_lead for update to authenticated
+  using (assegnato_a = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto())
+  with check (assegnato_a = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto());
+
+-- ------------------------------------------------------------
 -- 8. Funzioni non esposte
 -- ------------------------------------------------------------
 -- Una funzione nello schema public è invocabile via /rest/v1/rpc
