@@ -755,6 +755,17 @@ a.chip { display: inline-block; text-decoration: none; }
 .pl-attivita-capo .muted { font-size: .75rem; }
 .pl-attivita p { font-size: .85rem; color: var(--ink-soft); margin: .3rem 0; line-height: 1.5; }
 
+/* ---------- Posta ---------- */
+/* Il corpo dell'anteprima si mostra come partirà davvero: a
+   spaziatura fissa e con gli a capo rispettati, perché è quello
+   che riceverà chi legge. */
+.mail-corpo {
+  background: #FCFDFC; border: 1px solid var(--line); border-radius: var(--radius);
+  padding: .9rem 1rem; margin: .6rem 0 0; font-size: .84rem; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, Menlo, Consolas, monospace;
+  max-height: 380px; overflow-y: auto;
+}
+
 /* ---------- Produzione ---------- */
 .prod-riga { display: grid; grid-template-columns: 1.8rem 34px 1fr auto; gap: .7rem; align-items: center; padding: .7rem 0; border-bottom: 1px dashed var(--line); }
 .prod-riga:last-of-type { border-bottom: 0; }
