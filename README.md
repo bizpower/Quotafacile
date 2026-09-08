@@ -19,6 +19,8 @@ quotafacile/
 │   ├── js/bacheca.js             # 💬 Bacheca condivisa: lettura e scrittura sul database
 │   ├── js/admin.js               # 🔐 Area riservata (#/admin): la porta + console di piattaforma
 │   ├── js/crm.js                 # 🏢 CRM Bizpower (#/admin/crm): amministrazione della società
+│   ├── js/accesso.js             # 🔑 Sessione dei collaboratori (Supabase Auth, storage, RLS)
+│   ├── js/area.js                # 🧑‍💼 Area personale del collaboratore (#/admin/area)
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
 ├── supabase/
@@ -131,8 +133,13 @@ l'avviso fallisce, il lead resta al sicuro. Cambia di conseguenza anche cosa si 
 
 **Sicurezza.** RLS attiva su tutte le tabelle e nessuna policy: le chiavi che vivono nel browser non
 leggono né scrivono nulla — verificato, il ruolo `anon` riceve `permission denied`. Si passa solo
-dalla Edge Function, che valida lato server e usa il service role. Il sito non contiene alcuna
-chiave Supabase.
+dalla Edge Function, che valida lato server e usa il service role.
+
+Dall'arrivo degli accessi dei collaboratori il sito contiene **una** chiave Supabase, quella
+`publishable`: è progettata per stare nelle pagine e da sola non apre nulla, perché su ogni
+tabella la RLS è attiva e senza una sessione valida non c'è riga leggibile. Serve solo a dire
+*quale* progetto si sta interrogando. La chiave di servizio, quella che scavalca le regole, resta
+soltanto dentro le Edge Function.
 
 **Freno anti-abuso.** L'endpoint è pubblico per necessità: un modulo di preventivo non può chiedere
 di autenticarsi. `qf_troppe_richieste()` blocca oltre 5 richieste dallo stesso indirizzo in un'ora
@@ -264,12 +271,56 @@ lo sono mai: tenerli distinti rende difficile sbagliarsi.
 
 | Sezione | Stato |
 |---|---|
-| **👥 Collaboratori** | ✅ anagrafica della squadra: ruoli, recapiti, note interne, attivazione |
+| **👥 Collaboratori** | ✅ anagrafica, ruoli, attivazione e **creazione degli accessi personali** |
+| **📁 Documenti** | ✅ archivio della squadra: chi ha caricato cosa, categorie, scadenze in evidenza |
 | **🔎 Lead locali** | in arrivo — ricerca per via/città/provincia/CAP e raggio, categorie multiple, fino a 50 risultati |
 | **📇 Pipeline** | in arrivo — contatti, etichette di stato, assegnazione, viste per fase |
-| **📁 Documenti** | in arrivo — archivio contratti per collaboratore e cliente |
 | **✉️ Mail** | in arrivo — casella, filtri per mittente, allegati, template, invio |
 | **🏆 Produzione** | in arrivo — punteggio calcolato dai fatti registrati, classifica |
+
+### 🔑 Accessi dei collaboratori — `#/admin/area`
+
+Dalla stessa porta entrano due tipi di persona: il titolare con la chiave di amministrazione,
+i collaboratori con **email e password proprie** (Supabase Auth). Chi entra come collaboratore
+non vede la porta: vede la sua area e basta.
+
+Le credenziali le crea il titolare dalla scheda Collaboratori. La password è **generata dal
+server e leggibile una volta sola**: nel database resta solo la sua forma cifrata, quindi non è
+recuperabile — se ne genera un'altra. Al primo accesso il collaboratore dovrebbe cambiarla dalla
+propria area, perché una password passata da un messaggio non è più un segreto fra lui e il sistema.
+
+**Cosa vede chi:**
+
+| | Propria scheda | Squadra | Propri documenti | Documenti altrui |
+|---|---|---|---|---|
+| Commerciale, account, consulente | ✅ | ✕ | ✅ | ✕ |
+| Direttore, titolare | ✅ | ✅ | ✅ | ✅ |
+
+Non è una questione di schermate mancanti: **lo nega il database**, con le policy, anche a chi
+provasse a interrogarlo direttamente. Le tre funzioni che rispondono a "chi sta chiedendo" vivono
+nello schema `crm_interno`, che PostgREST non espone: devono servire alle policy, non essere
+invocabili dal mondo.
+
+Nessuno può cambiarsi il ruolo: su `crm_collaboratori` non esiste alcuna policy di scrittura, e
+ruoli, attivazione e punteggio passano solo dalla funzione `qf-crm`, che risponde solo al titolare.
+
+**Disattivare chiude davvero la porta.** L'utenza viene sospesa (niente token nuovi) *e* la
+policy richiede `attivo`, perché un token già emesso resta valido fino a un'ora: senza quella
+condizione, per quel margine si continuerebbe a entrare.
+
+### 📁 Come stanno i documenti
+
+I file vivono in un **bucket privato**: non esiste un indirizzo pubblico che li raggiunga,
+nemmeno conoscendolo. Si scaricano con la sessione di chi ha diritto di vederli. Il percorso di
+ogni file comincia con l'identificativo di chi lo ha caricato, ed è la policy dell'archivio a
+imporlo — è ciò che rende l'area di ciascuno davvero sua.
+
+Limiti: 15 MB a file, e solo PDF, immagini, Word ed Excel. Un archivio che accetta qualunque cosa
+diventa un modo per distribuire qualunque cosa.
+
+Se il salvataggio della scheda fallisce dopo che il file è già salito, il file viene rimosso: un
+file orfano è meno grave di una scheda che indica un file inesistente, perché la seconda sembra
+tutto a posto.
 
 Le sezioni non ancora costruite **dicono cosa faranno**, come, e cosa serve per attivarle:
 una scheda vuota che sembra funzionante è peggio di una che dichiara di non esserlo.

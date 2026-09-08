@@ -275,6 +275,170 @@ create index if not exists crm_collaboratori_attivo_idx
   on public.crm_collaboratori (attivo, nome);
 
 -- ------------------------------------------------------------
+-- 7b. CRM: accessi personali dei collaboratori
+-- ------------------------------------------------------------
+-- Il titolare entra con la chiave di amministrazione, che vale
+-- per tutto. I collaboratori no: hanno un'utenza personale
+-- (Supabase Auth) e da quel momento "chi entra" ha una risposta
+-- diversa per ciascuno. Le regole di cosa può vedere non stanno
+-- nella pagina né nella funzione, ma qui: una policy che il
+-- database applica sempre non si può dimenticare di scrivere in
+-- una schermata nuova.
+
+alter table public.crm_collaboratori
+  drop constraint if exists crm_collaboratori_utente_id_fkey;
+alter table public.crm_collaboratori
+  add constraint crm_collaboratori_utente_id_fkey
+  foreign key (utente_id) references auth.users(id) on delete set null;
+
+-- Le tre funzioni che rispondono a "chi sta chiedendo". Vivono
+-- in uno schema che PostgREST non espone: devono essere
+-- eseguibili dalle policy, non invocabili dal mondo via
+-- /rest/v1/rpc. Sono SECURITY DEFINER perché leggono
+-- crm_collaboratori anche per chi su quella tabella non ha
+-- ancora alcun diritto — cioè chiunque, un istante prima di
+-- sapere chi è.
+create schema if not exists crm_interno;
+grant usage on schema crm_interno to authenticated, service_role;
+
+create or replace function crm_interno.collaboratore_corrente()
+returns uuid language sql stable security definer set search_path = '' as $$
+  select id from public.crm_collaboratori
+   where utente_id = auth.uid() and attivo
+   limit 1;
+$$;
+
+create or replace function crm_interno.ruolo_corrente()
+returns text language sql stable security definer set search_path = '' as $$
+  select ruolo from public.crm_collaboratori
+   where utente_id = auth.uid() and attivo
+   limit 1;
+$$;
+
+create or replace function crm_interno.vede_tutto()
+returns boolean language sql stable security definer set search_path = '' as $$
+  select coalesce(crm_interno.ruolo_corrente() in ('titolare','direttore'), false);
+$$;
+
+revoke execute on all functions in schema crm_interno from public, anon;
+grant  execute on all functions in schema crm_interno to authenticated;
+
+-- La condizione "attivo" nella prima policy non è ridondante: la
+-- sospensione dell'utenza impedisce di ottenere un token nuovo,
+-- ma uno già emesso resta valido fino alla scadenza. Senza questa
+-- riga, per quel margine un collaboratore appena disattivato
+-- continuerebbe a entrare.
+drop policy if exists "ognuno vede la propria scheda" on public.crm_collaboratori;
+create policy "ognuno vede la propria scheda"
+  on public.crm_collaboratori for select to authenticated
+  using (utente_id = auth.uid() and attivo);
+
+drop policy if exists "titolare e direttore vedono la squadra" on public.crm_collaboratori;
+create policy "titolare e direttore vedono la squadra"
+  on public.crm_collaboratori for select to authenticated
+  using (crm_interno.vede_tutto());
+
+-- Nessuna policy di scrittura su crm_collaboratori: ruoli,
+-- attivazione e punteggio si cambiano solo dalla funzione qf-crm.
+-- Un collaboratore che potesse promuoversi da solo renderebbe i
+-- ruoli un ornamento.
+
+-- ------------------------------------------------------------
+-- 7c. CRM: documenti
+-- ------------------------------------------------------------
+create table if not exists public.crm_documenti (
+  id               uuid primary key default gen_random_uuid(),
+  creato_il        timestamptz not null default now(),
+  collaboratore_id uuid not null references public.crm_collaboratori(id) on delete cascade,
+  -- percorso dell'oggetto nel bucket: <collaboratore_id>/<file>
+  percorso         text not null unique,
+  nome_file        text not null,
+  tipo_mime        text,
+  dimensione       bigint,
+  categoria        text not null default 'altro'
+                     check (categoria in ('contratto','documento_identita','polizza','fattura','formazione','altro')),
+  note             text,
+  -- Le scadenze sono il motivo per cui questa non è una cartella
+  -- condivisa: un contratto che scade va saputo prima, non dopo.
+  scadenza         date,
+  caricato_da      uuid references auth.users(id) on delete set null
+);
+comment on table public.crm_documenti is
+  'Anagrafica dei documenti caricati dai collaboratori. I file veri stanno nel bucket privato "documenti".';
+
+alter table public.crm_documenti enable row level security;
+
+create index if not exists crm_documenti_collaboratore_idx
+  on public.crm_documenti (collaboratore_id, creato_il desc);
+create index if not exists crm_documenti_scadenza_idx
+  on public.crm_documenti (scadenza) where scadenza is not null;
+
+drop policy if exists "ognuno vede i propri documenti" on public.crm_documenti;
+create policy "ognuno vede i propri documenti"
+  on public.crm_documenti for select to authenticated
+  using (collaboratore_id = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto());
+
+drop policy if exists "ognuno carica nella propria area" on public.crm_documenti;
+create policy "ognuno carica nella propria area"
+  on public.crm_documenti for insert to authenticated
+  with check (collaboratore_id = crm_interno.collaboratore_corrente());
+
+drop policy if exists "ognuno annota i propri documenti" on public.crm_documenti;
+create policy "ognuno annota i propri documenti"
+  on public.crm_documenti for update to authenticated
+  using (collaboratore_id = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto())
+  with check (collaboratore_id = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto());
+
+drop policy if exists "ognuno elimina i propri documenti" on public.crm_documenti;
+create policy "ognuno elimina i propri documenti"
+  on public.crm_documenti for delete to authenticated
+  using (collaboratore_id = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto());
+
+-- ------------------------------------------------------------
+-- 7d. CRM: l'archivio dei file
+-- ------------------------------------------------------------
+-- Bucket PRIVATO: nessun file è raggiungibile da un indirizzo
+-- pubblico, mai. Qui dentro finiscono contratti e documenti di
+-- identità — un bucket pubblico sarebbe stato una violazione
+-- ambulante, e la difficoltà di indovinare un indirizzo non è
+-- una protezione.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'documenti', 'documenti', false, 15728640,
+  array['application/pdf','image/jpeg','image/png','image/heic','image/webp',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']
+)
+on conflict (id) do update
+  set public = false,
+      file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+-- Il primo segmento del percorso è l'identificativo del
+-- collaboratore: è ciò che rende l'area di ciascuno davvero sua.
+drop policy if exists "documenti: ognuno carica nella propria cartella" on storage.objects;
+create policy "documenti: ognuno carica nella propria cartella"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'documenti'
+    and (storage.foldername(name))[1] = crm_interno.collaboratore_corrente()::text);
+
+drop policy if exists "documenti: ognuno legge i propri" on storage.objects;
+create policy "documenti: ognuno legge i propri"
+  on storage.objects for select to authenticated
+  using (bucket_id = 'documenti'
+    and ((storage.foldername(name))[1] = crm_interno.collaboratore_corrente()::text
+         or crm_interno.vede_tutto()));
+
+drop policy if exists "documenti: ognuno elimina i propri" on storage.objects;
+create policy "documenti: ognuno elimina i propri"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'documenti'
+    and ((storage.foldername(name))[1] = crm_interno.collaboratore_corrente()::text
+         or crm_interno.vede_tutto()));
+
+-- ------------------------------------------------------------
 -- 8. Funzioni non esposte
 -- ------------------------------------------------------------
 -- Una funzione nello schema public è invocabile via /rest/v1/rpc
