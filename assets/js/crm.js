@@ -22,6 +22,7 @@
 (function () {
 
   const API = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-crm";
+  const API_LEAD = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-lead";
 
   const QF = () => window.QF;
   const esc = s => window.QF.esc(s);
@@ -42,11 +43,17 @@
   let credenziali = null;
 
   /* ---------------- DIALOGO CON IL SERVER ---------------- */
-  async function chiama(azione, d = {}) {
+  /* La ricerca dei lead può richiedere più tempo: interroga
+     Google più volte, una per categoria e per pagina. */
+  async function chiamaLead(azione, d = {}) {
+    return chiama(azione, d, API_LEAD, 60000);
+  }
+
+  async function chiama(azione, d = {}, endpoint = API, timeout = 20000) {
     const stop = new AbortController();
-    const t = setTimeout(() => stop.abort(), 20000);
+    const t = setTimeout(() => stop.abort(), timeout);
     try {
-      const r = await fetch(API, {
+      const r = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-qf-admin": chiave() },
         body: JSON.stringify({ azione, dati: d }),
@@ -64,9 +71,16 @@
   async function carica() {
     fase = "caricamento";
     QF().render();
-    const e = await chiama("panoramica");
-    if (e.ok) { dati = e; fase = "pronto"; avviso = null; }
-    else { fase = "errore"; avviso = e.errore || "CRM non raggiungibile."; }
+    /* I lead stanno in una funzione a parte: se quella non
+       risponde il resto del CRM deve funzionare lo stesso, invece
+       di bloccarsi tutto per una sezione sola. */
+    const [e, l] = await Promise.all([chiama("panoramica"), chiamaLead("elenco")]);
+    if (e.ok) {
+      dati = { ...e, lead: l.ok ? (l.lead || []) : [] };
+      fase = "pronto"; avviso = null;
+    } else {
+      fase = "errore"; avviso = e.errore || "CRM non raggiungibile.";
+    }
     QF().render();
   }
 
@@ -79,7 +93,7 @@
   }
 
   /* ---------------- DATI ---------------- */
-  const D = () => dati || { collaboratori: [], documenti: [] };
+  const D = () => dati || { collaboratori: [], documenti: [], lead: [] };
   const attivi = () => D().collaboratori.filter(c => c.attivo);
   const dataBreve = s => s ? new Date(s).toLocaleDateString("it-IT") : "—";
 
@@ -103,7 +117,10 @@
     return `
     <div class="kpi-grid">
       ${tile(attivi().length, "Collaboratori attivi", `${attivi().filter(x => x.utente_id).length} con accesso · ${c.length - attivi().length} disattivati`)}
-      ${tile("—", "Lead in pipeline", "arriva con la sezione Lead")}
+      ${tile(D().lead.length, "Lead in archivio", (() => {
+        const n = D().lead.filter(l => l.stato === "nuovo").length;
+        return n ? `${n} ancora da contattare` : "tutti presi in carico";
+      })())}
       ${tile(D().documenti.length, "Documenti archiviati", (() => {
         const s = D().documenti.filter(d => d.scadenza && new Date(d.scadenza) < new Date(Date.now() + 60 * 86400000)).length;
         return s ? `⚠️ ${s} in scadenza o scaduti` : "nessuna scadenza vicina";
@@ -130,7 +147,7 @@
           ${[
             ["Collaboratori e anagrafica squadra", true],
             ["Accessi personali dei collaboratori", true],
-            ["Lead locali (ricerca per zona e categoria)", false],
+            ["Lead locali (ricerca per zona e categoria)", true],
             ["Pipeline: contatti, etichette, trattative", false],
             ["Documenti e contratti", true],
             ["Mail: casella, filtri, invii", false],
@@ -282,17 +299,202 @@
     : `<p class="muted">Nessun documento caricato. Comincerà ad arrivare qualcosa quando i collaboratori entreranno con il loro accesso.</p>`}`;
   }
 
+  /* ---------------- SEZIONE · LEAD LOCALI ----------------
+     Ricerca di attività per zona e categoria attraverso le API
+     ufficiali Google. La chiave non passa da questa pagina: la
+     ricerca la fa il server. Una chiave Places in un file
+     JavaScript è pubblica per definizione, e la si ritrova
+     consumata da altri sul conto di chi l'ha esposta. */
+  const CATEGORIE_LEAD = {
+    ristorazione: "Ristoranti e pizzerie", bar: "Bar e caffetterie",
+    hotel: "Hotel e B&B", cantine: "Cantine e aziende vinicole",
+    enoteche: "Enoteche", agriturismi: "Agriturismi",
+    officine: "Officine e autoriparazioni", concessionarie: "Concessionarie auto",
+    edilizia: "Imprese edili", impiantisti: "Impiantisti",
+    studi: "Commercialisti e consulenti", avvocati: "Studi legali",
+    medici: "Studi medici e dentisti", palestre: "Palestre e centri fitness",
+    parrucchieri: "Parrucchieri ed estetica", negozi: "Negozi al dettaglio",
+    supermercati: "Supermercati e alimentari", trasporti: "Trasporti e logistica",
+    agenzie_immobiliari: "Agenzie immobiliari", assicurazioni: "Agenzie assicurative"
+  };
+
+  const STATI_LEAD = {
+    nuovo: "🔵 Nuovo", contattato: "🟡 Contattato",
+    in_trattativa: "🟠 In trattativa", cliente: "🟢 Cliente", scartato: "⚪ Scartato"
+  };
+
+  /* Stato della ricerca. Vive solo finché la scheda è aperta: i
+     risultati non salvati non sono un archivio, sono una lista
+     della spesa. */
+  const ricerca = {
+    modalita: "rapida",
+    campi: { zona: "", via: "", citta: "Milano", provincia: "MI", cap: "" },
+    categorie: ["ristorazione"],
+    raggio: 2000,
+    soloQualita: true,
+    inCorso: false,
+    esito: null,       // { risultati, centro, query, avvisi }
+    errore: null,
+    scelti: new Set(),
+    filtroStato: "tutti"
+  };
+
+  function leadView() {
+    const salvati = D().lead || [];
+    const perStato = {};
+    salvati.forEach(l => { perStato[l.stato] = (perStato[l.stato] || 0) + 1; });
+    const elenco = ricerca.filtroStato === "tutti"
+      ? salvati : salvati.filter(l => l.stato === ricerca.filtroStato);
+
+    const R = ricerca;
+    const precisa = R.modalita === "precisa";
+
+    const modulo = `
+      <div class="card">
+        <h3>🔎 Cerca attività</h3>
+        <p class="muted" style="font-size:.85rem">Dati d'impresa dalle API ufficiali Google, non da pagine raschiate. Di ogni contatto salvato resta scritto da dove viene e con quale ricerca è stato trovato: è la risposta a «dove avete preso il mio recapito», ed è ciò che tiene la raccolta dentro il legittimo interesse.</p>
+
+        <div class="filterbar" style="margin:.9rem 0 .6rem">
+          <button class="chip ${!precisa ? "active" : ""}" data-lead-modalita="rapida">Ricerca rapida</button>
+          <button class="chip ${precisa ? "active" : ""}" data-lead-modalita="precisa">Ricerca precisa</button>
+        </div>
+
+        <form id="lead-form">
+          ${precisa ? `
+            <div class="grid-2" style="gap:.6rem">
+              <div class="field"><label for="ld-via">Via e civico</label>
+                <input id="ld-via" value="${esc(R.campi.via)}" placeholder="Corso Lodi 10"></div>
+              <div class="field"><label for="ld-cap">CAP</label>
+                <input id="ld-cap" value="${esc(R.campi.cap)}" placeholder="20139"></div>
+            </div>
+            <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
+              <div class="field"><label for="ld-citta">Città *</label>
+                <input id="ld-citta" required value="${esc(R.campi.citta)}" placeholder="Milano"></div>
+              <div class="field"><label for="ld-prov">Provincia</label>
+                <input id="ld-prov" maxlength="2" value="${esc(R.campi.provincia)}" placeholder="MI"
+                       style="text-transform:uppercase"></div>
+            </div>`
+          : `
+            <div class="field"><label for="ld-zona">Zona *</label>
+              <input id="ld-zona" required value="${esc(R.campi.zona)}" placeholder="Opera, Milano — oppure un CAP, un quartiere, una via">
+              <p class="privacy-hint">Più è precisa la zona, più i risultati sono nel posto giusto: «Milano» centra il cerchio in Duomo.</p>
+            </div>`}
+
+          <div class="field" style="margin-top:.8rem">
+            <label>Categorie <span class="muted">(fino a 4)</span></label>
+            <div class="lead-categorie">
+              ${Object.entries(CATEGORIE_LEAD).map(([k, v]) => `
+                <button type="button" class="chip ${R.categorie.includes(k) ? "active" : ""}" data-lead-cat="${k}">${v}</button>`).join("")}
+            </div>
+          </div>
+
+          <div class="grid-2" style="gap:.6rem;margin-top:.8rem">
+            <div class="field"><label for="ld-raggio">Raggio</label>
+              <select id="ld-raggio">
+                ${[[500, "500 m"], [1000, "1 km"], [2000, "2 km"], [5000, "5 km"], [10000, "10 km"]].map(([v, t]) =>
+                  `<option value="${v}" ${R.raggio === v ? "selected" : ""}>${t}</option>`).join("")}
+              </select></div>
+            <div class="field" style="justify-content:flex-end">
+              <label class="checkline" style="margin-top:1.6rem">
+                <input type="checkbox" id="ld-qualita" ${R.soloQualita ? "checked" : ""}>
+                <span>Solo attività con valutazione ≥ 3,5 e almeno 5 recensioni</span>
+              </label>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" style="margin-top:.9rem" type="submit" ${R.inCorso ? "disabled" : ""}>
+            ${R.inCorso ? "Ricerca in corso…" : "Cerca"}
+          </button>
+        </form>
+      </div>`;
+
+    const risultati = () => {
+      if (R.errore) {
+        return `<div class="legal-warning" role="alert" style="margin-top:1.2rem"><strong>Ricerca non riuscita.</strong> ${esc(R.errore)}</div>`;
+      }
+      if (!R.esito) return "";
+      const r = R.esito.risultati;
+      const nuovi = r.filter(x => !x.gia);
+      return `
+      <div class="card" style="margin-top:1.2rem">
+        <h3>Trovate ${r.length} attività <span class="pill">${nuovi.length} non ancora in archivio</span></h3>
+        <p class="muted" style="font-size:.82rem">Centro della ricerca: ${esc(R.esito.centro.indirizzo)}</p>
+        ${(R.esito.avvisi || []).map(a => `<p class="privacy-hint">⚠️ ${esc(a)}</p>`).join("")}
+
+        ${r.length ? `
+        <div class="admin-actions" style="margin:.8rem 0">
+          <button class="btn btn-outline btn-sm" data-lead-tutti>Seleziona tutte le nuove</button>
+          <button class="btn btn-ghost btn-sm" data-lead-nessuno>Deseleziona</button>
+          <button class="btn btn-primary btn-sm" data-lead-salva ${R.scelti.size ? "" : "disabled"}>
+            Salva ${R.scelti.size || ""} in archivio
+          </button>
+        </div>
+
+        ${r.map(x => `
+          <label class="lead-riga ${x.gia ? "gia" : ""}">
+            <input type="checkbox" data-lead-scegli="${esc(x.place_id)}"
+                   ${x.gia ? "disabled" : ""} ${R.scelti.has(x.place_id) ? "checked" : ""}>
+            <span class="lead-corpo">
+              <strong>${esc(x.nome)}</strong>
+              <span>${esc(x.indirizzo || "—")}</span>
+              <span class="lead-meta">
+                ${x.telefono ? `📞 ${esc(x.telefono)}` : `<span class="muted">senza telefono</span>`}
+                ${x.sito ? ` · 🌐 <a href="${esc(x.sito)}" target="_blank" rel="noopener">sito</a>` : ""}
+                ${x.valutazione ? ` · ⭐ ${x.valutazione} (${x.recensioni})` : ""}
+                ${x.tipo_google ? ` · ${esc(x.tipo_google)}` : ""}
+              </span>
+            </span>
+            ${x.gia ? `<span class="pill">già in archivio</span>` : ""}
+          </label>`).join("")}`
+        : `<p class="muted">Nessun risultato con questi criteri. Prova ad allargare il raggio o a togliere il filtro qualità.</p>`}
+      </div>`;
+    };
+
+    const archivio = `
+      <div class="card" style="margin-top:1.2rem">
+        <h3>📇 Lead in archivio (${salvati.length})</h3>
+        ${salvati.length ? `
+          <div class="filterbar" style="margin:.6rem 0">
+            <button class="chip ${R.filtroStato === "tutti" ? "active" : ""}" data-lead-filtro="tutti">Tutti</button>
+            ${Object.entries(STATI_LEAD).map(([k, v]) => `
+              <button class="chip ${R.filtroStato === k ? "active" : ""}" data-lead-filtro="${k}">${v}${perStato[k] ? ` (${perStato[k]})` : ""}</button>`).join("")}
+          </div>
+          ${elenco.map(l => `
+            <div class="lead-scheda">
+              <div class="lead-corpo">
+                <strong>${esc(l.nome)}</strong>
+                <span>${esc(l.indirizzo || "—")}</span>
+                <span class="lead-meta">
+                  ${l.telefono ? `<a href="tel:${esc(String(l.telefono).replace(/\s/g, ""))}">📞 ${esc(l.telefono)}</a>` : `<span class="muted">senza telefono</span>`}
+                  ${l.sito ? ` · <a href="${esc(l.sito)}" target="_blank" rel="noopener">🌐 sito</a>` : ""}
+                  ${l.valutazione ? ` · ⭐ ${l.valutazione}` : ""}
+                  · <span class="muted">${esc(CATEGORIE_LEAD[l.categoria] || l.categoria || "—")}</span>
+                </span>
+                <span class="lead-meta muted">Trovato il ${dataBreve(l.raccolto_il)} cercando «${esc(l.query_origine || "—")}» su Google Places</span>
+              </div>
+              <div class="lead-lavorazione">
+                <select data-lead-stato="${esc(l.id)}">
+                  ${Object.entries(STATI_LEAD).map(([k, v]) =>
+                    `<option value="${k}" ${l.stato === k ? "selected" : ""}>${v}</option>`).join("")}
+                </select>
+                <select data-lead-assegna="${esc(l.id)}">
+                  <option value="">Non assegnato</option>
+                  ${attivi().map(c => `<option value="${esc(c.id)}" ${l.assegnato_a === c.id ? "selected" : ""}>${esc(c.nome)}</option>`).join("")}
+                </select>
+                <button class="btn btn-ghost btn-sm danger" data-lead-elimina="${esc(l.id)}">🗑</button>
+              </div>
+            </div>`).join("") || `<p class="muted">Nessun lead con questo filtro.</p>`}`
+        : `<p class="muted">Nessun lead in archivio. Fai una ricerca qui sopra e salva quelli che ti interessano.</p>`}
+      </div>`;
+
+    return modulo + risultati() + archivio;
+  }
+
   /* ---------------- SEZIONI IN ARRIVO ---------------- */
   /* Una scheda vuota che sembra funzionante è peggio di una che
      dichiara di non esserlo: qui c'è scritto cosa farà e da dove
      nasce, così sai cosa stai aspettando. */
   const INARRIVO = {
-    lead: {
-      titolo: "🔎 Lead locali",
-      cosa: "Ricerca di attività per via, città, provincia, CAP e raggio, con categorie multiple e filtro qualità. Fino a 50 risultati per ricerca, senza duplicati, salvabili direttamente in pipeline.",
-      come: "Google Places e Geocoding, chiamate dal server con la chiave mai esposta nella pagina. Niente scraping: è il vincolo che ti eri già dato nel progetto <em>cercalead</em>, ed è anche quello che tiene la raccolta dentro il perimetro del legittimo interesse.",
-      serve: "Una chiave Google Places con Places API e Geocoding API attive, e la fatturazione abilitata sul progetto Google Cloud."
-    },
     pipeline: {
       titolo: "📇 Pipeline",
       cosa: "Anagrafica contatti, etichette di stato (Nuovo, Follow up, Trattativa, Preventivo inviato), assegnazione ai collaboratori e viste per fase.",
@@ -332,7 +534,7 @@
   const SEZIONI = {
     panoramica: ["📊 Panoramica", panoramicaView],
     collaboratori: ["👥 Collaboratori", collaboratoriView],
-    lead: ["🔎 Lead locali", () => inArrivoView("lead")],
+    lead: ["🔎 Lead locali", leadView],
     pipeline: ["📇 Pipeline", () => inArrivoView("pipeline")],
     documenti: ["📁 Documenti", documentiView],
     mail: ["✉️ Mail", () => inArrivoView("mail")],
@@ -391,6 +593,126 @@
     $("[data-crm-annulla]")?.addEventListener("click", () => { modifica = null; QF().render(); });
     document.querySelectorAll("[data-crm-modifica]").forEach(b =>
       b.addEventListener("click", () => { modifica = b.dataset.crmModifica; QF().render(); }));
+
+    /* ---- lead locali ---- */
+    const R = ricerca;
+
+    document.querySelectorAll("[data-lead-modalita]").forEach(b =>
+      b.addEventListener("click", () => {
+        leggiCampiRicerca();
+        R.modalita = b.dataset.leadModalita;
+        QF().render();
+      }));
+
+    document.querySelectorAll("[data-lead-cat]").forEach(b =>
+      b.addEventListener("click", () => {
+        leggiCampiRicerca();
+        const k = b.dataset.leadCat;
+        if (R.categorie.includes(k)) R.categorie = R.categorie.filter(x => x !== k);
+        else if (R.categorie.length >= 4) { QF().toast("Massimo 4 categorie per ricerca."); return; }
+        else R.categorie.push(k);
+        QF().render();
+      }));
+
+    /* I campi si rileggono prima di ogni ridisegno: il render
+       ricostruisce il modulo da capo, e quello che l'utente ha
+       già scritto non deve sparire perché ha toccato una
+       categoria. */
+    function leggiCampiRicerca() {
+      const g = id => document.querySelector(id)?.value;
+      if (R.modalita === "precisa") {
+        R.campi.via = g("#ld-via") ?? R.campi.via;
+        R.campi.cap = g("#ld-cap") ?? R.campi.cap;
+        R.campi.citta = g("#ld-citta") ?? R.campi.citta;
+        R.campi.provincia = (g("#ld-prov") ?? R.campi.provincia).toUpperCase();
+      } else {
+        R.campi.zona = g("#ld-zona") ?? R.campi.zona;
+      }
+      const raggio = g("#ld-raggio");
+      if (raggio) R.raggio = Number(raggio);
+      const q = document.querySelector("#ld-qualita");
+      if (q) R.soloQualita = q.checked;
+    }
+
+    $("#lead-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      leggiCampiRicerca();
+      if (!R.categorie.length) { QF().toast("Scegli almeno una categoria."); return; }
+      R.inCorso = true; R.errore = null; R.scelti = new Set();
+      QF().render();
+      const esito = await chiamaLead("cerca", {
+        modalita: R.modalita,
+        zona: R.campi.zona, via: R.campi.via, citta: R.campi.citta,
+        provincia: R.campi.provincia, cap: R.campi.cap,
+        categorie: R.categorie, raggio: R.raggio, soloQualita: R.soloQualita
+      });
+      R.inCorso = false;
+      if (esito.ok) { R.esito = esito; R.errore = null; }
+      else { R.esito = null; R.errore = esito.errore || "Ricerca non riuscita."; }
+      QF().render();
+    });
+
+    document.querySelectorAll("[data-lead-scegli]").forEach(b =>
+      b.addEventListener("change", () => {
+        const id = b.dataset.leadScegli;
+        if (b.checked) R.scelti.add(id); else R.scelti.delete(id);
+        /* Solo il pulsante di salvataggio cambia: ridisegnare
+           tutto azzererebbe lo scorrimento a metà elenco. */
+        const salva = document.querySelector("[data-lead-salva]");
+        if (salva) {
+          salva.disabled = R.scelti.size === 0;
+          salva.textContent = `Salva ${R.scelti.size || ""} in archivio`;
+        }
+      }));
+
+    $("[data-lead-tutti]")?.addEventListener("click", () => {
+      (R.esito?.risultati || []).filter(x => !x.gia).forEach(x => R.scelti.add(x.place_id));
+      QF().render();
+    });
+    $("[data-lead-nessuno]")?.addEventListener("click", () => { R.scelti.clear(); QF().render(); });
+
+    $("[data-lead-salva]")?.addEventListener("click", async ev => {
+      const scelti = (R.esito?.risultati || []).filter(x => R.scelti.has(x.place_id));
+      if (!scelti.length) return;
+      ev.currentTarget.disabled = true;
+      ev.currentTarget.textContent = "Salvataggio…";
+      const esito = await chiamaLead("salva", { lead: scelti, query: R.esito.query });
+      if (!esito.ok) { QF().toast(esito.errore || "Salvataggio non riuscito."); QF().render(); return; }
+      QF().toast(esito.salvati === esito.richiesti
+        ? `${esito.salvati} lead salvati in archivio.`
+        : `${esito.salvati} salvati, ${esito.richiesti - esito.salvati} erano già presenti.`);
+      R.scelti = new Set();
+      R.esito = null;
+      await carica();
+    });
+
+    document.querySelectorAll("[data-lead-filtro]").forEach(b =>
+      b.addEventListener("click", () => { R.filtroStato = b.dataset.leadFiltro; QF().render(); }));
+
+    document.querySelectorAll("[data-lead-stato]").forEach(s =>
+      s.addEventListener("change", async () => {
+        const e = await chiamaLead("aggiorna", { id: s.dataset.leadStato, stato: s.value });
+        if (!e.ok) { QF().toast(e.errore || "Aggiornamento non riuscito."); return; }
+        QF().toast("Stato aggiornato.");
+        await carica();
+      }));
+
+    document.querySelectorAll("[data-lead-assegna]").forEach(s =>
+      s.addEventListener("change", async () => {
+        const e = await chiamaLead("aggiorna", { id: s.dataset.leadAssegna, assegnato_a: s.value || null });
+        if (!e.ok) { QF().toast(e.errore || "Assegnazione non riuscita."); return; }
+        QF().toast(s.value ? "Lead assegnato." : "Assegnazione tolta.");
+        await carica();
+      }));
+
+    document.querySelectorAll("[data-lead-elimina]").forEach(b =>
+      b.addEventListener("click", async () => {
+        if (!confirm("Eliminare questo lead dall'archivio?\n\nSe ricompare in una ricerca futura potrai risalvarlo, ma le note e lo stato di lavorazione andranno persi.")) return;
+        const e = await chiamaLead("elimina", { id: b.dataset.leadElimina });
+        if (!e.ok) { QF().toast(e.errore || "Eliminazione non riuscita."); return; }
+        QF().toast("Lead eliminato.");
+        await carica();
+      }));
 
     /* ---- accessi ---- */
     const nomeDi = id => D().collaboratori.find(c => c.id === id)?.nome || "";

@@ -680,6 +680,40 @@ a.chip { display: inline-block; text-decoration: none; }
   user-select: all;
 }
 
+/* ---------- Lead locali ---------- */
+.lead-categorie { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .4rem; }
+.lead-categorie .chip { font-size: .78rem; padding: .3rem .7rem; }
+.checkline { display: flex; align-items: flex-start; gap: .5rem; font-size: .85rem; line-height: 1.4; cursor: pointer; }
+.checkline input { margin-top: .15rem; flex-shrink: 0; }
+
+.lead-riga {
+  display: grid; grid-template-columns: 1.4rem 1fr auto; gap: .7rem; align-items: start;
+  padding: .7rem 0; border-bottom: 1px dashed var(--line); cursor: pointer;
+}
+.lead-riga:last-of-type { border-bottom: 0; }
+/* Chi è già in archivio si vede ma non si riseleziona: sarebbe
+   un doppione, e ricomincerebbe da capo una lavorazione avviata. */
+.lead-riga.gia { opacity: .55; cursor: default; }
+.lead-riga input { margin-top: .25rem; }
+.lead-corpo { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.lead-corpo strong { font-size: .95rem; }
+.lead-corpo > span { font-size: .82rem; color: var(--ink-soft); }
+.lead-meta { font-size: .78rem !important; }
+
+.lead-scheda {
+  display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: start;
+  padding: .85rem 0; border-bottom: 1px dashed var(--line);
+}
+.lead-scheda:last-of-type { border-bottom: 0; }
+.lead-lavorazione { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.lead-lavorazione select {
+  font-size: .8rem; padding: .3rem .5rem; border-radius: 8px;
+  border: 1.5px solid var(--line); background: #fff; font-family: var(--font-body);
+}
+@media (max-width: 700px) {
+  .lead-scheda { grid-template-columns: 1fr; }
+}
+
 /* ---------- Documenti ---------- */
 .doc-riga {
   display: grid; grid-template-columns: 2.2rem 1fr auto; gap: .8rem; align-items: start;

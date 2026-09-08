@@ -273,7 +273,7 @@ lo sono mai: tenerli distinti rende difficile sbagliarsi.
 |---|---|
 | **👥 Collaboratori** | ✅ anagrafica, ruoli, attivazione e **creazione degli accessi personali** |
 | **📁 Documenti** | ✅ archivio della squadra: chi ha caricato cosa, categorie, scadenze in evidenza |
-| **🔎 Lead locali** | in arrivo — ricerca per via/città/provincia/CAP e raggio, categorie multiple, fino a 50 risultati |
+| **🔎 Lead locali** | ✅ ricerca per zona, categorie e raggio; salvataggio, assegnazione e stato di lavorazione |
 | **📇 Pipeline** | in arrivo — contatti, etichette di stato, assegnazione, viste per fase |
 | **✉️ Mail** | in arrivo — casella, filtri per mittente, allegati, template, invio |
 | **🏆 Produzione** | in arrivo — punteggio calcolato dai fatti registrati, classifica |
@@ -330,10 +330,34 @@ cancellarlo porterebbe via la storia di ciò che ha prodotto e dei documenti che
 E il punteggio di produzione nasce a zero e lo calcolerà il database dai fatti registrati —
 un numero che si può digitare a mano non misura niente.
 
-**Lead locali, una precisazione che conta.** La raccolta userà le API ufficiali Google
-(Places + Geocoding), con la chiave solo lato server. **Niente scraping**: è il vincolo che
-il progetto `cercalead` si era già dato, ed è anche ciò che tiene la raccolta di dati
-d'impresa dentro il perimetro del legittimo interesse.
+### 🔎 Lead locali
+
+Ricerca **rapida** (una zona) o **precisa** (via, CAP, città, provincia), raggio da 500 m a
+10 km, fino a 4 categorie per volta fra venti, filtro qualità (valutazione ≥ 3,5 e almeno 5
+recensioni). Fino a 50 risultati per ricerca, senza duplicati fra categorie, con l'indicazione
+di chi è **già in archivio** — così non si riprende come nuovo un contatto che qualcuno sta già
+lavorando.
+
+Dai risultati si salva quello che interessa; in archivio ogni lead ha uno stato (nuovo,
+contattato, in trattativa, cliente, scartato) e si assegna a un collaboratore.
+
+**Niente scraping.** Solo API ufficiali Google: Geocoding per trasformare un indirizzo in
+coordinate, Places (New) per trovare le attività nel raggio. È il vincolo che il progetto
+`cercalead` si era già dato, ed è anche ciò che tiene la raccolta di dati d'impresa dentro il
+perimetro del legittimo interesse.
+
+**Ogni lead porta con sé la propria provenienza**: fonte, ricerca che l'ha prodotto, giorno di
+raccolta. Se un domani qualcuno chiede «dove avete preso il mio recapito», la risposta è una riga
+di database, non un ricordo. Chi lavora un lead può cambiarne stato e note, non i dati di
+provenienza.
+
+**Per attivarla** serve il segreto `QF_GOOGLE_KEY` fra quelli del progetto Supabase, con
+abilitate **Places API (New)** e **Geocoding API** sul progetto Google Cloud (e la fatturazione
+attiva). Finché manca, la ricerca risponde con un messaggio che lo dice: meglio dirlo che
+restituire un elenco vuoto, che sembrerebbe «nessun risultato».
+
+La chiave sta **solo sul server**. Una chiave Places in un file JavaScript è pubblica per
+definizione, e la si ritrova consumata da altri sul conto di chi l'ha esposta.
 
 ## 🪪 Intermediari in vetrina
 
