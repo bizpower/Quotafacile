@@ -276,7 +276,7 @@ lo sono mai: tenerli distinti rende difficile sbagliarsi.
 | **🔎 Lead locali** | ✅ ricerca per zona, categorie e raggio; salvataggio, assegnazione e stato di lavorazione |
 | **📇 Pipeline** | ✅ viste per fase, etichette, storia delle attività su ogni lead |
 | **✉️ Mail** | in arrivo — casella, filtri per mittente, allegati, template, invio |
-| **🏆 Produzione** | in arrivo — punteggio calcolato dai fatti registrati, classifica |
+| **🏆 Produzione** | ✅ classifica calcolata dai fatti registrati, con i pesi dichiarati |
 
 ### 🔑 Accessi dei collaboratori — `#/admin/area`
 
@@ -328,6 +328,30 @@ Due comportamenti voluti: registrare una chiamata, un'email o un incontro **port
 un lead ancora «nuovo» — evita che resti tale uno con tre chiamate alle spalle; e un'attività si
 registra sempre **a nome di qualcuno**, perché firmare il lavoro di un altro falserebbe la
 produzione di entrambi.
+
+### 🏆 Produzione
+
+Il punteggio **non è una colonna**: è una vista che il database ricalcola a ogni lettura dalle
+attività registrate nella pipeline e dai lead diventati clienti. Non si può falsare senza falsare
+i fatti — ed è l'unico modo perché una classifica interna significhi qualcosa: un numero che si
+può digitare a mano non misura niente, e si scopre subito che dipende da chi tiene la penna.
+
+| Attività | Punti | | In più | Punti |
+|---|---|---|---|---|
+| Preventivo | 8 | | Esito positivo | +3 |
+| Incontro | 5 | | Da richiamare | +1 |
+| Chiamata | 2 | | **Lead diventato cliente** | **+20** |
+| Email | 1 | | | |
+| Nota | 0 | | | |
+
+Una nota vale zero: serve a ricordare, non a produrre, e darle punti insegnerebbe solo a scrivere
+note. Un cliente chiuso pesa quanto una giornata di telefonate, perché è il risultato e non il
+tentativo.
+
+I pesi si cambiano in un posto solo, `crm_interno.valore_attivita`: la classifica si riallinea da
+sola, perché non c'è nulla di salvato da ricalcolare. Ogni collaboratore vede **la propria**
+produzione dalla sua area; la classifica intera la vedono titolare e direttore. I disattivati non
+compaiono in classifica, ma la loro storia resta.
 
 ### 📁 Come stanno i documenti
 

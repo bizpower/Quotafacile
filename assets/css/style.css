@@ -755,6 +755,19 @@ a.chip { display: inline-block; text-decoration: none; }
 .pl-attivita-capo .muted { font-size: .75rem; }
 .pl-attivita p { font-size: .85rem; color: var(--ink-soft); margin: .3rem 0; line-height: 1.5; }
 
+/* ---------- Produzione ---------- */
+.prod-riga { display: grid; grid-template-columns: 1.8rem 34px 1fr auto; gap: .7rem; align-items: center; padding: .7rem 0; border-bottom: 1px dashed var(--line); }
+.prod-riga:last-of-type { border-bottom: 0; }
+.prod-info { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.prod-info > span { font-size: .78rem; color: var(--ink-soft); }
+.prod-barra { display: block; background: var(--green-50); border-radius: 999px; height: 6px; overflow: hidden; margin: .15rem 0; }
+.prod-barra i { display: block; height: 100%; background: linear-gradient(90deg, var(--green-600), var(--green-800)); border-radius: 999px; }
+.prod-dettaglio { font-size: .74rem !important; }
+@media (max-width: 620px) {
+  .prod-riga { grid-template-columns: 1.5rem 1fr auto; }
+  .prod-riga .mini-avatar { display: none; }
+}
+
 /* ---------- Documenti ---------- */
 .doc-riga {
   display: grid; grid-template-columns: 2.2rem 1fr auto; gap: .8rem; align-items: start;

@@ -21,6 +21,7 @@
 
   let sezione = "documenti";
   let documenti = [];
+  let miaProduzione = null;
   let fase = "vuoto";     // vuoto | caricamento | pronto | errore
   let avviso = null;
   let caricamento = false;
@@ -32,6 +33,7 @@
 
   const dataOra = s => s ? new Date(s).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) : "—";
   const dataBreve = s => s ? new Date(s).toLocaleDateString("it-IT") : "—";
+  const plurale = (n, uno, molti) => `${n} ${n === 1 ? uno : molti}`;
   const peso = n => !n ? "—" : n < 1024 * 1024
     ? Math.round(n / 1024) + " KB"
     : (n / 1024 / 1024).toFixed(1).replace(".", ",") + " MB";
@@ -49,7 +51,8 @@
   async function carica() {
     fase = "caricamento";
     QF().render();
-    const e = await A().documenti();
+    const [e, prod] = await Promise.all([A().documenti(), A().produzione()]);
+    miaProduzione = prod;
     if (e.ok) { documenti = e.documenti; fase = "pronto"; avviso = null; }
     else { fase = "errore"; avviso = e.errore; }
     QF().render();
@@ -131,9 +134,17 @@
           <tr><th>Ruolo</th><td>${esc(RUOLI[io.ruolo] || io.ruolo)}</td></tr>
           ${io.telefono ? `<tr><th>Telefono</th><td>${esc(io.telefono)}</td></tr>` : ""}
           <tr><th>In squadra dal</th><td>${dataBreve(io.creato_il)}</td></tr>
-          <tr><th>Produzione</th><td>${io.punti} punti</td></tr>
         </table>
         <p class="privacy-hint">Nome, ruolo e recapiti li aggiorna il titolare: sono dati che descrivono il rapporto di lavoro, non preferenze personali. La password invece è solo tua.</p>
+
+        ${miaProduzione ? `
+        <h4 style="margin:1.2rem 0 .4rem;font-size:.95rem">🏆 La tua produzione</h4>
+        <table class="admin-kv">
+          <tr><th>Punti</th><td><strong>${miaProduzione.punti}</strong></td></tr>
+          <tr><th>Attività</th><td>${plurale(miaProduzione.chiamate, "chiamata", "chiamate")} · ${plurale(miaProduzione.incontri, "incontro", "incontri")} · ${plurale(miaProduzione.preventivi, "preventivo", "preventivi")}</td></tr>
+          <tr><th>Lead</th><td>${plurale(miaProduzione.clienti, "cliente", "clienti")} su ${miaProduzione.lead_assegnati} assegnati</td></tr>
+        </table>
+        <p class="privacy-hint">Questo numero non lo scrive nessuno: lo calcola il database dalle attività che registri sui tuoi lead. Vedi il tuo, non quello degli altri.</p>` : ""}
       </div>
 
       <div class="card">
@@ -205,7 +216,7 @@
     $("#area-riprova")?.addEventListener("click", carica);
     $("#area-esci")?.addEventListener("click", async () => {
       await A().esci();
-      documenti = []; fase = "vuoto"; sezione = "documenti";
+      documenti = []; miaProduzione = null; fase = "vuoto"; sezione = "documenti";
       location.hash = "#/admin";
       QF().render();
     });
@@ -262,7 +273,7 @@
   }
 
   function dimentica() {
-    documenti = []; fase = "vuoto"; avviso = null; sezione = "documenti";
+    documenti = []; miaProduzione = null; fase = "vuoto"; avviso = null; sezione = "documenti";
   }
 
   window.QF_AREA = { view, bind, dimentica };
