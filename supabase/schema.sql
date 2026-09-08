@@ -251,7 +251,7 @@ create table if not exists public.crm_collaboratori (
   nome       text not null,
   email      text not null unique,
   telefono   text,
-  -- i ruoli sono quelli già in uso in LORI, più il titolare
+  -- i ruoli di una struttura commerciale, più il titolare
   ruolo      text not null default 'commerciale'
                check (ruolo in ('titolare','direttore','account','commerciale','consulente')),
   -- Un collaboratore che se ne va si disattiva, non si cancella:
@@ -259,9 +259,6 @@ create table if not exists public.crm_collaboratori (
   -- prodotto e dei documenti che ha caricato.
   attivo     boolean not null default true,
   note       text,
-  -- Punteggio di produzione: lo alimenteranno lead e trattative.
-  -- Nasce a zero e non si scrive a mano.
-  punti      integer not null default 0,
   -- Aggancio all'utenza vera, quando i collaboratori avranno un
   -- proprio accesso. Nullo finché non esiste.
   utente_id  uuid unique
@@ -607,14 +604,109 @@ create policy "ognuno registra le proprie attività"
     )
   );
 
--- Le quattro etichette con cui si comincia: sono quelle di LORI,
--- perché sono già nel modo di lavorare di chi le userà.
+-- Le quattro etichette con cui si comincia. Sono un punto di
+-- partenza, non una regola: si aggiungono, si rinominano e si
+-- eliminano dalla pipeline.
 insert into public.crm_etichette (nome, colore) values
   ('Priorità alta', 'rosso'),
   ('Da richiamare', 'oro'),
   ('Preventivo inviato', 'blu'),
   ('Non interessato', 'grigio')
 on conflict (nome) do nothing;
+
+-- ------------------------------------------------------------
+-- 7g. CRM: produzione
+-- ------------------------------------------------------------
+-- Il punteggio si calcola dai fatti registrati. Non è una
+-- preferenza di stile: un numero che si può digitare a mano non
+-- misura niente, e una classifica costruita così non motiva
+-- nessuno — si scopre subito che dipende da chi tiene la penna.
+--
+-- Qui il punteggio è una VISTA: non esiste una colonna da
+-- scrivere, esiste una somma che si ricalcola ogni volta
+-- leggendo le attività e i lead. Non si può falsare senza
+-- falsare i fatti.
+
+-- Quanto vale cosa. I numeri sono discutibili — e vanno
+-- discussi — ma il principio no: vale di più ciò che porta
+-- avanti il lavoro, non ciò che lo fa sembrare avanti.
+--
+-- Una nota registrata vale zero: serve a ricordare, non a
+-- produrre, e darle punti insegnerebbe solo a scrivere note.
+create or replace function crm_interno.valore_attivita(p_tipo text, p_esito text)
+returns integer language sql immutable set search_path = '' as $$
+  select case p_tipo
+           when 'chiamata'   then 2
+           when 'email'      then 1
+           when 'incontro'   then 5
+           when 'preventivo' then 8
+           else 0
+         end
+       + case p_esito
+           when 'positivo'      then 3
+           when 'da_richiamare' then 1
+           else 0
+         end;
+$$;
+
+create or replace view public.crm_produzione as
+select
+  c.id                                   as collaboratore_id,
+  c.nome,
+  c.ruolo,
+  c.attivo,
+  coalesce(a.attivita, 0)                as attivita,
+  coalesce(a.chiamate, 0)                as chiamate,
+  coalesce(a.incontri, 0)                as incontri,
+  coalesce(a.preventivi, 0)              as preventivi,
+  coalesce(a.punti_attivita, 0)          as punti_attivita,
+  coalesce(l.lead_assegnati, 0)          as lead_assegnati,
+  coalesce(l.clienti, 0)                 as clienti,
+  -- Un cliente chiuso pesa quanto una giornata di telefonate: è
+  -- il risultato, non il tentativo.
+  coalesce(a.punti_attivita, 0) + coalesce(l.clienti, 0) * 20 as punti,
+  a.ultima_attivita
+from public.crm_collaboratori c
+left join (
+  select collaboratore_id,
+         count(*)                                       as attivita,
+         count(*) filter (where tipo = 'chiamata')      as chiamate,
+         count(*) filter (where tipo = 'incontro')      as incontri,
+         count(*) filter (where tipo = 'preventivo')    as preventivi,
+         sum(crm_interno.valore_attivita(tipo, esito))  as punti_attivita,
+         max(quando)                                    as ultima_attivita
+    from public.crm_attivita
+   where collaboratore_id is not null
+   group by collaboratore_id
+) a on a.collaboratore_id = c.id
+left join (
+  select assegnato_a,
+         count(*)                                    as lead_assegnati,
+         count(*) filter (where stato = 'cliente')   as clienti
+    from public.crm_lead
+   where assegnato_a is not null
+   group by assegnato_a
+) l on l.assegnato_a = c.id;
+
+comment on view public.crm_produzione is
+  'Classifica calcolata dai fatti registrati: attività e lead chiusi. Non esiste una colonna "punti" da scrivere a mano.';
+
+-- La vista eredita le policy delle tabelle sottostanti, quindi un
+-- commerciale vede i numeri costruiti sui propri lead e non su
+-- quelli degli altri.
+alter view public.crm_produzione set (security_invoker = on);
+
+revoke all on public.crm_produzione from public, anon;
+grant select on public.crm_produzione to authenticated, service_role;
+
+revoke execute on function crm_interno.valore_attivita(text, text) from public, anon;
+grant  execute on function crm_interno.valore_attivita(text, text) to authenticated, service_role;
+
+-- La colonna "punti" su crm_collaboratori era un residuo del
+-- primo passo, quando la produzione non aveva ancora una fonte.
+-- Ora la fonte c'è, e tenere due numeri che possono divergere è
+-- il modo più sicuro di non fidarsi di nessuno dei due.
+alter table public.crm_collaboratori drop column if exists punti;
 
 -- ------------------------------------------------------------
 -- 8. Funzioni non esposte

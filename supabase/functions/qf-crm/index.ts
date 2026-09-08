@@ -89,16 +89,20 @@ function passwordIniziale(): string {
 // ---------------- Azioni ----------------
 
 async function panoramica() {
-  const [collaboratori, documenti] = await Promise.all([
+  const [collaboratori, documenti, produzione] = await Promise.all([
     db.from("crm_collaboratori").select("*")
       .order("attivo", { ascending: false }).order("nome"),
     db.from("crm_documenti").select("*")
       .order("creato_il", { ascending: false }).limit(500),
+    // La produzione è una vista: si ricalcola a ogni lettura dai
+    // fatti registrati. Non c'è un numero salvato da fidarsi.
+    db.from("crm_produzione").select("*").order("punti", { ascending: false }),
   ]);
   if (collaboratori.error) throw new Error(collaboratori.error.message);
   return {
     collaboratori: collaboratori.data ?? [],
     documenti: documenti.data ?? [],
+    produzione: produzione.data ?? [],
     letteIl: new Date().toISOString(),
   };
 }

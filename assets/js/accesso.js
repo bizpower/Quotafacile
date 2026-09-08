@@ -194,6 +194,14 @@
     return e.ok ? { ok: true, documenti: e.dati || [] } : { ok: false, errore: e.errore };
   }
 
+  /* La produzione è una vista, non una colonna: si ricalcola dai
+     fatti registrati. Il collaboratore vede la propria riga
+     perché la vista eredita le policy delle tabelle sotto. */
+  async function produzione() {
+    const e = await api(`/rest/v1/crm_produzione?select=*&collaboratore_id=eq.${encodeURIComponent(io?.id || "")}`);
+    return e.ok && e.dati?.length ? e.dati[0] : null;
+  }
+
   /* Il nome del file diventa il nome mostrato; il percorso invece
      è ripulito e reso unico. Un file caricato due volte non deve
      sovrascrivere il precedente, e un nome con accenti o barre non
@@ -277,7 +285,7 @@
 
   window.QF_ACCESSO = {
     entra, esci, ripristina, autenticato, cambiaPassword,
-    documenti, carica, scarica, elimina,
+    documenti, carica, scarica, elimina, produzione,
     CATEGORIE,
     get io() { return io; }
   };

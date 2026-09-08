@@ -99,10 +99,12 @@
   }
 
   /* ---------------- DATI ---------------- */
-  const D = () => dati || { collaboratori: [], documenti: [], lead: [], etichette: [], applicate: [], attivita: [] };
+  const D = () => dati || { collaboratori: [], documenti: [], lead: [], etichette: [], applicate: [], attivita: [], produzione: [] };
   const attivi = () => D().collaboratori.filter(c => c.attivo);
   const dataBreve = s => s ? new Date(s).toLocaleDateString("it-IT") : "—";
   const dataOra = s => s ? new Date(s).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) : "—";
+  /* "1 chiamate" si nota, e fa sembrare trascurato tutto il resto. */
+  const plurale = (n, uno, molti) => `${n} ${n === 1 ? uno : molti}`;
 
   const RUOLI = {
     titolare: "Titolare",
@@ -143,7 +145,7 @@
             <span class="mini-avatar">${esc(QF().initials(x.nome))}</span>
             <span class="leader-info"><strong>${esc(x.nome)}</strong>
               <span>${esc(RUOLI[x.ruolo] || x.ruolo)}${x.email ? " · " + esc(x.email) : ""}</span></span>
-            <span class="leader-pts">${x.punti} pt</span>
+            <span class="leader-pts">${(D().produzione.find(p => p.collaboratore_id === x.id) || {}).punti ?? 0} pt</span>
           </div>`).join("")
         : `<p class="muted" style="font-size:.9rem">Nessun collaboratore ancora inserito. Comincia dalla scheda <strong>Collaboratori</strong>.</p>`}
       </div>
@@ -158,7 +160,7 @@
             ["Pipeline: etichette, attività, viste per fase", true],
             ["Documenti e contratti", true],
             ["Mail: casella, filtri, invii", false],
-            ["Produzione e classifica", false]
+            ["Produzione e classifica", true]
           ].map(([t, fatto]) => `
             <div class="crm-passo ${fatto ? "fatto" : ""}">
               <span>${fatto ? "✓" : "○"}</span><span>${esc(t)}</span>
@@ -238,7 +240,7 @@
         <table class="admin-kv">
           <tr><th>Email</th><td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td></tr>
           ${c.telefono ? `<tr><th>Telefono</th><td><a href="tel:${esc(String(c.telefono).replace(/\s/g, ""))}">${esc(c.telefono)}</a></td></tr>` : ""}
-          <tr><th>Produzione</th><td>${c.punti} punti</td></tr>
+          <tr><th>Produzione</th><td>${(D().produzione.find(p => p.collaboratore_id === c.id) || {}).punti ?? 0} punti <span class="muted">(calcolati dalle attività registrate)</span></td></tr>
           <tr><th>Documenti</th><td>${D().documenti.filter(d => d.collaboratore_id === c.id).length}</td></tr>
           ${c.note ? `<tr><th>Note</th><td>${esc(c.note)}</td></tr>` : ""}
         </table>
@@ -680,6 +682,87 @@
     </div>`;
   }
 
+  /* ---------------- SEZIONE · PRODUZIONE ----------------
+     Il punteggio non è una colonna: è una somma che il database
+     ricalcola a ogni lettura dalle attività registrate e dai
+     lead chiusi. Un numero che si può digitare a mano non misura
+     niente, e una classifica costruita così non motiva nessuno —
+     si scopre subito che dipende da chi tiene la penna. */
+
+  const VALORI = [
+    ["📞 Chiamata", 2], ["✉️ Email", 1], ["🤝 Incontro", 5],
+    ["📄 Preventivo", 8], ["📝 Nota", 0]
+  ];
+  const BONUS = [["Esito positivo", 3], ["Da richiamare", 1], ["Cliente chiuso", 20]];
+
+  function produzioneView() {
+    const p = [...(D().produzione || [])].sort((a, b) => b.punti - a.punti);
+    const attivi = p.filter(x => x.attivo);
+    const massimo = Math.max(1, ...attivi.map(x => x.punti));
+    const totali = attivi.reduce((n, x) => n + x.punti, 0);
+
+    const tile = (v, l, hint) => `
+      <div class="kpi-tile"><strong>${v}</strong><span>${l}</span>${hint ? `<em>${hint}</em>` : ""}</div>`;
+
+    return `
+    <p class="admin-hint">Il punteggio lo calcola il database dai fatti registrati: le attività nella pipeline e i lead diventati clienti. Non esiste da nessuna parte un numero da scrivere a mano — per questo si può guardare senza doversi chiedere chi l'ha messo lì.</p>
+
+    <div class="kpi-grid">
+      ${tile(totali, "Punti della squadra", "somma di chi è attivo")}
+      ${tile(attivi.reduce((n, x) => n + x.attivita, 0), "Attività registrate", "chiamate, email, incontri, preventivi")}
+      ${tile(attivi.reduce((n, x) => n + x.clienti, 0), "Lead diventati clienti", "il risultato, non il tentativo")}
+      ${tile(attivi.reduce((n, x) => n + x.lead_assegnati, 0), "Lead assegnati", "quanto lavoro c'è in mano")}
+    </div>
+
+    <div class="card" style="margin-top:1.2rem">
+      <h3>🏆 Classifica</h3>
+      ${attivi.length ? attivi.map((x, i) => `
+        <div class="prod-riga">
+          <span class="leader-rank ${i === 0 && x.punti > 0 ? "gold" : ""}">${i + 1}</span>
+          <span class="mini-avatar">${esc(QF().initials(x.nome))}</span>
+          <span class="prod-info">
+            <strong>${esc(x.nome)}</strong>
+            <span>${esc(RUOLI[x.ruolo] || x.ruolo)}${x.ultima_attivita ? ` · ultima attività ${dataBreve(x.ultima_attivita)}` : " · nessuna attività registrata"}</span>
+            <span class="prod-barra"><i style="width:${Math.round(x.punti / massimo * 100)}%"></i></span>
+            <span class="prod-dettaglio">
+              ${plurale(x.chiamate, "chiamata", "chiamate")} · ${plurale(x.incontri, "incontro", "incontri")} · ${plurale(x.preventivi, "preventivo", "preventivi")}
+              · ${plurale(x.clienti, "cliente", "clienti")} su ${plurale(x.lead_assegnati, "lead", "lead")}
+            </span>
+          </span>
+          <span class="leader-pts">${x.punti} pt</span>
+        </div>`).join("")
+      : `<p class="muted">Nessun collaboratore attivo. La classifica compare quando c'è qualcuno in squadra e qualcosa di registrato.</p>`}
+
+      ${p.length > attivi.length ? `
+        <p class="privacy-hint">${p.length - attivi.length === 1
+          ? "Un collaboratore disattivato non compare in classifica, ma la sua storia resta nel database."
+          : `${p.length - attivi.length} collaboratori disattivati non compaiono in classifica, ma la loro storia resta nel database.`}</p>` : ""}
+    </div>
+
+    <div class="card" style="margin-top:1.2rem">
+      <h3>⚖️ Come si contano i punti</h3>
+      <p class="muted" style="font-size:.85rem">I numeri sono discutibili — e vanno discussi — ma il principio no: vale di più ciò che porta avanti il lavoro, non ciò che lo fa sembrare avanti.</p>
+      <div class="grid-2" style="gap:1.2rem;margin-top:.8rem">
+        <div>
+          <h4 style="font-size:.9rem;margin:0 0 .4rem">Per attività</h4>
+          ${VALORI.map(([n, v]) => `
+            <div class="bar-row"><span class="bar-label" style="width:auto">${n}</span>
+              <span class="bar-track"><i style="width:${v / 8 * 100}%"></i></span>
+              <span class="bar-val">${v}</span></div>`).join("")}
+          <p class="privacy-hint">Una nota vale zero: serve a ricordare, non a produrre. Darle punti insegnerebbe solo a scrivere note.</p>
+        </div>
+        <div>
+          <h4 style="font-size:.9rem;margin:0 0 .4rem">In più</h4>
+          ${BONUS.map(([n, v]) => `
+            <div class="bar-row"><span class="bar-label" style="width:auto">${n}</span>
+              <span class="bar-track"><i style="width:${v / 20 * 100}%"></i></span>
+              <span class="bar-val">+${v}</span></div>`).join("")}
+          <p class="privacy-hint">Un cliente chiuso pesa quanto una giornata di telefonate. Per cambiare questi pesi si modifica <code>crm_interno.valore_attivita</code> nel database: la classifica si riallinea da sola, perché non c'è nulla di salvato da ricalcolare.</p>
+        </div>
+      </div>
+    </div>`;
+  }
+
   /* ---------------- SEZIONI IN ARRIVO ---------------- */
   /* Una scheda vuota che sembra funzionante è peggio di una che
      dichiara di non esserlo: qui c'è scritto cosa farà e da dove
@@ -691,12 +774,6 @@
       come: "IMAP per leggere, SMTP per inviare, credenziali come segreti del progetto e mai nel codice — l'impostazione del tuo progetto di gestione email.",
       serve: "Host, porte e credenziali della casella, e un dominio con SPF, DKIM e DMARC a posto: senza autenticazione del mittente le email finiscono in spam, e nessun codice può rimediare."
     },
-    produzione: {
-      titolo: "🏆 Produzione",
-      cosa: "Punteggio per collaboratore costruito su lead lavorati, trattative e contratti chiusi, con classifica e andamento nel tempo.",
-      come: "Il punteggio lo calcola il database dai fatti registrati, non si scrive a mano: un numero che si può digitare non misura niente.",
-      serve: "Prima la pipeline, che è la fonte dei fatti da contare."
-    }
   };
 
   function inArrivoView(k) {
@@ -722,7 +799,7 @@
     pipeline: ["📇 Pipeline", pipelineView],
     documenti: ["📁 Documenti", documentiView],
     mail: ["✉️ Mail", () => inArrivoView("mail")],
-    produzione: ["🏆 Produzione", () => inArrivoView("produzione")]
+    produzione: ["🏆 Produzione", produzioneView]
   };
 
   function view(sub) {
