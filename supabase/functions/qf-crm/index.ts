@@ -1,15 +1,19 @@
 // ============================================================
 // QuotaFacile — CRM Bizpower
 // ------------------------------------------------------------
-// Amministrazione della società: collaboratori, lead, documenti,
-// produzione. È cosa diversa dalla moderazione del marketplace,
-// che sta in qf-admin, e per questo ha una funzione sua: i due
-// mondi crescono in direzioni diverse e non devono intrecciarsi.
+// Amministrazione della società: collaboratori, accessi, lead,
+// documenti, produzione. È cosa diversa dalla moderazione del
+// marketplace, che sta in qf-admin, e per questo ha una funzione
+// sua: i due mondi crescono in direzioni diverse e non devono
+// intrecciarsi.
 //
-// L'accesso usa la stessa chiave dell'area riservata, con lo
-// stesso confronto lato server. Quando i collaboratori avranno
-// un'utenza propria, questa funzione riconoscerà anche quella:
-// per ora entra solo il titolare.
+// CHI PUÒ CHIAMARE QUESTA FUNZIONE
+// Solo il titolare, con la chiave di amministrazione. I
+// collaboratori non passano di qui: entrano con la propria
+// utenza e parlano direttamente con il database, dove le
+// policy decidono cosa possono vedere. La differenza conta:
+// creare un'utenza o cambiare un ruolo sono cose che nessun
+// collaboratore deve poter fare, nemmeno per sbaglio.
 // ============================================================
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -70,13 +74,33 @@ async function improntaAttesa(): Promise<string | null> {
 
 const RUOLI = ["titolare", "direttore", "account", "commerciale", "consulente"];
 
+// Password iniziale: generata qui, letta una volta sola e mai
+// più recuperabile — nel database resta solo la sua forma cifrata.
+// Alfabeto senza caratteri che si confondono a voce o a schermo
+// (0/O, 1/l/I), perché questa password viene dettata o incollata
+// in un messaggio, non digitata da un gestore di password.
+function passwordIniziale(): string {
+  const alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => alfabeto[x % alfabeto.length]).join("");
+}
+
 // ---------------- Azioni ----------------
 
 async function panoramica() {
-  const { data: collaboratori, error } = await db.from("crm_collaboratori")
-    .select("*").order("attivo", { ascending: false }).order("nome");
-  if (error) throw new Error(error.message);
-  return { collaboratori: collaboratori ?? [], letteIl: new Date().toISOString() };
+  const [collaboratori, documenti] = await Promise.all([
+    db.from("crm_collaboratori").select("*")
+      .order("attivo", { ascending: false }).order("nome"),
+    db.from("crm_documenti").select("*")
+      .order("creato_il", { ascending: false }).limit(500),
+  ]);
+  if (collaboratori.error) throw new Error(collaboratori.error.message);
+  return {
+    collaboratori: collaboratori.data ?? [],
+    documenti: documenti.data ?? [],
+    letteIl: new Date().toISOString(),
+  };
 }
 
 async function salvaCollaboratore(d: Record<string, unknown>) {
@@ -114,19 +138,112 @@ async function salvaCollaboratore(d: Record<string, unknown>) {
 
 // Un collaboratore che se ne va si disattiva, non si cancella:
 // cancellarlo porterebbe via la storia di ciò che ha prodotto.
+// Disattivarlo però deve chiudergli davvero la porta, non solo
+// nasconderlo da un elenco: per questo l'utenza viene bandita.
 async function attivaCollaboratore(d: Record<string, unknown>) {
   const id = testo(d.id, 40);
   if (!id) throw new Error("Manca l'identificativo del collaboratore");
+  const attivo = d.attivo === true;
+
+  const { data: c, error: errLettura } = await db.from("crm_collaboratori")
+    .select("utente_id").eq("id", id).single();
+  if (errLettura) throw new Error(errLettura.message);
+
   const { error } = await db.from("crm_collaboratori")
-    .update({ attivo: d.attivo === true }).eq("id", id);
+    .update({ attivo }).eq("id", id);
   if (error) throw new Error(error.message);
-  return { attivo: d.attivo === true };
+
+  if (c?.utente_id) {
+    // "none" toglie il divieto, "876000h" (100 anni) lo impone
+    await db.auth.admin.updateUserById(c.utente_id, {
+      ban_duration: attivo ? "none" : "876000h",
+    });
+  }
+  return { attivo, utenzaAggiornata: !!c?.utente_id };
+}
+
+// Crea l'utenza di un collaboratore e restituisce la password
+// iniziale. È l'unico momento in cui quella password è leggibile:
+// da qui in poi nel database c'è solo la sua forma cifrata, e
+// nemmeno il titolare può rileggerla — può solo generarne un'altra.
+async function creaAccesso(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new Error("Manca l'identificativo del collaboratore");
+
+  const { data: c, error } = await db.from("crm_collaboratori")
+    .select("id, nome, email, attivo, utente_id").eq("id", id).single();
+  if (error) throw new Error(error.message);
+  if (!c.attivo) throw new Error("Il collaboratore è disattivato: riattivalo prima di dargli un accesso");
+  if (c.utente_id) throw new Error("Questo collaboratore ha già un accesso");
+
+  const password = passwordIniziale();
+  // email_confirm: l'indirizzo lo conosce già il titolare, che ha
+  // inserito la scheda. Chiedere una conferma per posta bloccherebbe
+  // l'accesso dietro una casella che potrebbe non essere pronta.
+  const { data: utente, error: errAuth } = await db.auth.admin.createUser({
+    email: c.email,
+    password,
+    email_confirm: true,
+    user_metadata: { nome: c.nome, collaboratore_id: c.id },
+  });
+  if (errAuth) {
+    throw new Error(
+      /already/i.test(errAuth.message)
+        ? "Esiste già un'utenza con questa email"
+        : errAuth.message,
+    );
+  }
+
+  const { error: errLegame } = await db.from("crm_collaboratori")
+    .update({ utente_id: utente.user.id }).eq("id", id);
+  if (errLegame) {
+    // l'utenza è nata ma non è agganciata a nessuno: meglio
+    // toglierla che lasciarla orfana e capace di entrare
+    await db.auth.admin.deleteUser(utente.user.id);
+    throw new Error("Utenza creata ma non collegata: annullata. " + errLegame.message);
+  }
+
+  return { email: c.email, password, creato: true };
+}
+
+async function rigeneraPassword(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new Error("Manca l'identificativo del collaboratore");
+  const { data: c, error } = await db.from("crm_collaboratori")
+    .select("email, utente_id").eq("id", id).single();
+  if (error) throw new Error(error.message);
+  if (!c.utente_id) throw new Error("Questo collaboratore non ha ancora un accesso");
+
+  const password = passwordIniziale();
+  const { error: errAuth } = await db.auth.admin
+    .updateUserById(c.utente_id, { password });
+  if (errAuth) throw new Error(errAuth.message);
+  return { email: c.email, password, rigenerata: true };
+}
+
+// Togliere l'accesso cancella l'utenza ma non la scheda: la
+// persona esce, la sua storia resta.
+async function revocaAccesso(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new Error("Manca l'identificativo del collaboratore");
+  const { data: c, error } = await db.from("crm_collaboratori")
+    .select("utente_id").eq("id", id).single();
+  if (error) throw new Error(error.message);
+  if (!c.utente_id) throw new Error("Questo collaboratore non ha un accesso da revocare");
+
+  const { error: errAuth } = await db.auth.admin.deleteUser(c.utente_id);
+  if (errAuth) throw new Error(errAuth.message);
+  await db.from("crm_collaboratori").update({ utente_id: null }).eq("id", id);
+  return { revocato: true };
 }
 
 const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
   panoramica: () => panoramica(),
   "salva-collaboratore": salvaCollaboratore,
   "attiva-collaboratore": attivaCollaboratore,
+  "crea-accesso": creaAccesso,
+  "rigenera-password": rigeneraPassword,
+  "revoca-accesso": revocaAccesso,
 };
 
 Deno.serve(async (req: Request) => {

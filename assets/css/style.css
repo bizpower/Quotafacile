@@ -669,6 +669,37 @@ a.chip { display: inline-block; text-decoration: none; }
    non una pagina rotta. */
 .crm-inarrivo { border-left: 3px solid var(--gold-500); }
 
+/* Credenziali appena generate: si vedono una volta sola, quindi
+   devono saltare all'occhio e la password dev'essere leggibile
+   carattere per carattere. */
+.credenziali { border-left: 3px solid var(--gold-500); background: #FFFDF8; margin-bottom: 1.2rem; }
+.password-generata {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 1.05rem; letter-spacing: .06em; font-weight: 700;
+  background: var(--gold-100); color: #7A5410; padding: .2rem .5rem; border-radius: 6px;
+  user-select: all;
+}
+
+/* ---------- Documenti ---------- */
+.doc-riga {
+  display: grid; grid-template-columns: 2.2rem 1fr auto; gap: .8rem; align-items: start;
+  padding: .8rem 0; border-bottom: 1px dashed var(--line);
+}
+.doc-riga:last-child { border-bottom: 0; }
+.doc-icona { font-size: 1.3rem; line-height: 1.4; }
+.doc-info { display: flex; flex-direction: column; gap: .12rem; min-width: 0; }
+.doc-info strong { font-size: .95rem; word-break: break-word; }
+.doc-info > span { font-size: .8rem; color: var(--ink-soft); }
+.doc-note { font-style: italic; }
+.doc-scadenza { font-size: .78rem; font-weight: 600; color: var(--ink-soft); }
+.doc-scadenza.in-scadenza { color: #8A5B0B; }
+.doc-scadenza.scaduto { color: var(--danger); }
+.doc-azioni { display: flex; gap: .35rem; align-items: center; flex-wrap: wrap; }
+@media (max-width: 620px) {
+  .doc-riga { grid-template-columns: 2.2rem 1fr; }
+  .doc-azioni { grid-column: 2; }
+}
+
 /* Segnalazioni */
 .admin-seg { margin-bottom: .8rem; border-left: 3px solid var(--danger); }
 .admin-seg.accolta { border-left-color: var(--green-600); }

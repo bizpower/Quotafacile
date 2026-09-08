@@ -93,27 +93,57 @@
     return true;
   }
 
-  /* ---------------- ACCESSO ---------------- */
+  /* ---------------- ACCESSO ----------------
+     Due modi di entrare, perché sono due cose diverse: il
+     titolare ha una chiave, i collaboratori un'utenza personale.
+     La seconda è quella che si usa più spesso, quindi è la prima
+     che compare. */
+  let modoAccesso = "collaboratore";
+
   function loginView() {
+    const collaboratore = modoAccesso === "collaboratore";
     return `
     <section class="section">
       <div class="container" style="max-width:460px">
         <div class="card admin-login">
           <div class="admin-lock">🔐</div>
           <h1 style="font-size:1.5rem;text-align:center">Area riservata</h1>
-          <p class="muted" style="text-align:center;font-size:.9rem">Console di gestione QuotaFacile.</p>
+          <p class="muted" style="text-align:center;font-size:.9rem">
+            ${collaboratore ? "Entra con le tue credenziali." : "Console di gestione QuotaFacile."}
+          </p>
           ${avviso ? `<div class="legal-warning" role="alert">${esc(avviso)}</div>` : ""}
+
+          ${collaboratore ? `
+          <form id="collab-login-form">
+            <div class="field"><label for="col-email">Email</label>
+              <input id="col-email" type="email" required autocomplete="username" placeholder="nome@bizpower.it"></div>
+            <div class="field" style="margin-top:.6rem"><label for="col-pass">Password</label>
+              <input id="col-pass" type="password" required autocomplete="current-password" placeholder="••••••••••"></div>
+            <button class="btn btn-primary btn-block" style="margin-top:1rem" type="submit">Entra</button>
+          </form>
+          <button class="footer-linkbtn" style="color:var(--ink-soft);margin-top:1rem;text-align:center;width:100%" data-modo="titolare">
+            Sono il titolare, entro con la chiave
+          </button>
+          <p class="privacy-hint" style="margin-top:1rem">
+            Le credenziali te le consegna il titolare. Al primo accesso cambia la password
+            dalla tua area: quella iniziale è passata da un messaggio, quindi non è più un
+            segreto fra te e il sistema.
+          </p>`
+          : `
           <form id="admin-login-form">
             <div class="field"><label for="adm-pass">Chiave di amministrazione</label>
               <input id="adm-pass" type="password" required autocomplete="current-password" placeholder="••••••••••••••••">
             </div>
             <button class="btn btn-primary btn-block" style="margin-top:1rem" type="submit">Entra</button>
           </form>
-          <p class="privacy-hint" style="margin-top:1.2rem">
+          <button class="footer-linkbtn" style="color:var(--ink-soft);margin-top:1rem;text-align:center;width:100%" data-modo="collaboratore">
+            Sono un collaboratore, entro con email e password
+          </button>
+          <p class="privacy-hint" style="margin-top:1rem">
             La chiave viene verificata dal server, non da questa pagina: qui non c'è nulla
             con cui confrontarla. Resta in memoria fino alla chiusura della scheda e non
             viene mai salvata sul dispositivo in modo permanente.
-          </p>
+          </p>`}
         </div>
       </div>
     </section>`;
@@ -618,6 +648,11 @@ Usa **grassetto** per i numeri che contano."></textarea>
 
   function view(path) {
     const parti = Array.isArray(path) ? path.filter(Boolean) : (path ? [path] : []);
+    /* Un collaboratore entrato vede la propria area e nient'altro:
+       non è una porta con due ingressi, per lui è una stanza sola. */
+    if (window.QF_ACCESSO?.autenticato()) {
+      return window.QF_AREA ? window.QF_AREA.view(parti[0] === "area" ? parti[1] : null) : "";
+    }
     if (!isAuth()) return loginView();
     if (parti[0] === "crm") return window.QF_CRM ? window.QF_CRM.view(parti[1]) : "";
     if (parti[0] !== "piattaforma") return portaView();
@@ -689,6 +724,41 @@ Usa **grassetto** per i numeri che contano."></textarea>
   function bind() {
     const $ = s => document.querySelector(s);
     const parti = rotta();
+
+    /* Sessione di un collaboratore: al ricaricamento della pagina
+       il token c'è ancora ma non si sa più chi sia, e chi è lo
+       dice il database — non il token. */
+    if (window.QF_ACCESSO?.autenticato()) {
+      if (!window.QF_ACCESSO.io) {
+        window.QF_ACCESSO.ripristina().then(ok => {
+          if (!ok) avviso = "La sessione non è più valida: rientra.";
+          QF().render();
+        });
+        return;
+      }
+      window.QF_AREA?.bind();
+      return;
+    }
+
+    document.querySelectorAll("[data-modo]").forEach(b =>
+      b.addEventListener("click", () => { modoAccesso = b.dataset.modo; avviso = null; QF().render(); }));
+
+    $("#collab-login-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const btn = e.target.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.textContent = "Verifica…"; }
+      const esito = await window.QF_ACCESSO.entra($("#col-email").value.trim(), $("#col-pass").value);
+      if (!esito.ok) {
+        avviso = esito.errore;
+        if (btn) { btn.disabled = false; btn.textContent = "Entra"; }
+        QF().render();
+        return;
+      }
+      avviso = null;
+      window.QF_AREA?.dimentica();
+      location.hash = "#/admin/area";
+      QF().render();
+    });
 
     $("#admin-login-form")?.addEventListener("submit", async e => {
       e.preventDefault();
