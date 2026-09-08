@@ -1,5 +1,7 @@
 # QuotaFacile — regole per i crawler
-# Host di pubblicazione attuale in fondo al file.
+# Dominio: www.quotafacile.net (lo stesso dichiarato nel canonical
+# di index.html e nella sitemap in fondo a questo file: se cambia,
+# devono cambiare tutti e tre insieme).
 
 User-agent: *
 Allow: /
@@ -69,4 +71,4 @@ Allow: /
 # ---------------------------------------------------------------
 Disallow: /api/
 
-Sitemap: https://bizpower.github.io/Quotafacile/sitemap.xml
+Sitemap: https://www.quotafacile.net/sitemap.xml
