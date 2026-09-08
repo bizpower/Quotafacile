@@ -974,7 +974,7 @@ views.preventivo = (query) => {
       <p class="muted" style="font-size:.75rem;margin-top:.8rem">
         I tuoi dati vengono condivisi solo con gli intermediari pertinenti alla richiesta e conservati
         24 mesi dall'ultimo contatto. Puoi revocare il consenso e chiederne la cancellazione in ogni
-        momento scrivendo a <a href="#/privacy">privacy@quotafacile.it</a>.
+        momento scrivendo a <a href="#/privacy">privacy@quotafacile.net</a>.
         Consulta <a href="#/termini">Termini e Condizioni</a>, <a href="#/privacy">Privacy Policy</a> e
         <a href="#/note-legali">Note legali</a>. QuotaFacile non è un intermediario assicurativo e non
         è iscritta al RUI: mette solo in contatto.

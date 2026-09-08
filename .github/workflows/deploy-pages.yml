@@ -59,7 +59,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configura Pages
+        id: pages
         uses: actions/configure-pages@v5
+
+      # Nel repository sitemap.xml e robots.txt dichiarano il dominio
+      # definitivo. Finché il sito è servito da un altro host, però,
+      # una sitemap che elenca indirizzi su un dominio non ancora
+      # attivo è una sitemap che Google non riesce a scaricare: vale
+      # meno di niente. Qui gli indirizzi vengono riscritti su quello
+      # che sta davvero pubblicando. Quando il dominio sarà collegato
+      # a Pages, base_url coinciderà e la sostituzione non farà nulla.
+      - name: Allinea sitemap e robots all'host che pubblica
+        env:
+          BASE: ${{ steps.pages.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          DEFINITIVO="https://www.quotafacile.net"
+          ATTUALE="${BASE%/}"
+          if [ -z "$ATTUALE" ] || [ "$ATTUALE" = "$DEFINITIVO" ]; then
+            echo "Host di pubblicazione già allineato a $DEFINITIVO: nulla da riscrivere."
+            exit 0
+          fi
+          echo "Riscrivo $DEFINITIVO -> $ATTUALE in sitemap.xml e robots.txt"
+          sed -i "s#${DEFINITIVO}#${ATTUALE}#g" sitemap.xml robots.txt
+          grep -c "$ATTUALE" sitemap.xml
+
       - name: Prepara l'artefatto
         uses: actions/upload-pages-artifact@v3
         with:

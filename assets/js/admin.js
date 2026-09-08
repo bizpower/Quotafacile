@@ -879,7 +879,7 @@ Usa **grassetto** per i numeri che contano."></textarea>
           <h3 style="font-size:1.15rem;margin:.5rem 0">${esc(a.domanda)}</h3>
           <p class="muted" style="font-size:.8rem">Come apparirà su Google:</p>
           <div class="serp-preview">
-            <div class="serp-url">www.quotafacile.it › bacheca</div>
+            <div class="serp-url">www.quotafacile.net › bacheca</div>
             <div class="serp-title">${esc(a.titolo || a.domanda)}</div>
             <div class="serp-desc">${esc(a.meta || "")}</div>
           </div>

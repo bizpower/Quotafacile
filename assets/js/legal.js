@@ -17,7 +17,7 @@
   /* ---------------- 1. DATI DEL TITOLARE (DA COMPILARE) ---------------- */
   const LEGAL_CONFIG = {
     brand: "QuotaFacile",
-    dominio: "www.quotafacile.it",
+    dominio: "www.quotafacile.net",
 
     /* Identità del titolare del trattamento / gestore del sito.
        Dati da visura camerale CCIAA Milano Monza Brianza Lodi. */
@@ -49,9 +49,9 @@
     },
 
     /* Contatti operativi (devono essere caselle realmente attive) */
-    emailInfo: "info@quotafacile.it",
-    emailPrivacy: "privacy@quotafacile.it",
-    emailSegnalazioni: "segnalazioni@quotafacile.it",
+    emailInfo: "info@quotafacile.net",
+    emailPrivacy: "privacy@quotafacile.net",
+    emailSegnalazioni: "segnalazioni@quotafacile.net",
 
     /* Responsabile Protezione Dati: null se non nominato (non obbligatorio
        per questa tipologia di trattamento, art. 37 GDPR) */
