@@ -714,6 +714,47 @@ a.chip { display: inline-block; text-decoration: none; }
   .lead-scheda { grid-template-columns: 1fr; }
 }
 
+/* ---------- Pipeline ---------- */
+/* Cinque colonne che scorrono di lato invece di stringersi: una
+   colonna troppo stretta smette di far vedere quello per cui
+   esiste, cioè dove si accumula il lavoro. */
+.pl-colonne {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr);
+  gap: .8rem; overflow-x: auto; padding-bottom: .6rem; margin-top: 1rem;
+}
+.pl-colonna { background: var(--green-50); border-radius: var(--radius); padding: .8rem; min-height: 120px; }
+.pl-colonna h4 { font-size: .82rem; margin: 0 0 .6rem; display: flex; align-items: center; gap: .4rem; }
+.pl-card {
+  display: block; width: 100%; text-align: left; background: #fff; border: 1.5px solid var(--line);
+  border-radius: 10px; padding: .6rem .7rem; margin-bottom: .5rem; cursor: pointer;
+  font-family: var(--font-body); transition: border-color .15s, transform .15s;
+}
+.pl-card:hover { border-color: var(--green-600); transform: translateY(-1px); }
+.pl-card.aperta { border-color: var(--green-800); box-shadow: 0 0 0 2px var(--green-100); }
+.pl-card strong { display: block; font-size: .88rem; line-height: 1.25; }
+.pl-card > span { display: block; font-size: .76rem; color: var(--ink-soft); }
+.pl-piede { margin-top: .35rem; font-size: .72rem !important; }
+.pl-etichette { display: flex; flex-wrap: wrap; gap: .2rem; margin: .35rem 0 0; }
+
+.tag {
+  display: inline-flex; align-items: center; gap: .25rem;
+  font-size: .68rem; font-weight: 700; border-radius: 999px; padding: .1rem .5rem;
+}
+.tag-verde  { background: var(--green-100); color: var(--green-800); }
+.tag-oro    { background: var(--gold-100);  color: #8A5B0B; }
+.tag-rosso  { background: #FCEDED;          color: #9B2C2C; }
+.tag-blu    { background: #E7EEF9;          color: #1F4E8C; }
+.tag-grigio { background: #ECEFEE;          color: #4C5F55; }
+.tag-x { background: none; border: 0; cursor: pointer; color: inherit; font-size: .7rem; padding: 0 0 0 .1rem; opacity: .6; }
+.tag-x:hover { opacity: 1; }
+
+.pl-dettaglio { margin-top: 1.2rem; border-left: 3px solid var(--green-600); }
+.pl-attivita { border-bottom: 1px dashed var(--line); padding: .6rem 0; }
+.pl-attivita:last-of-type { border-bottom: 0; }
+.pl-attivita-capo { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; font-size: .82rem; }
+.pl-attivita-capo .muted { font-size: .75rem; }
+.pl-attivita p { font-size: .85rem; color: var(--ink-soft); margin: .3rem 0; line-height: 1.5; }
+
 /* ---------- Documenti ---------- */
 .doc-riga {
   display: grid; grid-template-columns: 2.2rem 1fr auto; gap: .8rem; align-items: start;
