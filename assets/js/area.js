@@ -217,6 +217,7 @@
     $("#area-esci")?.addEventListener("click", async () => {
       await A().esci();
       documenti = []; miaProduzione = null; fase = "vuoto"; sezione = "documenti";
+      window.QF_ADMIN?.accesso("collaboratore");
       location.hash = "#/admin";
       QF().render();
     });

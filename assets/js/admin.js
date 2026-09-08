@@ -96,9 +96,10 @@
   /* ---------------- ACCESSO ----------------
      Due modi di entrare, perché sono due cose diverse: il
      titolare ha una chiave, i collaboratori un'utenza personale.
-     La seconda è quella che si usa più spesso, quindi è la prima
-     che compare. */
-  let modoAccesso = "collaboratore";
+     L'area riservata è prima di tutto quella del titolare, quindi
+     la richiesta della chiave è la schermata che si apre; il
+     collaboratore passa dal link qui sotto. */
+  let modoAccesso = "titolare";
 
   function loginView() {
     const collaboratore = modoAccesso === "collaboratore";
@@ -773,7 +774,7 @@ Usa **grassetto** per i numeri che contano."></textarea>
 
     $("#admin-logout")?.addEventListener("click", () => {
       try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* no-op */ }
-      dati = null; fase = "vuoto"; avviso = null;
+      dati = null; fase = "vuoto"; avviso = null; modoAccesso = "titolare";
       /* anche i dati della società escono dalla memoria, non solo
          quelli del marketplace */
       window.QF_CRM?.dimentica();
@@ -927,6 +928,10 @@ Usa **grassetto** per i numeri che contano."></textarea>
 
   /* `chiave` è esposta perché il CRM parla con la sua funzione
      usando lo stesso accesso: una sola verità su dove sta la
-     chiave, invece di due copie che possono divergere. */
-  window.QF_ADMIN = { view, bind, mdToHtml, chiave };
+     chiave, invece di due copie che possono divergere.
+     `accesso` serve all'area dei collaboratori: quando uno esce,
+     la schermata deve riproporgli email e password, non la chiave
+     del titolare. */
+  const accesso = m => { modoAccesso = m === "collaboratore" ? "collaboratore" : "titolare"; };
+  window.QF_ADMIN = { view, bind, mdToHtml, chiave, accesso };
 })();
