@@ -274,7 +274,7 @@ lo sono mai: tenerli distinti rende difficile sbagliarsi.
 | **👥 Collaboratori** | ✅ anagrafica, ruoli, attivazione e **creazione degli accessi personali** |
 | **📁 Documenti** | ✅ archivio della squadra: chi ha caricato cosa, categorie, scadenze in evidenza |
 | **🔎 Lead locali** | ✅ ricerca per zona, categorie e raggio; salvataggio, assegnazione e stato di lavorazione |
-| **📇 Pipeline** | in arrivo — contatti, etichette di stato, assegnazione, viste per fase |
+| **📇 Pipeline** | ✅ viste per fase, etichette, storia delle attività su ogni lead |
 | **✉️ Mail** | in arrivo — casella, filtri per mittente, allegati, template, invio |
 | **🏆 Produzione** | in arrivo — punteggio calcolato dai fatti registrati, classifica |
 
@@ -307,6 +307,27 @@ ruoli, attivazione e punteggio passano solo dalla funzione `qf-crm`, che rispond
 **Disattivare chiude davvero la porta.** L'utenza viene sospesa (niente token nuovi) *e* la
 policy richiede `attivo`, perché un token già emesso resta valido fino a un'ora: senza quella
 condizione, per quel margine si continuerebbe a entrare.
+
+### 📇 Pipeline
+
+Lo stesso archivio dei lead, guardato **per fase** invece che in elenco: cinque colonne, e si
+vede subito dove si accumula il lavoro. Filtri per collaboratore e per etichetta; aprendo un
+lead si registra cosa si è fatto e gli si mettono le etichette.
+
+**Stato ed etichette non sono la stessa cosa.** Lo stato dice a che punto è la trattativa ed è
+uno solo per volta. Le etichette dicono tutto il resto — «priorità alta», «richiamare a
+settembre», «ha già una polizza» — e possono essere molte insieme. Confonderle in un campo solo
+costringerebbe a scegliere fra informazioni che non si escludono.
+
+**Le attività sono la memoria del lavoro**: chi ha chiamato, quando, com'è andata. Senza,
+«contattato» è un'affermazione che nessuno può verificare, e la produzione di ciascuno resta
+un'opinione. Saranno anche la fonte dei punti, che si contano dai fatti registrati e non si
+digitano a mano.
+
+Due comportamenti voluti: registrare una chiamata, un'email o un incontro **porta avanti da solo**
+un lead ancora «nuovo» — evita che resti tale uno con tre chiamate alle spalle; e un'attività si
+registra sempre **a nome di qualcuno**, perché firmare il lavoro di un altro falserebbe la
+produzione di entrambi.
 
 ### 📁 Come stanno i documenti
 

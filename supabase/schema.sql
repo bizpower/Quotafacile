@@ -509,6 +509,114 @@ create policy "ognuno aggiorna i lead che gli sono assegnati"
   with check (assegnato_a = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto());
 
 -- ------------------------------------------------------------
+-- 7f. CRM: pipeline — etichette e attività
+-- ------------------------------------------------------------
+-- Due cose che mancavano perché un elenco di contatti diventi
+-- un CRM:
+--
+-- 1. LE ETICHETTE. Lo stato dice a che punto è la trattativa ed
+--    è uno solo per volta. Le etichette dicono tutto il resto —
+--    "priorità alta", "richiamare a settembre", "ha già una
+--    polizza" — e possono essere molte insieme. Confonderle in
+--    un campo solo costringe a scegliere fra informazioni che
+--    non si escludono.
+--
+-- 2. LE ATTIVITÀ. Chi ha chiamato, quando, com'è andata. È la
+--    memoria del lavoro: senza, "contattato" è un'affermazione
+--    che nessuno può verificare, e la produzione di ciascuno
+--    resta un'opinione. Questa tabella sarà anche la fonte dei
+--    punti, che si contano dai fatti registrati e non si
+--    digitano a mano.
+
+create table if not exists public.crm_etichette (
+  id        uuid primary key default gen_random_uuid(),
+  creato_il timestamptz not null default now(),
+  nome      text not null unique,
+  colore    text not null default 'verde'
+              check (colore in ('verde','oro','rosso','blu','grigio'))
+);
+
+alter table public.crm_etichette enable row level security;
+
+drop policy if exists "le etichette le vede chi è entrato" on public.crm_etichette;
+create policy "le etichette le vede chi è entrato"
+  on public.crm_etichette for select to authenticated using (true);
+
+-- Molti a molti: un'etichetta sta su più lead, un lead ne porta
+-- più di una.
+create table if not exists public.crm_lead_etichette (
+  lead_id      uuid not null references public.crm_lead(id) on delete cascade,
+  etichetta_id uuid not null references public.crm_etichette(id) on delete cascade,
+  messa_il     timestamptz not null default now(),
+  primary key (lead_id, etichetta_id)
+);
+
+alter table public.crm_lead_etichette enable row level security;
+
+drop policy if exists "le etichette dei propri lead" on public.crm_lead_etichette;
+create policy "le etichette dei propri lead"
+  on public.crm_lead_etichette for select to authenticated
+  using (exists (
+    select 1 from public.crm_lead l
+     where l.id = lead_id
+       and (l.assegnato_a = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto())
+  ));
+
+create table if not exists public.crm_attivita (
+  id               uuid primary key default gen_random_uuid(),
+  creato_il        timestamptz not null default now(),
+  lead_id          uuid not null references public.crm_lead(id) on delete cascade,
+  -- chi l'ha fatta. Se il collaboratore viene rimosso resta null
+  -- ma l'attività non sparisce: è successa comunque.
+  collaboratore_id uuid references public.crm_collaboratori(id) on delete set null,
+  tipo             text not null default 'nota'
+                     check (tipo in ('chiamata','email','incontro','preventivo','nota')),
+  testo            text,
+  -- com'è andata: serve a distinguere venti tentativi da venti
+  -- conversazioni, che non valgono la stessa cosa
+  esito            text check (esito in ('positivo','da_richiamare','negativo','nessuna_risposta')),
+  quando           timestamptz not null default now()
+);
+
+alter table public.crm_attivita enable row level security;
+
+create index if not exists crm_attivita_lead_idx on public.crm_attivita (lead_id, quando desc);
+create index if not exists crm_attivita_collaboratore_idx on public.crm_attivita (collaboratore_id, quando desc);
+
+drop policy if exists "le attività sui lead che si vedono" on public.crm_attivita;
+create policy "le attività sui lead che si vedono"
+  on public.crm_attivita for select to authenticated
+  using (exists (
+    select 1 from public.crm_lead l
+     where l.id = lead_id
+       and (l.assegnato_a = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto())
+  ));
+
+-- Registrare un'attività è consentito a chi ha il lead, ma solo
+-- a proprio nome: firmare il lavoro di un altro falserebbe la
+-- produzione di entrambi.
+drop policy if exists "ognuno registra le proprie attività" on public.crm_attivita;
+create policy "ognuno registra le proprie attività"
+  on public.crm_attivita for insert to authenticated
+  with check (
+    collaboratore_id = crm_interno.collaboratore_corrente()
+    and exists (
+      select 1 from public.crm_lead l
+       where l.id = lead_id
+         and (l.assegnato_a = crm_interno.collaboratore_corrente() or crm_interno.vede_tutto())
+    )
+  );
+
+-- Le quattro etichette con cui si comincia: sono quelle di LORI,
+-- perché sono già nel modo di lavorare di chi le userà.
+insert into public.crm_etichette (nome, colore) values
+  ('Priorità alta', 'rosso'),
+  ('Da richiamare', 'oro'),
+  ('Preventivo inviato', 'blu'),
+  ('Non interessato', 'grigio')
+on conflict (nome) do nothing;
+
+-- ------------------------------------------------------------
 -- 8. Funzioni non esposte
 -- ------------------------------------------------------------
 -- Una funzione nello schema public è invocabile via /rest/v1/rpc

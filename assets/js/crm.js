@@ -76,7 +76,13 @@
        di bloccarsi tutto per una sezione sola. */
     const [e, l] = await Promise.all([chiama("panoramica"), chiamaLead("elenco")]);
     if (e.ok) {
-      dati = { ...e, lead: l.ok ? (l.lead || []) : [] };
+      dati = {
+        ...e,
+        lead: l.ok ? (l.lead || []) : [],
+        etichette: l.ok ? (l.etichette || []) : [],
+        applicate: l.ok ? (l.applicate || []) : [],
+        attivita: l.ok ? (l.attivita || []) : []
+      };
       fase = "pronto"; avviso = null;
     } else {
       fase = "errore"; avviso = e.errore || "CRM non raggiungibile.";
@@ -93,9 +99,10 @@
   }
 
   /* ---------------- DATI ---------------- */
-  const D = () => dati || { collaboratori: [], documenti: [], lead: [] };
+  const D = () => dati || { collaboratori: [], documenti: [], lead: [], etichette: [], applicate: [], attivita: [] };
   const attivi = () => D().collaboratori.filter(c => c.attivo);
   const dataBreve = s => s ? new Date(s).toLocaleDateString("it-IT") : "—";
+  const dataOra = s => s ? new Date(s).toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" }) : "—";
 
   const RUOLI = {
     titolare: "Titolare",
@@ -148,7 +155,7 @@
             ["Collaboratori e anagrafica squadra", true],
             ["Accessi personali dei collaboratori", true],
             ["Lead locali (ricerca per zona e categoria)", true],
-            ["Pipeline: contatti, etichette, trattative", false],
+            ["Pipeline: etichette, attività, viste per fase", true],
             ["Documenti e contratti", true],
             ["Mail: casella, filtri, invii", false],
             ["Produzione e classifica", false]
@@ -490,17 +497,194 @@
     return modulo + risultati() + archivio;
   }
 
+  /* ---------------- SEZIONE · PIPELINE ----------------
+     Lo stesso archivio dei lead, guardato per fase invece che in
+     elenco: si vede subito dove si accumula il lavoro.
+
+     Due cose che qui diventano possibili e prima no:
+     - le ETICHETTE, che dicono quello che lo stato non può dire.
+       Lo stato è uno solo per volta; "priorità alta" e "da
+       richiamare" convivono, e costringerle in un campo unico
+       significherebbe scegliere fra informazioni che non si
+       escludono.
+     - le ATTIVITÀ, cioè chi ha chiamato, quando e com'è andata.
+       Senza, "contattato" è un'affermazione che nessuno può
+       verificare, e la produzione di ciascuno resta un'opinione. */
+
+  const TIPI_ATTIVITA = {
+    chiamata: "📞 Chiamata", email: "✉️ Email", incontro: "🤝 Incontro",
+    preventivo: "📄 Preventivo", nota: "📝 Nota"
+  };
+  const ESITI = {
+    positivo: "Positivo", da_richiamare: "Da richiamare",
+    negativo: "Negativo", nessuna_risposta: "Nessuna risposta"
+  };
+
+  const pipeline = { aperto: null, filtroChi: "tutti", filtroEtichetta: "tutte" };
+
+  const etichetteDi = leadId => (D().applicate || [])
+    .filter(a => a.lead_id === leadId)
+    .map(a => (D().etichette || []).find(e => e.id === a.etichetta_id))
+    .filter(Boolean);
+
+  const attivitaDi = leadId => (D().attivita || [])
+    .filter(a => a.lead_id === leadId);
+
+  function pipelineView() {
+    const tutti = D().lead || [];
+    const etichette = D().etichette || [];
+
+    let lista = tutti;
+    if (pipeline.filtroChi === "nessuno") lista = lista.filter(l => !l.assegnato_a);
+    else if (pipeline.filtroChi !== "tutti") lista = lista.filter(l => l.assegnato_a === pipeline.filtroChi);
+    if (pipeline.filtroEtichetta !== "tutte") {
+      lista = lista.filter(l => etichetteDi(l.id).some(e => e.id === pipeline.filtroEtichetta));
+    }
+
+    const colonne = Object.keys(STATI_LEAD);
+    const aperto = pipeline.aperto ? tutti.find(l => l.id === pipeline.aperto) : null;
+
+    const cartellino = l => `
+      <button class="pl-card ${pipeline.aperto === l.id ? "aperta" : ""}" data-pl-apri="${esc(l.id)}">
+        <strong>${esc(l.nome)}</strong>
+        <span>${esc(l.citta || l.indirizzo || "—")}</span>
+        ${etichetteDi(l.id).length ? `<span class="pl-etichette">${etichetteDi(l.id)
+          .map(e => `<span class="tag tag-${esc(e.colore)}">${esc(e.nome)}</span>`).join("")}</span>` : ""}
+        <span class="pl-piede">
+          ${l.assegnato_a
+            ? esc((D().collaboratori.find(c => c.id === l.assegnato_a) || {}).nome || "—")
+            : `<em>non assegnato</em>`}
+          ${attivitaDi(l.id).length ? ` · ${attivitaDi(l.id).length} attività` : ""}
+        </span>
+      </button>`;
+
+    return `
+    <p class="admin-hint">Lo stesso archivio dei lead, guardato per fase: si vede subito dove si accumula il lavoro. Apri un lead per registrare cosa hai fatto e mettergli le etichette — lo stato dice a che punto è la trattativa, le etichette tutto il resto.</p>
+
+    <div class="filterbar">
+      <button class="chip ${pipeline.filtroChi === "tutti" ? "active" : ""}" data-pl-chi="tutti">Tutti</button>
+      <button class="chip ${pipeline.filtroChi === "nessuno" ? "active" : ""}" data-pl-chi="nessuno">Non assegnati</button>
+      ${attivi().map(c => `<button class="chip ${pipeline.filtroChi === c.id ? "active" : ""}" data-pl-chi="${esc(c.id)}">${esc(c.nome)}</button>`).join("")}
+    </div>
+    ${etichette.length ? `
+    <div class="filterbar" style="margin-top:.4rem">
+      <button class="chip ${pipeline.filtroEtichetta === "tutte" ? "active" : ""}" data-pl-etichetta="tutte">Tutte le etichette</button>
+      ${etichette.map(e => `<button class="chip ${pipeline.filtroEtichetta === e.id ? "active" : ""}" data-pl-etichetta="${esc(e.id)}">${esc(e.nome)}</button>`).join("")}
+    </div>` : ""}
+
+    ${tutti.length ? `
+    <div class="pl-colonne">
+      ${colonne.map(s => {
+        const dentro = lista.filter(l => l.stato === s);
+        return `
+        <div class="pl-colonna">
+          <h4>${STATI_LEAD[s]} <span class="pill">${dentro.length}</span></h4>
+          ${dentro.map(cartellino).join("") || `<p class="muted" style="font-size:.8rem;font-style:italic">vuota</p>`}
+        </div>`;
+      }).join("")}
+    </div>`
+    : `<p class="muted">Nessun lead ancora. Trovane dalla scheda <strong>Lead locali</strong>.</p>`}
+
+    ${aperto ? dettaglioLead(aperto) : ""}
+
+    <div class="card" style="margin-top:1.2rem">
+      <h3>🏷️ Etichette</h3>
+      <p class="muted" style="font-size:.85rem">Eliminare un'etichetta la toglie da tutti i lead che la portano: è una scelta, non un effetto collaterale.</p>
+      <div class="lead-categorie" style="margin:.7rem 0">
+        ${etichette.map(e => `
+          <span class="tag tag-${esc(e.colore)}">${esc(e.nome)}
+            <button class="tag-x" data-pl-etichetta-elimina="${esc(e.id)}" title="Elimina">✕</button>
+          </span>`).join("") || `<span class="muted" style="font-size:.85rem">Nessuna etichetta.</span>`}
+      </div>
+      <form id="pl-etichetta-form" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
+        <div class="field" style="flex:1;min-width:180px"><label for="et-nome">Nuova etichetta</label>
+          <input id="et-nome" required maxlength="60" placeholder="es. Rinnovo a gennaio"></div>
+        <div class="field"><label for="et-colore">Colore</label>
+          <select id="et-colore">${["verde", "oro", "rosso", "blu", "grigio"].map(c =>
+            `<option value="${c}">${c}</option>`).join("")}</select></div>
+        <button class="btn btn-outline" type="submit">Aggiungi</button>
+      </form>
+    </div>`;
+  }
+
+  function dettaglioLead(l) {
+    const mie = etichetteDi(l.id);
+    const storia = attivitaDi(l.id);
+    const chi = id => (D().collaboratori.find(c => c.id === id) || {}).nome || "—";
+
+    return `
+    <div class="card pl-dettaglio">
+      <div class="admin-top" style="margin-bottom:.8rem">
+        <div>
+          <span class="eyebrow">${esc(STATI_LEAD[l.stato] || l.stato)}</span>
+          <h3 style="margin:.1rem 0">${esc(l.nome)}</h3>
+          <p class="muted" style="margin:0;font-size:.85rem">${esc(l.indirizzo || "—")}</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-pl-chiudi>Chiudi ✕</button>
+      </div>
+
+      <div class="grid-2" style="align-items:start;gap:1.2rem">
+        <div>
+          <table class="admin-kv">
+            ${l.telefono ? `<tr><th>Telefono</th><td><a href="tel:${esc(String(l.telefono).replace(/\s/g, ""))}">${esc(l.telefono)}</a></td></tr>` : ""}
+            ${l.sito ? `<tr><th>Sito</th><td><a href="${esc(l.sito)}" target="_blank" rel="noopener">${esc(l.sito)}</a></td></tr>` : ""}
+            <tr><th>Assegnato a</th><td>${l.assegnato_a ? esc(chi(l.assegnato_a)) : "<em>nessuno</em>"}</td></tr>
+            <tr><th>Provenienza</th><td>Google Places, ${dataBreve(l.raccolto_il)} — «${esc(l.query_origine || "—")}»</td></tr>
+            ${l.note ? `<tr><th>Note</th><td>${esc(l.note)}</td></tr>` : ""}
+          </table>
+
+          <h4 style="margin:1rem 0 .4rem;font-size:.95rem">Etichette</h4>
+          <div class="lead-categorie">
+            ${(D().etichette || []).map(e => {
+              const attiva = mie.some(m => m.id === e.id);
+              return `<button class="chip ${attiva ? "active" : ""}" data-pl-tag="${esc(l.id)}:${esc(e.id)}:${attiva ? "togli" : "metti"}">${esc(e.nome)}</button>`;
+            }).join("") || `<span class="muted" style="font-size:.85rem">Nessuna etichetta ancora creata.</span>`}
+          </div>
+        </div>
+
+        <div>
+          <h4 style="margin:0 0 .4rem;font-size:.95rem">Registra cosa hai fatto</h4>
+          <form id="pl-attivita-form" data-lead="${esc(l.id)}">
+            <div class="grid-2" style="gap:.5rem">
+              <div class="field"><label for="at-tipo">Cosa</label>
+                <select id="at-tipo">${Object.entries(TIPI_ATTIVITA).map(([k, v]) =>
+                  `<option value="${k}">${v}</option>`).join("")}</select></div>
+              <div class="field"><label for="at-esito">Com'è andata</label>
+                <select id="at-esito"><option value="">—</option>${Object.entries(ESITI).map(([k, v]) =>
+                  `<option value="${k}">${v}</option>`).join("")}</select></div>
+            </div>
+            <div class="field" style="margin-top:.5rem"><label for="at-chi">A nome di</label>
+              <select id="at-chi">
+                <option value="">Titolare</option>
+                ${attivi().map(c => `<option value="${esc(c.id)}" ${l.assegnato_a === c.id ? "selected" : ""}>${esc(c.nome)}</option>`).join("")}
+              </select></div>
+            <div class="field" style="margin-top:.5rem"><label for="at-testo">Dettagli</label>
+              <textarea id="at-testo" rows="2" placeholder="Cosa vi siete detti, cosa serve, quando richiamare"></textarea></div>
+            <button class="btn btn-primary btn-sm" style="margin-top:.6rem" type="submit">Registra</button>
+          </form>
+
+          <h4 style="margin:1.2rem 0 .4rem;font-size:.95rem">Storia (${storia.length})</h4>
+          ${storia.length ? storia.map(a => `
+            <div class="pl-attivita">
+              <span class="pl-attivita-capo">
+                <strong>${esc(TIPI_ATTIVITA[a.tipo] || a.tipo)}</strong>
+                ${a.esito ? `<span class="pill">${esc(ESITI[a.esito] || a.esito)}</span>` : ""}
+                <span class="muted">${dataOra(a.quando)} · ${a.collaboratore_id ? esc(chi(a.collaboratore_id)) : "titolare"}</span>
+              </span>
+              ${a.testo ? `<p>${esc(a.testo)}</p>` : ""}
+              <button class="btn btn-ghost btn-sm danger" data-pl-attivita-elimina="${esc(a.id)}">Elimina</button>
+            </div>`).join("")
+          : `<p class="muted" style="font-size:.85rem;font-style:italic">Ancora nulla. Quello che registri qui è ciò che poi conterà nella produzione.</p>`}
+        </div>
+      </div>
+    </div>`;
+  }
+
   /* ---------------- SEZIONI IN ARRIVO ---------------- */
   /* Una scheda vuota che sembra funzionante è peggio di una che
      dichiara di non esserlo: qui c'è scritto cosa farà e da dove
      nasce, così sai cosa stai aspettando. */
   const INARRIVO = {
-    pipeline: {
-      titolo: "📇 Pipeline",
-      cosa: "Anagrafica contatti, etichette di stato (Nuovo, Follow up, Trattativa, Preventivo inviato), assegnazione ai collaboratori e viste per fase.",
-      come: "Lo stesso impianto di etichette di LORI, dove ogni etichetta può stare su più fogli e lo stato del lead è la sua posizione nel lavoro, non una colonna fissa.",
-      serve: "Niente di esterno: si costruisce sulle tabelle del CRM."
-    },
     mail: {
       titolo: "✉️ Mail",
       cosa: "Panoramica della casella, filtri per mittente e dominio, allegati a portata di mano, template di richiesta preventivo compilabili e invio.",
@@ -535,7 +719,7 @@
     panoramica: ["📊 Panoramica", panoramicaView],
     collaboratori: ["👥 Collaboratori", collaboratoriView],
     lead: ["🔎 Lead locali", leadView],
-    pipeline: ["📇 Pipeline", () => inArrivoView("pipeline")],
+    pipeline: ["📇 Pipeline", pipelineView],
     documenti: ["📁 Documenti", documentiView],
     mail: ["✉️ Mail", () => inArrivoView("mail")],
     produzione: ["🏆 Produzione", () => inArrivoView("produzione")]
@@ -711,6 +895,80 @@
         const e = await chiamaLead("elimina", { id: b.dataset.leadElimina });
         if (!e.ok) { QF().toast(e.errore || "Eliminazione non riuscita."); return; }
         QF().toast("Lead eliminato.");
+        await carica();
+      }));
+
+    /* ---- pipeline ---- */
+    document.querySelectorAll("[data-pl-apri]").forEach(b =>
+      b.addEventListener("click", () => {
+        /* Ricliccare la stessa scheda la chiude: è il gesto che
+           ci si aspetta, e evita di dover cercare la ✕. */
+        pipeline.aperto = pipeline.aperto === b.dataset.plApri ? null : b.dataset.plApri;
+        QF().render();
+      }));
+    $("[data-pl-chiudi]")?.addEventListener("click", () => { pipeline.aperto = null; QF().render(); });
+
+    document.querySelectorAll("[data-pl-chi]").forEach(b =>
+      b.addEventListener("click", () => { pipeline.filtroChi = b.dataset.plChi; QF().render(); }));
+    document.querySelectorAll("[data-pl-etichetta]").forEach(b =>
+      b.addEventListener("click", () => { pipeline.filtroEtichetta = b.dataset.plEtichetta; QF().render(); }));
+
+    document.querySelectorAll("[data-pl-tag]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const [leadId, etichettaId, verso] = b.dataset.plTag.split(":");
+        const e = await chiamaLead("etichetta-applica", { leadId, etichettaId, applica: verso === "metti" });
+        if (!e.ok) { QF().toast(e.errore || "Operazione non riuscita."); return; }
+        await carica();
+      }));
+
+    $("#pl-etichetta-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const esito = await chiamaLead("etichetta-crea", {
+        nome: $("#et-nome").value.trim(), colore: $("#et-colore").value
+      });
+      if (!esito.ok) { QF().toast(esito.errore || "Creazione non riuscita."); return; }
+      QF().toast("Etichetta creata.");
+      await carica();
+    });
+
+    document.querySelectorAll("[data-pl-etichetta-elimina]").forEach(b =>
+      b.addEventListener("click", async () => {
+        if (!confirm("Eliminare questa etichetta?\n\nVerrà tolta da tutti i lead che la portano.")) return;
+        const e = await chiamaLead("etichetta-elimina", { id: b.dataset.plEtichettaElimina });
+        if (!e.ok) { QF().toast(e.errore || "Eliminazione non riuscita."); return; }
+        QF().toast("Etichetta eliminata.");
+        await carica();
+      }));
+
+    $("#pl-attivita-form")?.addEventListener("submit", async ev => {
+      ev.preventDefault();
+      /* Come per gli altri moduli: i campi si leggono prima del
+         ridisegno, non dopo. */
+      const dati = {
+        leadId: ev.target.dataset.lead,
+        tipo: $("#at-tipo").value,
+        esito: $("#at-esito").value || null,
+        collaboratoreId: $("#at-chi").value || null,
+        testo: $("#at-testo").value.trim() || null
+      };
+      const btn = ev.target.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.textContent = "Registro…"; }
+      const e = await chiamaLead("attivita-registra", dati);
+      if (!e.ok) {
+        QF().toast(e.errore || "Registrazione non riuscita.");
+        if (btn) { btn.disabled = false; btn.textContent = "Registra"; }
+        return;
+      }
+      QF().toast("Attività registrata.");
+      await carica();
+    });
+
+    document.querySelectorAll("[data-pl-attivita-elimina]").forEach(b =>
+      b.addEventListener("click", async () => {
+        if (!confirm("Eliminare questa attività dalla storia del lead?")) return;
+        const e = await chiamaLead("attivita-elimina", { id: b.dataset.plAttivitaElimina });
+        if (!e.ok) { QF().toast(e.errore || "Eliminazione non riuscita."); return; }
+        QF().toast("Attività eliminata.");
         await carica();
       }));
 

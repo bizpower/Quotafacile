@@ -306,10 +306,121 @@ async function salva(d: Record<string, unknown>) {
 }
 
 async function elenco() {
-  const { data, error } = await db.from("crm_lead")
-    .select("*").order("creato_il", { ascending: false }).limit(500);
+  const [lead, etichette, applicate, attivita] = await Promise.all([
+    db.from("crm_lead").select("*").order("creato_il", { ascending: false }).limit(500),
+    db.from("crm_etichette").select("*").order("nome"),
+    db.from("crm_lead_etichette").select("*"),
+    db.from("crm_attivita").select("*").order("quando", { ascending: false }).limit(1000),
+  ]);
+  if (lead.error) throw new Error(lead.error.message);
+  return {
+    lead: lead.data ?? [],
+    etichette: etichette.data ?? [],
+    applicate: applicate.data ?? [],
+    attivita: attivita.data ?? [],
+    categorie: CATEGORIE,
+    letteIl: new Date().toISOString(),
+  };
+}
+
+// ---------------- Etichette ----------------
+
+const COLORI = ["verde", "oro", "rosso", "blu", "grigio"];
+
+async function etichettaCrea(d: Record<string, unknown>) {
+  const nome = testo(d.nome, 60);
+  if (!nome) throw new ErroreCliente("Serve un nome per l'etichetta");
+  const colore = COLORI.includes(String(d.colore)) ? String(d.colore) : "verde";
+  const { data, error } = await db.from("crm_etichette")
+    .insert({ nome, colore }).select("id").single();
+  if (error) {
+    throw new ErroreCliente(error.code === "23505"
+      ? "Esiste già un'etichetta con questo nome"
+      : error.message);
+  }
+  return { id: data.id };
+}
+
+// Eliminare un'etichetta la toglie da tutti i lead che la
+// portano: è una scelta, non un effetto collaterale. Un'etichetta
+// che sopravvive solo su qualche lead diventa un residuo che
+// nessuno sa più cosa significhi.
+async function etichettaElimina(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new ErroreCliente("Manca l'identificativo dell'etichetta");
+  const { error } = await db.from("crm_etichette").delete().eq("id", id);
   if (error) throw new Error(error.message);
-  return { lead: data ?? [], categorie: CATEGORIE, letteIl: new Date().toISOString() };
+  return { eliminata: true };
+}
+
+async function etichettaApplica(d: Record<string, unknown>) {
+  const leadId = testo(d.leadId, 40);
+  const etichettaId = testo(d.etichettaId, 40);
+  if (!leadId || !etichettaId) throw new ErroreCliente("Indica il lead e l'etichetta");
+
+  if (d.applica === false) {
+    const { error } = await db.from("crm_lead_etichette")
+      .delete().eq("lead_id", leadId).eq("etichetta_id", etichettaId);
+    if (error) throw new Error(error.message);
+    return { applicata: false };
+  }
+
+  const { error } = await db.from("crm_lead_etichette")
+    .upsert({ lead_id: leadId, etichetta_id: etichettaId }, { onConflict: "lead_id,etichetta_id", ignoreDuplicates: true });
+  if (error) {
+    throw error.code === "23503"
+      ? new ErroreCliente("Il lead o l'etichetta non esistono più.")
+      : new Error(error.message);
+  }
+  return { applicata: true };
+}
+
+// ---------------- Attività ----------------
+
+async function attivitaRegistra(d: Record<string, unknown>) {
+  const leadId = testo(d.leadId, 40);
+  const tipo = String(d.tipo ?? "nota");
+  if (!leadId) throw new ErroreCliente("Manca il lead");
+  if (!["chiamata", "email", "incontro", "preventivo", "nota"].includes(tipo)) {
+    throw new ErroreCliente("Tipo di attività non riconosciuto");
+  }
+  const esito = testo(d.esito, 30);
+  if (esito && !["positivo", "da_richiamare", "negativo", "nessuna_risposta"].includes(esito)) {
+    throw new ErroreCliente("Esito non riconosciuto");
+  }
+
+  const { data, error } = await db.from("crm_attivita").insert({
+    lead_id: leadId,
+    collaboratore_id: testo(d.collaboratoreId, 40),
+    tipo,
+    testo: testo(d.testo, 3000),
+    esito,
+    quando: testo(d.quando, 40) ?? new Date().toISOString(),
+  }).select("id").single();
+  if (error) {
+    throw error.code === "23503"
+      ? new ErroreCliente("Il lead o il collaboratore non esistono più.")
+      : new Error(error.message);
+  }
+
+  // Una chiamata o un'email fatta significa che il contatto è
+  // avvenuto: portare avanti lo stato da soli evita di doverlo
+  // ricordare due volte, e soprattutto evita che resti "nuovo"
+  // un lead con tre chiamate alle spalle.
+  if (["chiamata", "email", "incontro"].includes(tipo)) {
+    await db.from("crm_lead")
+      .update({ stato: "contattato", contattato_il: new Date().toISOString() })
+      .eq("id", leadId).eq("stato", "nuovo");
+  }
+  return { id: data.id };
+}
+
+async function attivitaElimina(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new ErroreCliente("Manca l'identificativo dell'attività");
+  const { error } = await db.from("crm_attivita").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  return { eliminata: true };
 }
 
 async function aggiorna(d: Record<string, unknown>) {
@@ -350,6 +461,11 @@ async function elimina(d: Record<string, unknown>) {
 
 const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
   cerca, salva, elenco: () => elenco(), aggiorna, elimina,
+  "etichetta-crea": etichettaCrea,
+  "etichetta-elimina": etichettaElimina,
+  "etichetta-applica": etichettaApplica,
+  "attivita-registra": attivitaRegistra,
+  "attivita-elimina": attivitaElimina,
 };
 
 Deno.serve(async (req: Request) => {
