@@ -1268,7 +1268,9 @@ function render() {
   else if (page === "preventivo") html = views.preventivo(query);
   else if (page === "area-pro") html = views.areaPro();
   else if (LEGAL_ROUTES[page]) { setJsonLd(null); html = LEGAL_ROUTES[page](); navKey = ""; }
-  else if (page === "admin") { setJsonLd(null); html = window.QF_ADMIN ? window.QF_ADMIN.view(path[1]) : ""; navKey = ""; }
+  /* L'area riservata riceve tutto il percorso, non solo il primo
+     segmento: dentro ci sono due applicazioni con rotte proprie. */
+  else if (page === "admin") { setJsonLd(null); html = window.QF_ADMIN ? window.QF_ADMIN.view(path.slice(1)) : ""; navKey = ""; }
   else { html = views.home(); navKey = "home"; }
 
   applicaSeo(page, path);
