@@ -709,6 +709,95 @@ grant  execute on function crm_interno.valore_attivita(text, text) to authentica
 alter table public.crm_collaboratori drop column if exists punti;
 
 -- ------------------------------------------------------------
+-- 7h. CRM: posta
+-- ------------------------------------------------------------
+-- Invio dalla casella della società, con modelli riutilizzabili
+-- e registro di ciò che è partito.
+--
+-- Un'email inviata è un fatto che riguarda una persona: va
+-- saputo che è stata mandata, a chi, quando e con quale testo.
+-- Serve a non scrivere due volte alla stessa azienda, serve a
+-- rispondere se qualcuno chiede conto di un messaggio, e serve
+-- perché senza registro "abbiamo scritto a tutti" è una frase
+-- che nessuno può verificare.
+
+create table if not exists public.crm_email_modelli (
+  id        uuid primary key default gen_random_uuid(),
+  creato_il timestamptz not null default now(),
+  nome      text not null unique,
+  oggetto   text not null,
+  corpo     text not null,
+  scopo     text not null default 'contatto'
+              check (scopo in ('contatto','preventivo','sollecito','informativa')),
+  attivo    boolean not null default true
+);
+
+alter table public.crm_email_modelli enable row level security;
+
+drop policy if exists "i modelli li vede chi è entrato" on public.crm_email_modelli;
+create policy "i modelli li vede chi è entrato"
+  on public.crm_email_modelli for select to authenticated using (true);
+
+create table if not exists public.crm_email_inviate (
+  id               uuid primary key default gen_random_uuid(),
+  inviata_il       timestamptz not null default now(),
+  lead_id          uuid references public.crm_lead(id) on delete set null,
+  collaboratore_id uuid references public.crm_collaboratori(id) on delete set null,
+  modello_id       uuid references public.crm_email_modelli(id) on delete set null,
+  destinatario     text not null,
+  oggetto          text not null,
+  -- il testo esatto partito, non il modello: i modelli cambiano,
+  -- quello che è stato scritto a una persona no
+  corpo            text not null,
+  esito            text not null default 'inviata' check (esito in ('inviata','fallita')),
+  errore           text
+);
+
+alter table public.crm_email_inviate enable row level security;
+
+create index if not exists crm_email_inviate_lead_idx
+  on public.crm_email_inviate (lead_id, inviata_il desc);
+create index if not exists crm_email_inviate_dest_idx
+  on public.crm_email_inviate (lower(destinatario), inviata_il desc);
+
+drop policy if exists "gli invii sui lead che si vedono" on public.crm_email_inviate;
+create policy "gli invii sui lead che si vedono"
+  on public.crm_email_inviate for select to authenticated
+  using (
+    collaboratore_id = crm_interno.collaboratore_corrente()
+    or crm_interno.vede_tutto()
+    or exists (
+      select 1 from public.crm_lead l
+       where l.id = lead_id
+         and l.assegnato_a = crm_interno.collaboratore_corrente()
+    )
+  );
+
+-- Chi ha detto di non voler essere contattato.
+-- L'art. 21 del GDPR dà a chiunque il diritto di opporsi al
+-- trattamento fatto per legittimo interesse — che è esattamente
+-- la base su cui questi contatti sono stati raccolti. Il diritto
+-- però vale poco se l'opposizione resta in una casella di posta:
+-- deve stare qui, dove il sistema la incontra prima di ogni
+-- invio. Per questo non è un promemoria ma un divieto.
+alter table public.crm_lead
+  add column if not exists no_contatto        boolean not null default false,
+  add column if not exists no_contatto_il     timestamptz,
+  add column if not exists no_contatto_motivo text,
+  -- Google Places non restituisce l'indirizzo email: dà nome,
+  -- indirizzo, telefono e sito, non la posta. Va trovata sul
+  -- sito dell'attività e annotata qui, una volta sola.
+  add column if not exists email              text;
+
+create index if not exists crm_lead_no_contatto_idx
+  on public.crm_lead (no_contatto) where no_contatto;
+
+comment on column public.crm_lead.no_contatto is
+  'Opposizione al contatto (art. 21 GDPR). Se vero, qf-mail rifiuta l''invio: non è un promemoria, è un divieto.';
+comment on column public.crm_lead.email is
+  'Indirizzo trovato a mano: Places non lo fornisce. Senza questo, a un lead si può solo telefonare.';
+
+-- ------------------------------------------------------------
 -- 8. Funzioni non esposte
 -- ------------------------------------------------------------
 -- Una funzione nello schema public è invocabile via /rest/v1/rpc

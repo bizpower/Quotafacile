@@ -275,7 +275,7 @@ lo sono mai: tenerli distinti rende difficile sbagliarsi.
 | **📁 Documenti** | ✅ archivio della squadra: chi ha caricato cosa, categorie, scadenze in evidenza |
 | **🔎 Lead locali** | ✅ ricerca per zona, categorie e raggio; salvataggio, assegnazione e stato di lavorazione |
 | **📇 Pipeline** | ✅ viste per fase, etichette, storia delle attività su ogni lead |
-| **✉️ Mail** | in arrivo — casella, filtri per mittente, allegati, template, invio |
+| **✉️ Mail** | ✅ modelli, invio dalla casella Aruba, registro, opposizione al contatto |
 | **🏆 Produzione** | ✅ classifica calcolata dai fatti registrati, con i pesi dichiarati |
 
 ### 🔑 Accessi dei collaboratori — `#/admin/area`
@@ -328,6 +328,46 @@ Due comportamenti voluti: registrare una chiamata, un'email o un incontro **port
 un lead ancora «nuovo» — evita che resti tale uno con tre chiamate alle spalle; e un'attività si
 registra sempre **a nome di qualcuno**, perché firmare il lavoro di un altro falserebbe la
 produzione di entrambi.
+
+### ✉️ Mail
+
+Invio dalla casella della società, con **modelli** riutilizzabili (variabili `{azienda}`,
+`{citta}`, `{telefono}`, `{mittente}`), **anteprima** del messaggio esatto prima di mandarlo, e
+**registro** di ciò che è partito — riuscito o fallito.
+
+Il registro non è un vezzo: un'email inviata è un fatto che riguarda una persona. Serve a non
+scrivere due volte alla stessa azienda, a rispondere se qualcuno chiede conto di un messaggio, e
+perché senza «abbiamo scritto a tutti» è una frase che nessuno può verificare. Nel registro resta
+il **testo esatto partito**, non il modello: i modelli cambiano, quello che è stato scritto a una
+persona no.
+
+**L'opposizione al contatto è un divieto, non un promemoria.** L'art. 21 del GDPR dà a chiunque
+il diritto di opporsi al trattamento fatto per legittimo interesse — la base su cui questi
+contatti sono raccolti. Ogni messaggio esce quindi con scritto come farsi togliere, e
+l'opposizione si registra dalla scheda del lead: da quel momento il **server** rifiuta l'invio,
+non è la schermata a nasconderlo.
+
+**Per attivarla** servono quattro segreti nel progetto Supabase:
+
+| Segreto | Su Aruba |
+|---|---|
+| `QF_SMTP_HOST` | `smtps.aruba.it` |
+| `QF_SMTP_PORT` | `465` |
+| `QF_SMTP_USER` | l'indirizzo completo della casella |
+| `QF_SMTP_PASS` | la password della casella |
+
+`QF_SMTP_FROM` è facoltativo (`Nome <indirizzo>`). Finché mancano, modelli e registro funzionano
+e l'invio è disattivato con un messaggio che dice cosa manca.
+
+**La posta in arrivo non c'è, e non è una dimenticanza.** Leggerla richiede IMAP, cioè una
+connessione lunga tenuta aperta verso un server di posta; le Edge Function sono fatte per
+rispondere in fretta e spegnersi, e per Deno non esiste un client IMAP di cui fidarsi in mezzo a
+una casella di lavoro. Ne sarebbe uscita una schermata che a volte mostra la posta e a volte no —
+peggio di una che manca. La sezione lo dichiara apertamente invece di lasciarlo scoprire.
+
+**Un limite da conoscere:** Google Places non restituisce gli indirizzi email. Un lead trovato con
+la ricerca ha nome, indirizzo, telefono e sito, non la posta: l'email va cercata sul loro sito e
+annotata sulla scheda, e da lì in poi resta.
 
 ### 🏆 Produzione
 
