@@ -19,6 +19,7 @@ quotafacile/
 │   ├── js/bacheca.js             # 💬 Bacheca condivisa: lettura e scrittura sul database
 │   ├── js/admin.js               # 🔐 Area riservata (#/admin): la porta + console di piattaforma
 │   ├── js/crm.js                 # 🏢 CRM Bizpower (#/admin/crm): amministrazione della società
+│   ├── js/mm.js                  # 📮 Mail Marketing (#/admin/crm/mail): liste, campagne, invii
 │   ├── js/accesso.js             # 🔑 Sessione dei collaboratori (Supabase Auth, storage, RLS)
 │   ├── js/area.js                # 🧑‍💼 Area personale del collaboratore (#/admin/area)
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
@@ -28,7 +29,11 @@ quotafacile/
 │   └── functions/                # ☁️ Edge Function (Deno) — il backend, versionato qui
 │       ├── qf-contatti/          #     riceve i contatti: salva prima, notifica poi
 │       ├── qf-bacheca/           #     legge e scrive la bacheca condivisa
-│       └── qf-admin/             #     moderazione, protetta da chiave
+│       ├── qf-admin/             #     moderazione, protetta da chiave
+│       ├── qf-crm/               #     collaboratori, documenti, produzione
+│       ├── qf-lead/              #     ricerca dei lead e lavorazione della pipeline
+│       ├── qf-mail/              #     invio dalla casella della società
+│       └── qf-mm/                #     mail marketing: mittenti, liste, campagne, coda
 ├── .github/workflows/            # Pubblicazione su Pages, attivazione casella email
 ├── llms.txt                      # 🤖 Presentazione del sito per i motori generativi
 ├── vercel.json                   # Intestazioni di sicurezza e cache

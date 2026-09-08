@@ -655,7 +655,10 @@ Usa **grassetto** per i numeri che contano."></textarea>
       return window.QF_AREA ? window.QF_AREA.view(parti[0] === "area" ? parti[1] : null) : "";
     }
     if (!isAuth()) return loginView();
-    if (parti[0] === "crm") return window.QF_CRM ? window.QF_CRM.view(parti[1]) : "";
+    /* Al CRM arriva tutto il resto dell'indirizzo, non solo il
+       primo pezzo: le sue sezioni possono averne di proprie
+       sotto, come il mail marketing. */
+    if (parti[0] === "crm") return window.QF_CRM ? window.QF_CRM.view(parti.slice(1)) : "";
     if (parti[0] !== "piattaforma") return portaView();
     /* La scheda la decide l'indirizzo, sempre: se non è indicata
        si torna alla prima. Tenere lo stato precedente farebbe
