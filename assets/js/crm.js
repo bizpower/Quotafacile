@@ -37,6 +37,10 @@
   let fase = "vuoto";      // vuoto | caricamento | pronto | errore
   let avviso = null;
   let modifica = null;     // id del collaboratore in modifica, o "nuovo"
+  /* Vero quando la pagina mostrata è il mail marketing: bind()
+     non riceve l'indirizzo, e senza questo attaccherebbe gli
+     eventi del CRM a una schermata che non è la sua. */
+  let dentroMail = false;
   /* Credenziali appena generate. Restano a schermo finché non le
      si chiude, perché è l'unico momento in cui la password è
      leggibile: dopo, nel database, c'è solo la sua forma cifrata
@@ -968,11 +972,30 @@
     lead: ["🔎 Lead locali", leadView],
     pipeline: ["📇 Pipeline", pipelineView],
     documenti: ["📁 Documenti", documentiView],
-    mail: ["✉️ Mail", mailView],
+    posta: ["✉️ Posta", mailView],
+    mail: ["📮 Mail Marketing", null],
     produzione: ["🏆 Produzione", produzioneView]
   };
 
-  function view(sub) {
+  /* Il mail marketing è un modulo a sé, con le sue undici voci e
+     la sua funzione sul server: la scheda del CRM è solo la porta
+     da cui ci si entra. Da qui in giù l'indirizzo lo governa lui. */
+  function view(path) {
+    const parti = Array.isArray(path) ? path.filter(Boolean) : (path ? [path] : []);
+    const sub = parti[0];
+    /* Il mail marketing prende la pagina intera: ha una barra
+       laterale sua, dati suoi e undici voci, e sopra la sua non
+       ci sta anche questa. Il ritorno al CRM è nel suo angolo in
+       alto a sinistra. Non aspetta nemmeno che il CRM abbia
+       finito di caricare: sono due funzioni diverse sul server. */
+    dentroMail = sub === "mail";
+    if (dentroMail) {
+      return `
+      <section class="section admin-shell"><div class="container">
+        ${window.QF_MM ? window.QF_MM.view(parti[1]) : ""}
+      </div></section>`;
+    }
+
     const sezione = SEZIONI[sub] ? sub : "panoramica";
 
     const testa = `
@@ -1014,6 +1037,8 @@
   /* ---------------- EVENTI ---------------- */
   function bind() {
     const $ = s => document.querySelector(s);
+
+    if (dentroMail) { window.QF_MM?.bind(); return; }
 
     if (fase === "vuoto") { carica(); return; }
 
@@ -1406,8 +1431,12 @@
 
   /* Quando si esce dall'area riservata i dati del CRM non devono
      restare in memoria in attesa del prossimo che apre la scheda. */
+  /* All'uscita dall'area riservata esce dalla memoria anche ciò
+     che il mail marketing aveva caricato: sono dati della
+     società come tutti gli altri. */
   function dimentica() {
-    dati = null; fase = "vuoto"; avviso = null; modifica = null;
+    dati = null; fase = "vuoto"; avviso = null; modifica = null; dentroMail = false;
+    window.QF_MM?.dimentica();
   }
 
   window.QF_CRM = { view, bind, dimentica };

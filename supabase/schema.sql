@@ -809,3 +809,196 @@ comment on column public.crm_lead.email is
 revoke execute on function public.aggiorna_conteggio_voti() from public, anon, authenticated;
 revoke execute on function public.qf_troppe_richieste(text, integer) from public, anon, authenticated;
 grant  execute on function public.qf_troppe_richieste(text, integer) to service_role;
+
+-- ------------------------------------------------------------
+-- 9. Mail Marketing
+-- ------------------------------------------------------------
+-- Il modulo che su Lovable viveva nel progetto Bizpower, portato
+-- qui dentro. Le tabelle hanno prefisso mm_ per distinguerle da
+-- quelle del CRM: sono cose diverse. Il CRM segue le persone —
+-- chi è il lead, chi lo lavora, a che punto è. Il mail marketing
+-- segue i messaggi — quale testo, a quale indirizzo, con quale
+-- casella, e se è partito.
+--
+-- Una scelta va spiegata subito: i lead NON si duplicano. Su
+-- Lovable c'era mm_leads separata dai lead del CRM, e due elenchi
+-- della stessa azienda che divergono sono il modo più sicuro di
+-- scrivere due volte a chi ha già detto di no. Qui le liste
+-- puntano a crm_lead, che è già l'unico posto dove un'attività
+-- esiste, con la sua provenienza e la sua eventuale opposizione.
+
+-- ---- 9a. Mittenti ----
+-- Il selettore di brand della sidebar. Su Lovable i brand erano
+-- due costanti nel codice (Bizpower, Lori CRM): aggiungerne uno
+-- voleva dire una modifica al sorgente e un rilascio. Qui sono
+-- righe, così se domani si spedisce anche per un'altra società
+-- basta inserirla.
+create table if not exists public.mm_mittenti (
+  id          uuid primary key default gen_random_uuid(),
+  creato_il   timestamptz not null default now(),
+  chiave      text not null unique,
+  etichetta   text not null,
+  from_email  text not null,
+  from_nome   text not null,
+  dominio     text not null,
+  accento     text not null default '#145233',
+  firma_html  text not null default '',
+  attivo      boolean not null default true
+);
+
+alter table public.mm_mittenti enable row level security;
+
+comment on table public.mm_mittenti is
+  'Identità con cui si spedisce: il selettore di brand, come dati invece che come costanti nel codice.';
+
+insert into public.mm_mittenti (chiave, etichetta, from_email, from_nome, dominio, accento)
+values ('quotafacile', 'QuotaFacile', 'info@quotafacile.net', 'QuotaFacile', 'quotafacile.net', '#145233')
+on conflict (chiave) do nothing;
+
+-- ---- 9b. Caselle di invio ----
+-- La password NON sta qui. Su Lovable veniva salvata e poi
+-- applicata a un segreto; questa tabella conserva solo ciò che
+-- serve a sapere se una casella funziona e quanto ha spedito.
+-- La credenziale resta nei segreti del progetto (QF_SMTP_PASS),
+-- dove il database non la può leggere e un errore di RLS non la
+-- può esporre.
+create table if not exists public.mm_smtp (
+  id                 uuid primary key default gen_random_uuid(),
+  creato_il          timestamptz not null default now(),
+  mittente_id        uuid references public.mm_mittenti(id) on delete cascade,
+  nome               text not null,
+  host               text not null,
+  porta              integer not null default 465,
+  utente             text not null,
+  from_email         text not null,
+  stato              text not null default 'nuovo'
+                       check (stato in ('nuovo','attivo','errore','sospeso')),
+  -- Aruba taglia le connessioni a chi supera la propria soglia:
+  -- il limite non è una gentilezza, è ciò che tiene viva la casella.
+  limite_giornaliero integer not null default 200,
+  inviate_oggi       integer not null default 0,
+  giorno_contatore   date    not null default current_date,
+  ultimo_uso         timestamptz,
+  ultimo_test_il     timestamptz,
+  ultimo_test_esito  text check (ultimo_test_esito in ('ok','errore')),
+  ultimo_test_errore text
+);
+
+alter table public.mm_smtp enable row level security;
+create index if not exists mm_smtp_mittente_idx on public.mm_smtp (mittente_id);
+
+comment on column public.mm_smtp.limite_giornaliero is
+  'Soglia giornaliera concordata col fornitore. Superarla non fa arrivare più posta: fa sospendere la casella.';
+
+-- ---- 9c. Liste ----
+create table if not exists public.mm_liste (
+  id            uuid primary key default gen_random_uuid(),
+  creata_il     timestamptz not null default now(),
+  nome          text not null,
+  descrizione   text,
+  mittente_id   uuid references public.mm_mittenti(id) on delete set null,
+  creata_da     uuid references public.crm_collaboratori(id) on delete set null
+);
+
+alter table public.mm_liste enable row level security;
+
+create table if not exists public.mm_lista_lead (
+  lista_id    uuid not null references public.mm_liste(id) on delete cascade,
+  lead_id     uuid not null references public.crm_lead(id) on delete cascade,
+  aggiunto_il timestamptz not null default now(),
+  primary key (lista_id, lead_id)
+);
+
+alter table public.mm_lista_lead enable row level security;
+create index if not exists mm_lista_lead_lead_idx on public.mm_lista_lead (lead_id);
+
+comment on table public.mm_lista_lead is
+  'Appartenenza di un lead a una lista. Il lead resta uno solo, in crm_lead: le liste sono punti di vista su quell''elenco, non copie.';
+
+-- ---- 9d. Campagne ----
+create table if not exists public.mm_campagne (
+  id               uuid primary key default gen_random_uuid(),
+  creata_il        timestamptz not null default now(),
+  nome             text not null,
+  mittente_id      uuid references public.mm_mittenti(id) on delete set null,
+  lista_id         uuid references public.mm_liste(id) on delete set null,
+  modello_id       uuid references public.crm_email_modelli(id) on delete set null,
+  stato            text not null default 'bozza'
+                     check (stato in ('bozza','in_revisione','programmata','in_corso','completata','annullata')),
+  programmata_per  timestamptz,
+  note             text
+);
+
+alter table public.mm_campagne enable row level security;
+create index if not exists mm_campagne_stato_idx on public.mm_campagne (stato, creata_il desc);
+
+-- ---- 9e. Posta in uscita ----
+-- Il cuore del modulo: una riga per messaggio, dalla stesura
+-- all'esito. Il corpo è quello esatto che parte, non il modello:
+-- i modelli cambiano, ciò che è stato scritto a una persona no.
+create table if not exists public.mm_email (
+  id               uuid primary key default gen_random_uuid(),
+  creata_il        timestamptz not null default now(),
+  mittente_id      uuid references public.mm_mittenti(id) on delete set null,
+  smtp_id          uuid references public.mm_smtp(id) on delete set null,
+  campagna_id      uuid references public.mm_campagne(id) on delete cascade,
+  lead_id          uuid references public.crm_lead(id) on delete set null,
+  modello_id       uuid references public.crm_email_modelli(id) on delete set null,
+  destinatario     text not null,
+  oggetto          text not null,
+  corpo            text not null,
+  stato            text not null default 'bozza'
+                     check (stato in ('bozza','pronta','in_coda','inviata','fallita','annullata')),
+  programmata_per  timestamptz,
+  inviata_il       timestamptz,
+  errore           text,
+  meta             jsonb not null default '{}'::jsonb
+);
+
+alter table public.mm_email enable row level security;
+create index if not exists mm_email_stato_idx     on public.mm_email (stato, creata_il desc);
+create index if not exists mm_email_coda_idx      on public.mm_email (programmata_per)
+  where stato = 'in_coda';
+create index if not exists mm_email_campagna_idx  on public.mm_email (campagna_id);
+create index if not exists mm_email_dest_idx      on public.mm_email (lower(destinatario), creata_il desc);
+
+-- ---- 9f. Blacklist ----
+-- crm_lead.no_contatto copre chi è già nel CRM. Questa copre
+-- tutti gli altri: chi risponde NO da un indirizzo che non
+-- corrisponde a nessun lead, chi scrive per conto di un collega,
+-- chi chiede la cancellazione prima ancora di essere schedato.
+-- Un'opposizione che il sistema non sa dove mettere è
+-- un'opposizione che prima o poi viene ignorata.
+create table if not exists public.mm_blacklist (
+  id          uuid primary key default gen_random_uuid(),
+  aggiunta_il timestamptz not null default now(),
+  email       text not null,
+  motivo      text,
+  origine     text not null default 'manuale'
+                check (origine in ('manuale','risposta','bounce','reclamo'))
+);
+
+create unique index if not exists mm_blacklist_email_idx
+  on public.mm_blacklist (lower(email));
+
+alter table public.mm_blacklist enable row level security;
+
+comment on table public.mm_blacklist is
+  'Indirizzi da non contattare, anche se non corrispondono a nessun lead. Consultata prima di ogni invio.';
+
+-- ---- 9g. Chi vede cosa ----
+-- Il mail marketing è lavoro di direzione: decide cosa la
+-- società dice a nome proprio. Lo vede chi vede tutto. I
+-- collaboratori continuano a vedere i propri lead e i propri
+-- documenti, che è il loro lavoro.
+do $$
+declare t text;
+begin
+  foreach t in array array['mm_mittenti','mm_smtp','mm_liste','mm_lista_lead',
+                           'mm_campagne','mm_email','mm_blacklist']
+  loop
+    execute format('drop policy if exists "solo chi vede tutto" on public.%I', t);
+    execute format(
+      'create policy "solo chi vede tutto" on public.%I for select to authenticated using (crm_interno.vede_tutto())', t);
+  end loop;
+end $$;
