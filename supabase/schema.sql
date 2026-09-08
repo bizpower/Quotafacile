@@ -237,7 +237,45 @@ create policy "risposte pubblicate visibili a tutti"
   on public.risposte for select using (stato = 'pubblicata');
 
 -- ------------------------------------------------------------
--- 7. Funzioni non esposte
+-- 7. CRM Bizpower
+-- ------------------------------------------------------------
+-- Tutto ciò che riguarda l'amministrazione della società sta in
+-- tabelle con prefisso crm_. La separazione dal marketplace non è
+-- un vezzo: i dati di QuotaFacile sono in parte pubblici (la
+-- bacheca), quelli del CRM non lo sono mai. Tenerli distinti rende
+-- difficile sbagliarsi.
+
+create table if not exists public.crm_collaboratori (
+  id         uuid primary key default gen_random_uuid(),
+  creato_il  timestamptz not null default now(),
+  nome       text not null,
+  email      text not null unique,
+  telefono   text,
+  -- i ruoli sono quelli già in uso in LORI, più il titolare
+  ruolo      text not null default 'commerciale'
+               check (ruolo in ('titolare','direttore','account','commerciale','consulente')),
+  -- Un collaboratore che se ne va si disattiva, non si cancella:
+  -- cancellarlo porterebbe via anche la storia di ciò che ha
+  -- prodotto e dei documenti che ha caricato.
+  attivo     boolean not null default true,
+  note       text,
+  -- Punteggio di produzione: lo alimenteranno lead e trattative.
+  -- Nasce a zero e non si scrive a mano.
+  punti      integer not null default 0,
+  -- Aggancio all'utenza vera, quando i collaboratori avranno un
+  -- proprio accesso. Nullo finché non esiste.
+  utente_id  uuid unique
+);
+comment on table public.crm_collaboratori is
+  'Collaboratori Bizpower. Non è una tabella pubblica: nessuna policy, si passa solo dalla Edge Function qf-crm.';
+
+alter table public.crm_collaboratori enable row level security;
+
+create index if not exists crm_collaboratori_attivo_idx
+  on public.crm_collaboratori (attivo, nome);
+
+-- ------------------------------------------------------------
+-- 8. Funzioni non esposte
 -- ------------------------------------------------------------
 -- Una funzione nello schema public è invocabile via /rest/v1/rpc
 -- da chiunque abbia una chiave pubblica. Nessuna delle due qui

@@ -568,13 +568,73 @@ Usa **grassetto** per i numeri che contano."></textarea>
     segnalazioni: segnalazioniAperte
   };
 
-  function view(sub) {
-    if (!isAuth()) return loginView();
-    if (sub && TABS[sub]) tab = sub;
+  /* Rotta corrente dentro l'area riservata: [] la porta,
+     ["piattaforma", tab] la console, ["crm", sezione] il CRM. */
+  function rotta() {
+    const h = (location.hash || "").replace(/^#\/?/, "").split("?")[0].split("/").filter(Boolean);
+    return h[0] === "admin" ? h.slice(1) : [];
+  }
 
+  /* ---------------- LA PORTA ----------------
+     Dietro un solo accesso ci sono due mestieri diversi: moderare
+     il marketplace e amministrare la società. Chiederti quale dei
+     due stai per fare, invece di mescolarli in un unico pannello,
+     riduce la possibilità di trattare un dato interno come se
+     fosse pubblico. */
+  function portaView() {
+    const porta = (href, icona, titolo, testo, righe) => `
+      <a class="porta-card" href="${href}">
+        <span class="porta-icona">${icona}</span>
+        <h2>${titolo}</h2>
+        <p>${testo}</p>
+        <ul>${righe.map(r => `<li>${r}</li>`).join("")}</ul>
+        <span class="porta-cta">Entra →</span>
+      </a>`;
+
+    return `
+    <section class="section admin-shell">
+      <div class="container">
+        <div class="admin-top">
+          <div>
+            <span class="eyebrow">Area riservata</span>
+            <h1 style="font-size:clamp(1.6rem,3.5vw,2.2rem);margin:0">Dove vuoi entrare?</h1>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="admin-logout">Esci</button>
+        </div>
+
+        <div class="porta-grid">
+          ${porta("#/admin/piattaforma", "🟢", "Piattaforma QuotaFacile",
+            "Il marketplace: ciò che i visitatori vedono e ciò che ti scrivono.",
+            ["Richieste di preventivo e consulenza", "Iscrizioni degli intermediari e verifica RUI",
+             "Bacheca: approvazione e moderazione", "Guide SEO e segnalazioni"])}
+          ${porta("#/admin/crm", "🏢", "CRM Bizpower",
+            "L'amministrazione della società: quello che resta in ufficio.",
+            ["Collaboratori, ruoli e produzione", "Lead locali e pipeline",
+             "Documenti e contratti", "Mail e invii"])}
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function view(path) {
+    const parti = Array.isArray(path) ? path.filter(Boolean) : (path ? [path] : []);
+    if (!isAuth()) return loginView();
+    if (parti[0] === "crm") return window.QF_CRM ? window.QF_CRM.view(parti[1]) : "";
+    if (parti[0] !== "piattaforma") return portaView();
+    /* La scheda la decide l'indirizzo, sempre: se non è indicata
+       si torna alla prima. Tenere lo stato precedente farebbe
+       mostrare una scheda diversa da quella che l'indirizzo
+       dichiara, e il tasto indietro del browser non tornerebbe
+       dove promette. */
+    tab = parti[1] && TABS[parti[1]] ? parti[1] : "kpi";
+    return piattaformaView();
+  }
+
+  function piattaformaView() {
     const testa = `
       <div class="admin-top">
         <div>
+          <a class="crm-indietro" href="#/admin">← Area riservata</a>
           <span class="eyebrow">Console riservata</span>
           <h1 style="font-size:clamp(1.6rem,3.5vw,2.2rem);margin:0">Amministrazione QuotaFacile</h1>
         </div>
@@ -608,11 +668,15 @@ Usa **grassetto** per i numeri che contano."></textarea>
           Aggiornati alle ${dataOra(dati.letteIl)}.
         </div>
 
+        <!-- Schede come collegamenti, non come pulsanti: così
+             l'indirizzo dice sempre dove sei, il tasto indietro
+             del browser funziona e una scheda si può mandare a
+             qualcuno per collegamento. -->
         <div class="filterbar" role="tablist">
           ${Object.entries(TABS).map(([k, [label]]) => {
             const n = NOTIFICHE[k] ? NOTIFICHE[k]() : 0;
-            return `<button class="chip ${tab === k ? "active" : ""}" data-admintab="${k}" role="tab">
-              ${label}${n ? ` <span class="notif">${n}</span>` : ""}</button>`;
+            return `<a class="chip ${tab === k ? "active" : ""}" role="tab" href="#/admin/piattaforma/${k}">
+              ${label}${n ? ` <span class="notif">${n}</span>` : ""}</a>`;
           }).join("")}
         </div>
 
@@ -624,6 +688,7 @@ Usa **grassetto** per i numeri che contano."></textarea>
   /* ---------------- EVENTI ---------------- */
   function bind() {
     const $ = s => document.querySelector(s);
+    const parti = rotta();
 
     $("#admin-login-form")?.addEventListener("submit", async e => {
       e.preventDefault();
@@ -639,18 +704,27 @@ Usa **grassetto** per i numeri che contano."></textarea>
     $("#admin-logout")?.addEventListener("click", () => {
       try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* no-op */ }
       dati = null; fase = "vuoto"; avviso = null;
+      /* anche i dati della società escono dalla memoria, non solo
+         quelli del marketplace */
+      window.QF_CRM?.dimentica();
+      location.hash = "#/admin";
       QF().render();
     });
+
+    if (!isAuth()) return;
+
+    /* Il CRM ha una vita sua: da qui in giù sono gestori della
+       console di piattaforma, che sulle altre rotte non servono. */
+    if (parti[0] === "crm") { window.QF_CRM?.bind(); return; }
+    if (parti[0] !== "piattaforma") return;
 
     $("#admin-ricarica")?.addEventListener("click", carica);
     $("#admin-riprova")?.addEventListener("click", carica);
 
-    /* Se si entra in #/admin con la chiave già in sessione, la
+    /* Se si entra nella console con la chiave già in sessione, la
        panoramica si carica da sola. */
-    if (isAuth() && fase === "vuoto") carica();
+    if (fase === "vuoto") carica();
 
-    document.querySelectorAll("[data-admintab]").forEach(b =>
-      b.addEventListener("click", () => { tab = b.dataset.admintab; QF().render(); }));
     document.querySelectorAll("[data-modfiltro]").forEach(b =>
       b.addEventListener("click", () => { modFiltro = b.dataset.modfiltro; QF().render(); }));
     document.querySelectorAll("[data-filtrorich]").forEach(b =>
@@ -781,5 +855,8 @@ Usa **grassetto** per i numeri che contano."></textarea>
       }));
   }
 
-  window.QF_ADMIN = { view, bind, mdToHtml };
+  /* `chiave` è esposta perché il CRM parla con la sua funzione
+     usando lo stesso accesso: una sola verità su dove sta la
+     chiave, invece di due copie che possono divergere. */
+  window.QF_ADMIN = { view, bind, mdToHtml, chiave };
 })();

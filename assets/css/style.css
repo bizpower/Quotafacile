@@ -206,6 +206,9 @@ p { line-height: 1.6; }
   transition: all .15s;
 }
 .chip.active, .chip:hover { border-color: var(--green-800); color: var(--green-800); background: var(--green-50); }
+/* Alcune schede sono collegamenti, così l'indirizzo dice dove sei:
+   devono restare identiche ai pulsanti. */
+a.chip { display: inline-block; text-decoration: none; }
 
 /* ---------- Bacheca Q&A ---------- */
 .board-layout { display: grid; grid-template-columns: 1fr 320px; gap: 2rem; align-items: start; }
@@ -637,6 +640,34 @@ p { line-height: 1.6; }
 .serp-url { font-size: .78rem; color: #4d5156; }
 .serp-title { font-size: 1.1rem; color: #1a0dab; line-height: 1.3; margin: .2rem 0; }
 .serp-desc { font-size: .84rem; color: #4d5156; line-height: 1.5; }
+
+/* ---------- Area riservata: la porta ---------- */
+.porta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.2rem; margin-top: 1.4rem; }
+.porta-card {
+  display: block; background: #fff; border: 1.5px solid var(--line); border-radius: var(--radius);
+  padding: 1.6rem 1.5rem; transition: border-color .18s var(--ease), transform .18s var(--ease), box-shadow .18s var(--ease);
+}
+.porta-card:hover { border-color: var(--green-600); transform: translateY(-3px); box-shadow: var(--shadow-med); }
+.porta-icona { font-size: 1.9rem; line-height: 1; }
+.porta-card h2 { font-family: var(--font-display); font-size: 1.3rem; margin: .7rem 0 .3rem; color: var(--ink); }
+.porta-card > p { font-size: .9rem; color: var(--ink-soft); margin: 0 0 .8rem; }
+.porta-card ul { list-style: none; padding: 0; margin: 0 0 1rem; }
+.porta-card li { font-size: .84rem; color: var(--ink-soft); padding: .2rem 0 .2rem 1.1rem; position: relative; }
+.porta-card li::before { content: "·"; position: absolute; left: .3rem; color: var(--green-600); font-weight: 800; }
+.porta-cta { font-weight: 700; font-size: .9rem; color: var(--green-800); }
+
+/* ---------- CRM ---------- */
+.crm-indietro { display: block; font-size: .8rem; color: var(--ink-soft); margin-bottom: .3rem; }
+.crm-indietro:hover { color: var(--green-800); }
+.crm-avanzamento { margin-top: .8rem; }
+.crm-passo {
+  display: grid; grid-template-columns: 1.3rem 1fr; gap: .5rem; align-items: start;
+  font-size: .86rem; padding: .3rem 0; color: var(--ink-soft);
+}
+.crm-passo.fatto { color: var(--green-800); font-weight: 600; }
+/* Una sezione dichiarata "in arrivo" deve sembrare un progetto,
+   non una pagina rotta. */
+.crm-inarrivo { border-left: 3px solid var(--gold-500); }
 
 /* Segnalazioni */
 .admin-seg { margin-bottom: .8rem; border-left: 3px solid var(--danger); }

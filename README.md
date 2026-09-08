@@ -17,7 +17,8 @@ quotafacile/
 │   ├── js/intermediari.js        # 🪪 Intermediari in vetrina (fonte di verità delle QuotaPass)
 │   ├── js/mailer.js              # 📬 Invio dei contatti alla Edge Function Supabase
 │   ├── js/bacheca.js             # 💬 Bacheca condivisa: lettura e scrittura sul database
-│   ├── js/admin.js               # 🔐 Console riservata (#/admin): legge e modera i dati veri
+│   ├── js/admin.js               # 🔐 Area riservata (#/admin): la porta + console di piattaforma
+│   ├── js/crm.js                 # 🏢 CRM Bizpower (#/admin/crm): amministrazione della società
 │   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
 ├── supabase/
@@ -189,8 +190,21 @@ rete. Manca solo ciò che è condiviso.
 
 ## 🔐 Area Admin — `#/admin`
 
-Console riservata, raggiungibile dal footer. Legge e modera **i dati veri del
-database**: quello che vedi qui è quello che vedrebbe chiunque altro aprisse la console.
+Si entra dal footer. Dietro l'accesso ci sono **due porte**, perché dietro c'è un solo
+utente ma due mestieri diversi:
+
+| Porta | Rotta | Di cosa si occupa |
+|---|---|---|
+| **Piattaforma QuotaFacile** | `#/admin/piattaforma` | Il marketplace: richieste, iscrizioni, bacheca, guide, segnalazioni |
+| **CRM Bizpower** | `#/admin/crm` | La società: collaboratori, lead, documenti, mail, produzione |
+
+Chiedere quale dei due mestieri stai per fare, invece di mescolarli in un unico pannello,
+riduce la possibilità di trattare un dato interno come se fosse pubblico.
+
+### Piattaforma QuotaFacile
+
+Legge e modera **i dati veri del database**: quello che vedi qui è quello che vedrebbe
+chiunque altro aprisse la console.
 
 | Sezione | Cosa fa |
 |---|---|
@@ -240,6 +254,35 @@ La chiave resta in `sessionStorage` fino alla chiusura della scheda.
 Le nove guide di `staff-questions.js` e le tessere di `intermediari.js` vivono nel repository e
 compaiono in console in sola lettura: si modificano nel codice, dove ogni cambiamento resta
 tracciato e rivedibile.
+
+## 🏢 CRM Bizpower — `#/admin/crm`
+
+L'amministrazione della società, dentro l'area riservata ma **separata dal marketplace**:
+tabelle con prefisso `crm_`, Edge Function propria (`qf-crm`), nessuna policy pubblica. I dati
+di QuotaFacile sono in parte pubblici — la bacheca lo è per definizione — quelli del CRM non
+lo sono mai: tenerli distinti rende difficile sbagliarsi.
+
+| Sezione | Stato |
+|---|---|
+| **👥 Collaboratori** | ✅ anagrafica della squadra: ruoli, recapiti, note interne, attivazione |
+| **🔎 Lead locali** | in arrivo — ricerca per via/città/provincia/CAP e raggio, categorie multiple, fino a 50 risultati |
+| **📇 Pipeline** | in arrivo — contatti, etichette di stato, assegnazione, viste per fase |
+| **📁 Documenti** | in arrivo — archivio contratti per collaboratore e cliente |
+| **✉️ Mail** | in arrivo — casella, filtri per mittente, allegati, template, invio |
+| **🏆 Produzione** | in arrivo — punteggio calcolato dai fatti registrati, classifica |
+
+Le sezioni non ancora costruite **dicono cosa faranno**, come, e cosa serve per attivarle:
+una scheda vuota che sembra funzionante è peggio di una che dichiara di non esserlo.
+
+**Due scelte che restano.** Un collaboratore che se ne va si *disattiva*, non si cancella:
+cancellarlo porterebbe via la storia di ciò che ha prodotto e dei documenti che ha caricato.
+E il punteggio di produzione nasce a zero e lo calcolerà il database dai fatti registrati —
+un numero che si può digitare a mano non misura niente.
+
+**Lead locali, una precisazione che conta.** La raccolta userà le API ufficiali Google
+(Places + Geocoding), con la chiave solo lato server. **Niente scraping**: è il vincolo che
+il progetto `cercalead` si era già dato, ed è anche ciò che tiene la raccolta di dati
+d'impresa dentro il perimetro del legittimo interesse.
 
 ## 🪪 Intermediari in vetrina
 
