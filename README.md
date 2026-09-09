@@ -33,7 +33,7 @@ quotafacile/
 │       ├── qf-crm/               #     collaboratori, documenti, produzione
 │       ├── qf-lead/              #     ricerca dei lead e lavorazione della pipeline
 │       ├── qf-mail/              #     invio dalla casella della società
-│       └── qf-mm/                #     mail marketing: mittenti, liste, campagne, coda
+│       └── qf-mm/                #     mail marketing: mittenti, caselle, liste, scrittura assistita
 ├── .github/workflows/            # Pubblicazione su Pages, attivazione casella email
 ├── llms.txt                      # 🤖 Presentazione del sito per i motori generativi
 ├── vercel.json                   # Intestazioni di sicurezza e cache

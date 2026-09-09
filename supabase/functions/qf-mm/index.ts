@@ -6,7 +6,7 @@
 // tutte, una azione per volta.
 //
 // Costruite finora: la Dashboard, le caselle di invio, le liste
-// di lead.
+// di lead, la scrittura assistita.
 //
 // I LEAD NON SI DUPLICANO
 // Su Lovable ogni lista aveva le proprie righe: la stessa azienda
@@ -871,6 +871,186 @@ async function leadAggiungi(d: Record<string, unknown>) {
 
 const plurale = (n: number, uno: string, molti: string) => `${n} ${n === 1 ? uno : molti}`;
 
+// ---------------- Email AI Writer ----------------
+
+/* Scrive la bozza di un messaggio a partire da quello che si sa
+   dell'azienda destinataria. Tre cose valgono la pena di essere
+   dette qui, perché non sono ovvie guardando l'interfaccia:
+   1. il testo prodotto è una bozza da leggere, non qualcosa che
+      parte da solo: nessuna azione di questo modulo spedisce
+      quello che il modello ha appena scritto;
+   2. i dati dell'azienda destinataria (nome, categoria, città,
+      sito) escono dal database e arrivano al fornitore del
+      modello: è un trattamento in più, e va dichiarato;
+   3. ogni generazione costa. Il costo esatto della chiamata
+      torna indietro con la risposta, così non è una voce che si
+      scopre a fine mese. */
+
+const MODELLO_AI = "claude-opus-5";
+/* Tariffe per milione di token del modello sopra. Se cambia il
+   modello vanno cambiate anche queste: un costo mostrato e
+   sbagliato è peggio di un costo non mostrato. */
+const COSTO_INGRESSO = 5;
+const COSTO_USCITA = 25;
+
+function chiaveAi(): string {
+  const k = Deno.env.get("QF_ANTHROPIC_KEY");
+  if (!k) {
+    throw new ErroreCliente(
+      "Scrittura assistita non attiva: manca il segreto QF_ANTHROPIC_KEY fra le impostazioni del " +
+      "progetto Supabase. La chiave si crea su console.anthropic.com; ogni email scritta ha un costo, " +
+      "che compare accanto alla bozza.",
+      503,
+    );
+  }
+  return k;
+}
+
+const TONI: Record<string, string> = {
+  diretto: "diretto e asciutto, senza convenevoli",
+  cordiale: "cordiale ma professionale",
+  formale: "formale, adatto a uno studio professionale",
+};
+
+const SCOPI: Record<string, string> = {
+  presentazione: "presentare QuotaFacile e chiedere se sono interessati a un confronto",
+  preventivo: "proporre un preventivo assicurativo gratuito e senza impegno",
+  sollecito: "richiamare un contatto precedente rimasto senza risposta",
+  informativa: "segnalare una novità normativa che riguarda la loro attività",
+};
+
+async function aiScrivi(d: Record<string, unknown>) {
+  const apiKey = chiaveAi();
+
+  const scopo = SCOPI[String(d.scopo)] ? String(d.scopo) : "presentazione";
+  const tono = TONI[String(d.tono)] ? String(d.tono) : "cordiale";
+  const istruzioni = testo(d.istruzioni, 1000);
+
+  let lead: Record<string, unknown> | null = null;
+  const leadId = testo(d.lead_id, 40);
+  if (leadId) {
+    const { data } = await db.from("crm_lead").select(COLONNE_LEAD).eq("id", leadId).maybeSingle();
+    if (!data) throw new ErroreCliente("Il lead indicato non esiste più.");
+    /* Chi si è opposto non riceve messaggi, quindi non ha senso
+       nemmeno scriverne uno: fermarsi qui evita di pagare una
+       generazione che non si potrà usare. */
+    if (data.no_contatto) {
+      throw new ErroreCliente(`${data.nome} si è opposto a ricevere comunicazioni: non c'è niente da scrivere.`);
+    }
+    lead = data;
+  }
+
+  const mittenteId = testo(d.mittente_id, 40);
+  let firma = "QuotaFacile";
+  if (mittenteId) {
+    const { data } = await db.from("mm_mittenti").select("etichetta,from_nome").eq("id", mittenteId).maybeSingle();
+    if (data) firma = String(data.from_nome || data.etichetta);
+  }
+
+  const scheda = lead
+    ? [
+      `Nome: ${lead.nome}`,
+      lead.categoria ? `Settore: ${lead.categoria}` : null,
+      lead.citta ? `Città: ${lead.citta}${lead.provincia ? ` (${lead.provincia})` : ""}` : null,
+      lead.sito ? `Sito: ${lead.sito}` : null,
+      lead.valutazione ? `Valutazione Google: ${lead.valutazione} su ${lead.recensioni ?? 0} recensioni` : null,
+    ].filter(Boolean).join("\n")
+    : "Nessun destinatario specifico: scrivi un testo che vada bene per più aziende, usando i segnaposto.";
+
+  const sistema =
+    `Scrivi email commerciali in italiano per ${firma}, che mette in contatto aziende con intermediari ` +
+    `assicurativi iscritti al RUI.\n\n` +
+    `Regole non negoziabili:\n` +
+    `- Sotto le 130 parole. Chi le riceve non ha tempo.\n` +
+    `- Niente superlativi, niente "leader di mercato", niente promesse di risparmio con numeri inventati.\n` +
+    `- Una sola domanda alla fine, concreta e facile da rispondere.\n` +
+    `- Non dare per scontato di sapere cose che non ti ho detto: se non conosci il fatturato, i dipendenti ` +
+    `o le polizze che hanno, non nominarli.\n` +
+    `- Non promettere sconti, percentuali o cifre.\n` +
+    `- Niente oggetto sensazionalistico e niente punti esclamativi nell'oggetto.\n` +
+    `- Se ti servono dati che non hai, usa i segnaposto {azienda}, {citta}, {telefono}, {mittente}: ` +
+    `verranno sostituiti al momento dell'invio.\n\n` +
+    `Rispondi esattamente in questo formato, senza aggiungere altro:\n` +
+    `Oggetto: <l'oggetto su una riga sola>\n` +
+    `<riga vuota>\n` +
+    `<il testo del messaggio, senza firma: la firma la aggiunge il sistema>`;
+
+  const richiesta =
+    `Scopo del messaggio: ${SCOPI[scopo]}.\n` +
+    `Tono: ${TONI[tono]}.\n\n` +
+    `Azienda destinataria:\n${scheda}\n` +
+    (istruzioni ? `\nIndicazioni aggiuntive di chi firma: ${istruzioni}\n` : "");
+
+  const { default: Anthropic } = await import("npm:@anthropic-ai/sdk");
+  const claude = new Anthropic({ apiKey });
+
+  let risposta;
+  try {
+    risposta = await claude.beta.messages.create({
+      model: MODELLO_AI,
+      max_tokens: 2000,
+      /* Un'email di centotrenta parole non è un problema difficile:
+         allo sforzo minimo costa meno e non scrive peggio. */
+      output_config: { effort: "low" },
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      system: sistema,
+      messages: [{ role: "user", content: richiesta }],
+    });
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    if (/401|authentication|api key/i.test(m)) {
+      throw new ErroreCliente("La chiave QF_ANTHROPIC_KEY è stata rifiutata: controllala su console.anthropic.com.");
+    }
+    if (/429|rate.?limit/i.test(m)) {
+      throw new ErroreCliente("Troppe richieste di seguito al modello. Riprova fra qualche secondo.");
+    }
+    if (/credit|billing|quota/i.test(m)) {
+      throw new ErroreCliente("Il credito del profilo Anthropic è esaurito: ricaricalo su console.anthropic.com.");
+    }
+    throw new ErroreCliente(`Il modello non ha risposto: ${m.slice(0, 300)}`);
+  }
+
+  /* Il modello può rifiutarsi: la risposta arriva comunque con
+     stato 200, e leggerne il contenuto senza guardare prima il
+     motivo darebbe una bozza vuota senza spiegazione. */
+  if (risposta.stop_reason === "refusal") {
+    throw new ErroreCliente(
+      "Il modello ha rifiutato di scrivere questo messaggio" +
+      (risposta.stop_details?.category ? ` (${risposta.stop_details.category})` : "") +
+      ". Prova a riformulare le indicazioni aggiuntive.",
+    );
+  }
+
+  const testoIntero = risposta.content
+    .filter((b: { type: string }) => b.type === "text")
+    .map((b: { text: string }) => b.text)
+    .join("\n").trim();
+
+  /* Il formato chiesto è "Oggetto: …" sulla prima riga. Se per
+     qualche motivo non arriva così, il testo non si butta: si
+     mette tutto nel corpo e l'oggetto resta da scrivere, che è
+     visibile invece di essere sbagliato in silenzio. */
+  const righe = testoIntero.split("\n");
+  const prima = righe[0]?.trim() ?? "";
+  const conOggetto = /^oggetto\s*:/i.test(prima);
+  const oggetto = conOggetto ? prima.replace(/^oggetto\s*:\s*/i, "").trim() : "";
+  const corpo = (conOggetto ? righe.slice(1).join("\n") : testoIntero).trim();
+
+  const uso = risposta.usage;
+  const costo =
+    (uso.input_tokens / 1_000_000) * COSTO_INGRESSO +
+    (uso.output_tokens / 1_000_000) * COSTO_USCITA;
+
+  return {
+    oggetto,
+    corpo,
+    modello: MODELLO_AI,
+    costo: Number(costo.toFixed(5)),
+    token: { ingresso: uso.input_tokens, uscita: uso.output_tokens },
+  };
+}
+
 const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
   panoramica: () => panoramica(),
   "lista-salva": listaSalva,
@@ -879,6 +1059,7 @@ const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> =
   "lista-aggiungi": listaAggiungi,
   "lista-togli": listaTogli,
   "lead-aggiungi": leadAggiungi,
+  "ai-scrivi": aiScrivi,
   "smtp-salva": smtpSalva,
   "smtp-elimina": smtpElimina,
   "smtp-stato": smtpStato,

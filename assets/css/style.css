@@ -1062,3 +1062,18 @@ a.chip { display: inline-block; text-decoration: none; }
   .mm-liste-shell { grid-template-columns: 1fr; }
   .mm-liste-elenco { flex-direction: row; flex-wrap: wrap; }
 }
+
+/* ---------- Mail Marketing · modelli e scrittura assistita ---------- */
+.mm-segnaposto { margin: 0 0 1rem; padding: .7rem .9rem; }
+.mm-segnaposto strong { font-size: .8rem; }
+.mm-segnaposto p { margin: .3rem 0 0; font-size: .8rem; color: var(--ink-soft); }
+.mm-segnaposto code { background: var(--green-50); border-radius: 5px; padding: .05rem .3rem; }
+
+.mm-modello { margin: 0; display: flex; flex-direction: column; gap: .6rem; }
+.mm-modello.spento { opacity: .62; }
+.mm-modello-corpo {
+  margin: 0; max-height: 11rem; overflow: auto;
+  background: var(--green-50); border-radius: 8px; padding: .6rem .7rem;
+  font-family: var(--font-body); font-size: .8rem; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
+}
