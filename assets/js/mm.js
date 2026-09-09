@@ -99,6 +99,7 @@
     dati = null; fase = "vuoto"; avviso = null; dettaglio = null;
     posta = null; bozza = null; contenuto = null; listaAperta = null;
     postaDati = null; scelte = new Set(); postaAperta = null;
+    registroDati = null; regAperta = null; esitoReg = "tutti";
   }
 
   /* ---------------- DATI ---------------- */
@@ -1006,8 +1007,10 @@
             <label class="field" style="margin-top:.6rem"><span>Quando</span>
               <input id="i-quando" type="datetime-local" required value="${esc(quandoInvio)}"></label>
             <p class="privacy-hint">
-              I messaggi restano in coda con questa data. La partenza automatica all'orario indicato
-              arriva col prossimo passo: per ora la coda si svuota premendo «Invia ora».
+              I messaggi restano in coda con questa data e partono da soli: la coda viene
+              guardata ogni minuto e ne manda pochi per volta, per non farsi scambiare per
+              un invio massivo. Se stanno partendo o no si vede in
+              <a href="#/admin/crm/mail/registro">Send Log</a>.
             </p>`}
           <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
             <button type="button" class="btn btn-ghost btn-sm" data-chiudi-invio>Annulla</button>
@@ -1566,6 +1569,236 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     </div>`;
   }
 
+  /* ---------------- SEZIONE · SEND LOG ----------------
+
+     Cosa è partito, cosa no, e se la coda automatica sta
+     girando davvero.
+
+     Su Lovable questa schermata leggeva una tabella sola. Qui ne
+     legge due, perché prima che questo modulo esistesse il CRM
+     mandava posta per conto suo, e quelle righe raccontano invii
+     davvero avvenuti: nasconderle vorrebbe dire che «abbiamo
+     scritto a tutti» smette di essere una frase verificabile.
+     Ognuna dice da dove viene.
+
+     In cima non c'è un numero ma una riga di stato. Davanti a una
+     coda che non si svuota l'unica domanda che conta è «l'ultimo
+     giro è partito?», e finora la risposta era una supposizione:
+     adesso ogni giro lascia una riga nel database e questa la
+     legge. */
+
+  let registroDati = null;    // { righe, numeri, giri, coda }
+  let filtroReg = { cerca: "", giorni: 30 };
+  let esitoReg = "tutti";     // tutti | inviata | fallita
+  let regAperta = null;       // riga in lettura
+
+  const PERIODI = [[7, "7 giorni"], [30, "30 giorni"], [90, "3 mesi"], [365, "1 anno"]];
+
+  async function caricaRegistro() {
+    const e = await chiama("registro", filtroReg, 30000);
+    registroDati = e.ok
+      ? { righe: e.righe || [], numeri: e.numeri || {}, giri: e.giri || [], coda: e.coda || null }
+      : { righe: [], numeri: {}, giri: [], coda: null };
+    if (!e.ok) QF().toast(e.errore || "Registro non leggibile.");
+    QF().render();
+  }
+
+  /* «Due minuti fa» si legge; una data e un'ora vanno sottratte a
+     mente. Sopra il giorno torna la data, che a quel punto è
+     l'informazione vera. */
+  function quantoFa(iso) {
+    if (!iso) return "—";
+    const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (min < 1) return "adesso";
+    if (min === 1) return "un minuto fa";
+    if (min < 60) return `${min} minuti fa`;
+    const ore = Math.round(min / 60);
+    if (ore < 24) return ore === 1 ? "un'ora fa" : `${ore} ore fa`;
+    return dataOra(iso);
+  }
+
+  /* Dieci minuti: il cron gira ogni minuto, quindi un silenzio
+     più lungo non è un ritardo, è qualcosa che si è fermato. */
+  const CODA_FERMA_DA = 10;
+
+  function statoCodaView() {
+    const c = registroDati.coda;
+    if (!c) {
+      return `
+      <div class="legal-warning mm-avviso" role="status">
+        <strong>La coda automatica non ha ancora fatto nessun giro.</strong>
+        Finché non parte, i messaggi programmati restano fermi dove sono: si mandano
+        a mano da <a href="#/admin/crm/mail/pronte">Email Ready</a> col tasto «Invia ora».
+      </div>`;
+    }
+    const min = Math.round((Date.now() - new Date(c.ultimoGiro).getTime()) / 60000);
+    const ferma = min > CODA_FERMA_DA;
+    return `
+    <div class="card mm-coda-stato ${ferma ? "ferma" : ""}">
+      <div class="mm-coda-riga">
+        <span class="mm-coda-spia" aria-hidden="true"></span>
+        <div>
+          <strong>${ferma ? "La coda sembra ferma" : "La coda gira"}</strong>
+          <span class="muted">· ultimo giro ${esc(quantoFa(c.ultimoGiro))}</span>
+        </div>
+        <div class="mm-coda-attesa">
+          <span class="mm-coda-num">${c.inAttesa ?? 0}</span>
+          <span class="muted">in attesa</span>
+        </div>
+      </div>
+      ${c.nota ? `<p class="mm-errore" style="margin:.5rem 0 0">${esc(c.nota)}</p>` : ""}
+      ${ferma ? `
+        <p class="privacy-hint" style="margin:.5rem 0 0">
+          Il giro parte da solo ogni minuto. Se l'ultimo risale a più di
+          ${CODA_FERMA_DA} minuti fa, i messaggi programmati non stanno partendo:
+          nel frattempo si mandano a mano da <a href="#/admin/crm/mail/pronte">Email Ready</a>.
+        </p>` : ""}
+    </div>`;
+  }
+
+  function registroView() {
+    if (!registroDati) return `<div class="card"><p class="muted">Lettura del registro…</p></div>`;
+
+    const n = registroDati.numeri;
+    /* Il filtro per esito si applica qui e non sul server: le
+       righe sono già scaricate, e rifare il giro per nascondere
+       metà tabella sarebbe una richiesta in più per niente. */
+    const righe = esitoReg === "tutti"
+      ? registroDati.righe
+      : registroDati.righe.filter(r => r.esito === esitoReg);
+
+    return `
+    ${statoCodaView()}
+
+    <div class="mm-riquadri">
+      ${[
+        ["inviata", "📬", "Partite", n.inviate ?? 0, "consegnate al server di posta"],
+        ["fallita", "⚠️", "Fallite", n.fallite ?? 0, (n.fallite ?? 0) ? "l'errore è nella riga" : "nessun errore"],
+        ["tutti", "📈", "In tutto", n.totale ?? 0, `negli ultimi ${filtroReg.giorni} giorni`]
+      ].map(([k, ico, eti, val, sotto]) => `
+        <button class="mm-riq ${esitoReg === k ? "scelto" : ""}" data-esito="${k}">
+          <span class="mm-riq-ico">${ico}</span>
+          <span class="mm-riq-num">${val}</span>
+          <span class="mm-riq-eti">${esc(eti)}</span>
+          <span class="mm-riq-sub">${esc(sotto)}</span>
+        </button>`).join("")}
+    </div>
+
+    <div class="card">
+      <div class="mm-testata mm-testata-sezione">
+        <div class="mm-azioni mm-filtri">
+          <input id="mm-cerca-reg" class="mm-cerca" value="${esc(filtroReg.cerca)}"
+                 placeholder="Cerca destinatario o oggetto">
+          <select id="mm-giorni-reg" class="mm-cerca" aria-label="Periodo">
+            ${PERIODI.map(([g, et]) => `
+              <option value="${g}" ${filtroReg.giorni === g ? "selected" : ""}>${esc(et)}</option>`).join("")}
+          </select>
+          ${esitoReg !== "tutti" ? `
+            <button class="btn btn-ghost btn-sm" id="mm-reg-tutte">✕ Mostra tutte</button>` : ""}
+        </div>
+        <div class="mm-azioni">
+          <button class="btn btn-outline btn-sm" id="mm-reg-csv" ${righe.length ? "" : "disabled"}>⬇ CSV</button>
+        </div>
+      </div>
+
+      ${righe.length === 0 ? `
+        <p class="muted mm-vuoto" style="border:0">
+          ${filtroReg.cerca || esitoReg !== "tutti"
+            ? "Nessun invio con questi filtri."
+            : `Nessun invio negli ultimi ${filtroReg.giorni} giorni. Qui compare quello che è
+               partito davvero, non quello che è stato preparato.`}</p>`
+      : `
+        <div class="mm-tabella">
+          <table>
+            <thead><tr>
+              <th>Quando</th><th>Destinatario</th><th>Oggetto</th><th>Esito</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${righe.map(r => `
+                <tr>
+                  <td>
+                    ${esc(dataOra(r.quando))}
+                    <span class="muted" style="display:block;font-size:.7rem">
+                      ${r.origine === "crm" ? "dal CRM" : "mail marketing"}</span>
+                  </td>
+                  <td><strong>${esc(r.destinatario)}</strong></td>
+                  <td>
+                    <a href="#" data-reg="${esc(r.id)}">${esc(r.oggetto || "(senza oggetto)")}</a>
+                    ${r.errore ? `
+                      <span class="mm-errore" style="display:block;font-size:.72rem">${esc(String(r.errore).slice(0, 90))}</span>` : ""}
+                  </td>
+                  <td class="mm-esito">${r.esito === "inviata" ? "✅ Partita" : "⚠️ Fallita"}</td>
+                  <td><button class="btn btn-ghost btn-sm" data-reg="${esc(r.id)}">Apri</button></td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`}
+    </div>
+
+    ${giriView()}
+    ${regAperta ? regApertaView() : ""}`;
+  }
+
+  /* Gli ultimi venti giri della coda. Non è un dettaglio tecnico
+     da nascondere: è la differenza fra «non è partito niente
+     perché non c'era niente» e «non è partito niente perché
+     qualcosa non va», e sono due situazioni che si rimediano in
+     modi opposti. */
+  function giriView() {
+    const g = registroDati.giri;
+    if (!g.length) return "";
+    return `
+    <details class="card mm-giri">
+      <summary>Ultimi giri della coda automatica <span class="muted">(${g.length})</span></summary>
+      <div class="mm-tabella" style="margin-top:.6rem">
+        <table>
+          <thead><tr><th>Quando</th><th>Trovate</th><th>Partite</th><th>Fallite</th><th>In attesa</th><th>Nota</th></tr></thead>
+          <tbody>
+            ${g.map(r => `
+              <tr>
+                <td>${esc(dataOra(r.quando))}</td>
+                <td>${r.trovati ?? 0}</td>
+                <td>${r.partite ?? 0}</td>
+                <td>${r.fallite ?? 0}</td>
+                <td>${r.in_attesa ?? 0}</td>
+                <td>${r.note ? `<span class="mm-errore">${esc(r.note)}</span>` : "—"}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      <p class="privacy-hint" style="margin:.6rem 0 0">
+        I giri più vecchi di trenta giorni vengono cancellati da soli: servono a capire
+        se la coda gira adesso, non a conservare uno storico.
+      </p>
+    </details>`;
+  }
+
+  function regApertaView() {
+    const r = regAperta;
+    return `
+    <div class="mm-velo" data-chiudi-reg>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>${esc(r.destinatario)}</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-reg>Chiudi</button>
+        </div>
+        <table class="admin-kv">
+          <tr><th>Quando</th><td>${esc(dataOra(r.quando))}</td></tr>
+          <tr><th>Esito</th><td>${r.esito === "inviata" ? "✅ Partita" : "⚠️ Fallita"}</td></tr>
+          <tr><th>Da dove</th><td>${r.origine === "crm" ? "Sezione Posta del CRM" : "Mail Marketing"}</td></tr>
+          ${r.errore ? `<tr><th>Errore</th><td><span class="mm-errore">${esc(r.errore)}</span></td></tr>` : ""}
+        </table>
+        <label class="field" style="margin-top:.6rem"><span>Oggetto</span>
+          <input value="${esc(r.oggetto || "")}" readonly></label>
+        <label class="field" style="margin-top:.6rem"><span>Testo uscito</span>
+          <textarea rows="14" class="mail-corpo" readonly>${esc(r.corpo || "")}</textarea></label>
+        <p class="privacy-hint">
+          Questo è il testo che una persona ha ricevuto: resta com'era, e da qui non si riscrive.
+        </p>
+      </div>
+    </div>`;
+  }
+
   /* ---------------- IN ARRIVO ---------------- */
   function inArrivoView(k) {
     const s = INARRIVO[k];
@@ -1665,6 +1898,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
             : attiva === "pronte" ? pronteView()
             : attiva === "modelli" ? modelliView()
             : attiva === "ai-writer" ? scrittoreView()
+            : attiva === "registro" ? registroView()
             : inArrivoView(attiva)}
         </div>
       </div>`;
@@ -1676,7 +1910,13 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
 
     if (fase === "vuoto") { carica(); return; }
 
-    $("#mm-ricarica")?.addEventListener("click", carica);
+    /* Nel Send Log «aggiorna» deve rileggere anche il registro:
+       è la sezione in cui un dato vecchio racconta una bugia —
+       una coda ferma da un'ora che continua a sembrare in moto. */
+    $("#mm-ricarica")?.addEventListener("click", () => {
+      if (rottaCorrente === "registro") registroDati = null;
+      carica();
+    });
     $("#mm-riprova")?.addEventListener("click", carica);
     $("#mm-menu-apri")?.addEventListener("click", () => { scriviMenu("aperta"); QF().render(); });
 
@@ -1705,6 +1945,69 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     bindScrittore();
     bindCampagne();
     bindPronte();
+    bindRegistro();
+  }
+
+  /* ---------------- EVENTI · SEND LOG ---------------- */
+  function bindRegistro() {
+    const $ = s => document.querySelector(s);
+    if (rottaCorrente !== "registro") return;
+    if (!registroDati) { caricaRegistro(); return; }
+
+    document.querySelectorAll("[data-esito]").forEach(b =>
+      b.addEventListener("click", () => {
+        /* Ripremere il riquadro già scelto toglie il filtro:
+           è il gesto che si fa senza pensarci. */
+        esitoReg = esitoReg === b.dataset.esito ? "tutti" : b.dataset.esito;
+        QF().render();
+      }));
+
+    $("#mm-reg-tutte")?.addEventListener("click", () => { esitoReg = "tutti"; QF().render(); });
+
+    $("#mm-giorni-reg")?.addEventListener("change", e => {
+      filtroReg.giorni = Number(e.target.value) || 30;
+      registroDati = null;
+      caricaRegistro();
+    });
+
+    /* Come altrove: la ricerca parte quando si smette di
+       scrivere, non a ogni lettera. */
+    const campo = $("#mm-cerca-reg");
+    if (campo) {
+      let attesa;
+      campo.addEventListener("input", () => {
+        clearTimeout(attesa);
+        attesa = setTimeout(() => {
+          filtroReg.cerca = campo.value.trim();
+          caricaRegistro();
+        }, 400);
+      });
+    }
+
+    document.querySelectorAll("[data-reg]").forEach(el =>
+      el.addEventListener("click", e => {
+        e.preventDefault();
+        regAperta = registroDati.righe.find(r => r.id === el.dataset.reg) || null;
+        QF().render();
+      }));
+
+    document.querySelectorAll("[data-chiudi-reg]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        regAperta = null; QF().render();
+      }));
+
+    if (regAperta) chiudiConEsc(() => { regAperta = null; });
+
+    $("#mm-reg-csv")?.addEventListener("click", () => {
+      const righe = esitoReg === "tutti"
+        ? registroDati.righe
+        : registroDati.righe.filter(r => r.esito === esitoReg);
+      scaricaCsv(righe.map(r => ({
+        quando: r.quando || "", destinatario: r.destinatario, oggetto: r.oggetto || "",
+        esito: r.esito, origine: r.origine, errore: r.errore || "", corpo: r.corpo || ""
+      })), "registro-invii");
+    });
   }
 
   /* Quale lista è aperta lo dice l'indirizzo, non una variabile:
