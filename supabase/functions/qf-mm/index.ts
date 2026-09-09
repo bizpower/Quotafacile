@@ -6,7 +6,8 @@
 // tutte, una azione per volta.
 //
 // Costruite finora: la Dashboard, le caselle di invio, le liste
-// di lead, la scrittura assistita.
+// di lead, la scrittura assistita, le campagne e la posta in
+// uscita.
 //
 // I LEAD NON SI DUPLICANO
 // Su Lovable ogni lista aveva le proprie righe: la stessa azienda
@@ -176,7 +177,7 @@ async function panoramica() {
     /* Le liste con quanti lead contengono: una lista senza il suo
        numero accanto costringe ad aprirla per sapere se è vuota. */
     db.from("mm_liste").select("*,mm_lista_lead(count)").order("creata_il", { ascending: false }),
-    db.from("mm_campagne").select("*").order("creata_il", { ascending: false }).limit(50),
+    db.from("mm_campagne").select("*,mm_email(count)").order("creata_il", { ascending: false }).limit(50),
     db.from("mm_email").select("id,destinatario,oggetto,inviata_il,mittente_id")
       .eq("stato", "inviata").order("inviata_il", { ascending: false }).limit(6),
     db.from("mm_email").select("id,destinatario,oggetto,errore,creata_il")
@@ -233,7 +234,10 @@ async function panoramica() {
       const { mm_lista_lead, ...resto } = l as { mm_lista_lead?: { count: number }[] };
       return { ...resto, quanti: mm_lista_lead?.[0]?.count ?? 0 };
     }),
-    campagne: campagne.data ?? [],
+    campagne: (campagne.data ?? []).map((c: Record<string, unknown>) => {
+      const { mm_email, ...resto } = c as { mm_email?: { count: number }[] };
+      return { ...resto, quanti: mm_email?.[0]?.count ?? 0 };
+    }),
     ultimeInviate: ultimeInviate.data ?? [],
     ultimiErrori: ultimiErrori.data ?? [],
     giorni,
@@ -871,6 +875,330 @@ async function leadAggiungi(d: Record<string, unknown>) {
 
 const plurale = (n: number, uno: string, molti: string) => `${n} ${n === 1 ? uno : molti}`;
 
+// ---------------- Campagne ----------------
+
+/* Una campagna non spedisce: prepara. Genera un messaggio per
+   ogni destinatario e lo lascia in bozza, dove si può leggere,
+   correggere e semmai buttare. Il momento in cui qualcosa parte
+   è sempre un clic separato, su email che qualcuno ha visto.
+
+   Chi viene saltato, e perché, torna indietro contato: una
+   campagna che dice «creati 40 messaggi» quando i lead erano 120
+   nasconde le tre cose che contano — chi non ha l'indirizzo, chi
+   si è opposto, chi abbiamo già contattato. */
+
+const SEGNAPOSTO = /\{(\w+)\}/g;
+
+function sostituisci(modello: string, v: Record<string, string>) {
+  return modello.replace(SEGNAPOSTO, (intero, nome) =>
+    v[nome] !== undefined && v[nome] !== "" ? v[nome] : intero);
+}
+
+async function campagnaSalva(d: Record<string, unknown>) {
+  const nome = testo(d.nome, 120);
+  const listaId = testo(d.lista_id, 40);
+  const modelloId = testo(d.modello_id, 40);
+  const smtpId = testo(d.smtp_id, 40);
+  const pausa = Math.max(15, Math.min(3600, Number(d.pausa_secondi) || 60));
+
+  if (!nome) throw new ErroreCliente("Dai un nome alla campagna: serve a ritrovarla nel registro.");
+  if (!listaId) throw new ErroreCliente("Scegli la lista dei destinatari.");
+  if (!modelloId) throw new ErroreCliente("Scegli il modello da cui partire.");
+
+  const { data: modello } = await db.from("crm_email_modelli").select("*").eq("id", modelloId).maybeSingle();
+  if (!modello) throw new ErroreCliente("Il modello indicato non esiste più.");
+
+  const { data: dentro } = await db.from("mm_lista_lead").select("lead_id").eq("lista_id", listaId);
+  const ids = (dentro ?? []).map((r: { lead_id: string }) => r.lead_id);
+  if (!ids.length) throw new ErroreCliente("Questa lista è vuota.");
+
+  const { data: lead } = await db.from("crm_lead").select(COLONNE_LEAD).in("id", ids);
+
+  /* Tre motivi diversi per saltare qualcuno, contati separati
+     perché si rimediano in modi diversi: l'indirizzo si cerca,
+     l'opposizione no, il già-contattato è una scelta. */
+  const [{ data: vietati }, { data: giaScritti }] = await Promise.all([
+    db.from("mm_blacklist").select("email"),
+    db.from("mm_email").select("destinatario").eq("stato", "inviata"),
+  ]);
+  const nero = new Set((vietati ?? []).map((r: { email: string }) => r.email.toLowerCase()));
+  const contattati = new Set((giaScritti ?? []).map((r: { destinatario: string }) => r.destinatario.toLowerCase()));
+
+  const saltati = { senzaEmail: 0, opposti: 0, inBlacklist: 0, giaContattati: 0 };
+  const daScrivere: Record<string, unknown>[] = [];
+
+  const mittenteId = testo(d.mittente_id, 40);
+  let firma = "";
+  if (mittenteId) {
+    const { data } = await db.from("mm_mittenti").select("from_nome,etichetta").eq("id", mittenteId).maybeSingle();
+    if (data) firma = String(data.from_nome || data.etichetta || "");
+  }
+
+  for (const l of (lead ?? []) as Record<string, unknown>[]) {
+    const email = String(l.email ?? "").toLowerCase();
+    if (!emailValida(email)) { saltati.senzaEmail++; continue; }
+    if (l.no_contatto) { saltati.opposti++; continue; }
+    if (nero.has(email)) { saltati.inBlacklist++; continue; }
+    if (contattati.has(email)) { saltati.giaContattati++; continue; }
+
+    const variabili: Record<string, string> = {
+      azienda: String(l.nome ?? ""),
+      citta: String(l.citta ?? ""),
+      telefono: String(l.telefono ?? ""),
+      mittente: firma,
+    };
+    daScrivere.push({
+      mittente_id: mittenteId,
+      smtp_id: smtpId,
+      lead_id: l.id,
+      modello_id: modelloId,
+      destinatario: email,
+      oggetto: sostituisci(String(modello.oggetto), variabili),
+      corpo: sostituisci(String(modello.corpo), variabili),
+      stato: "bozza",
+      meta: { origine: "campagna" },
+    });
+  }
+
+  if (!daScrivere.length) {
+    throw new ErroreCliente(
+      "Non è rimasto nessun destinatario: " +
+      [
+        saltati.senzaEmail ? `${saltati.senzaEmail} senza indirizzo` : null,
+        saltati.opposti ? `${saltati.opposti} si sono opposti` : null,
+        saltati.inBlacklist ? `${saltati.inBlacklist} in blacklist` : null,
+        saltati.giaContattati ? `${saltati.giaContattati} già contattati` : null,
+      ].filter(Boolean).join(", ") + ".",
+    );
+  }
+
+  const { data: campagna, error } = await db.from("mm_campagne").insert({
+    nome, mittente_id: mittenteId, lista_id: listaId, modello_id: modelloId,
+    smtp_id: smtpId, pausa_secondi: pausa, stato: "in_revisione",
+    note: testo(d.note, 500),
+  }).select("id").single();
+  if (error) throw new Error(error.message);
+
+  const { error: e2 } = await db.from("mm_email")
+    .insert(daScrivere.map((r) => ({ ...r, campagna_id: campagna.id })));
+  if (e2) {
+    await db.from("mm_campagne").delete().eq("id", campagna.id);
+    throw new Error(e2.message);
+  }
+
+  return { id: campagna.id, creati: daScrivere.length, saltati };
+}
+
+async function campagnaElimina(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new ErroreCliente("Manca l'identificativo della campagna");
+  /* Le email già partite non spariscono con la campagna: sono
+     fatti accaduti, e il registro deve poterli mostrare anche
+     dopo. Solo quelle mai uscite se ne vanno. */
+  await db.from("mm_email").update({ campagna_id: null })
+    .eq("campagna_id", id).in("stato", ["inviata", "fallita"]);
+  const { error } = await db.from("mm_campagne").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  return { eliminata: id };
+}
+
+// ---------------- Email Ready ----------------
+
+const COLONNE_POSTA =
+  "id,creata_il,mittente_id,smtp_id,campagna_id,lead_id,modello_id," +
+  "destinatario,oggetto,corpo,stato,programmata_per,inviata_il,errore,modificata";
+
+async function postaElenco(d: Record<string, unknown>) {
+  let q = db.from("mm_email").select(COLONNE_POSTA)
+    .order("creata_il", { ascending: false }).limit(500);
+
+  const stato = testo(d.stato, 20);
+  if (stato && stato !== "tutti") q = q.eq("stato", stato);
+  const campagna = testo(d.campagna_id, 40);
+  if (campagna) q = q.eq("campagna_id", campagna);
+  const cerca = testo(d.cerca, 120);
+  if (cerca) q = q.or(`destinatario.ilike.%${cerca}%,oggetto.ilike.%${cerca}%`);
+
+  const [{ data, error }, { data: perStato }] = await Promise.all([
+    q,
+    db.from("mm_email").select("stato"),
+  ]);
+  if (error) throw new Error(error.message);
+
+  const conteggi: Record<string, number> = {
+    bozza: 0, pronta: 0, in_coda: 0, inviata: 0, fallita: 0, annullata: 0,
+  };
+  for (const r of (perStato ?? []) as { stato: string }[]) conteggi[r.stato] = (conteggi[r.stato] ?? 0) + 1;
+
+  return { posta: data ?? [], conteggi };
+}
+
+async function postaSalva(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  const oggetto = testo(d.oggetto, 300);
+  const corpo = testo(d.corpo, 40000);
+  if (!id) throw new ErroreCliente("Manca l'identificativo del messaggio");
+  if (!oggetto || !corpo) throw new ErroreCliente("Servono oggetto e testo.");
+
+  const { data: prima } = await db.from("mm_email").select("stato").eq("id", id).maybeSingle();
+  if (!prima) throw new ErroreCliente("Questo messaggio non esiste più.", 404);
+  if (prima.stato === "inviata") {
+    throw new ErroreCliente("Questo messaggio è già partito: il testo che è uscito non si riscrive.");
+  }
+
+  const { error } = await db.from("mm_email")
+    .update({ oggetto, corpo, modificata: true }).eq("id", id);
+  if (error) throw new Error(error.message);
+  return { id };
+}
+
+async function postaStato(d: Record<string, unknown>) {
+  const ids = Array.isArray(d.ids) ? d.ids.map(String).slice(0, 500) : [];
+  const stato = String(d.stato ?? "");
+  if (!ids.length) throw new ErroreCliente("Nessun messaggio selezionato.");
+  if (!["bozza", "pronta", "annullata"].includes(stato)) {
+    throw new ErroreCliente("Da qui si può solo rimettere in bozza, approvare o annullare.");
+  }
+  /* Quello che è già partito non torna indietro: cambiargli
+     stato riscriverebbe la storia. */
+  const { error, count } = await db.from("mm_email")
+    .update({ stato, programmata_per: stato === "pronta" ? null : undefined }, { count: "exact" })
+    .in("id", ids).not("stato", "in", "(inviata,fallita)");
+  if (error) throw new Error(error.message);
+  return { aggiornati: count ?? 0, richiesti: ids.length };
+}
+
+async function postaElimina(d: Record<string, unknown>) {
+  const ids = Array.isArray(d.ids) ? d.ids.map(String).slice(0, 500) : [];
+  if (!ids.length) throw new ErroreCliente("Nessun messaggio selezionato.");
+  const { error, count } = await db.from("mm_email")
+    .delete({ count: "exact" }).in("id", ids).neq("stato", "inviata");
+  if (error) throw new Error(error.message);
+  return { eliminati: count ?? 0, richiesti: ids.length };
+}
+
+async function postaProgramma(d: Record<string, unknown>) {
+  const ids = Array.isArray(d.ids) ? d.ids.map(String).slice(0, 500) : [];
+  const quando = testo(d.quando, 40);
+  const smtpId = testo(d.smtp_id, 40);
+  if (!ids.length) throw new ErroreCliente("Nessun messaggio selezionato.");
+  if (!smtpId) throw new ErroreCliente("Scegli la casella da cui devono partire.");
+  if (!quando) throw new ErroreCliente("Indica quando devono partire.");
+  const data = new Date(quando);
+  if (isNaN(data.getTime())) throw new ErroreCliente("La data non è leggibile.");
+  if (data.getTime() <= Date.now()) {
+    throw new ErroreCliente("L'orario è già passato: scegline uno futuro.");
+  }
+
+  const { error, count } = await db.from("mm_email").update({
+    stato: "in_coda", programmata_per: data.toISOString(), smtp_id: smtpId, errore: null,
+  }, { count: "exact" }).in("id", ids).in("stato", ["bozza", "pronta", "in_coda"]);
+  if (error) throw new Error(error.message);
+  return { programmati: count ?? 0, quando: data.toISOString() };
+}
+
+/* L'invio vero. Non manda tutto in una volta: una Edge Function
+   ha un tempo massimo, e una casella condivisa ha una soglia
+   oltre la quale il fornitore la sospende. Parte un blocco, e
+   quanto resta torna indietro come numero, così chi guarda sa
+   che deve premere ancora invece di credere di aver finito. */
+const BLOCCO_MASSIMO = 20;
+const TEMPO_MASSIMO = 100_000;
+
+const attendi = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function postaInvia(d: Record<string, unknown>) {
+  const ids = Array.isArray(d.ids) ? d.ids.map(String).slice(0, 500) : [];
+  const smtpId = testo(d.smtp_id, 40);
+  const pausa = Math.max(0, Math.min(300, Number(d.pausa_secondi ?? 5) || 0));
+  if (!ids.length) throw new ErroreCliente("Nessun messaggio selezionato.");
+  if (!smtpId) throw new ErroreCliente("Scegli la casella da cui devono partire.");
+
+  const { data: righe, error } = await db.from("mm_email")
+    .select("id,destinatario,oggetto,corpo,lead_id")
+    .in("id", ids).in("stato", ["pronta", "in_coda"]);
+  if (error) throw new Error(error.message);
+  if (!righe?.length) {
+    throw new ErroreCliente("Nessuno dei messaggi scelti è approvato: da «bozza» vanno prima messi in «pronta».");
+  }
+
+  /* I controlli si rifanno adesso, non ci si fida di quelli fatti
+     alla generazione: fra allora e ora qualcuno può essersi
+     opposto, ed è proprio il caso in cui non deve partire. */
+  const [{ data: vietati }, { data: opposti }] = await Promise.all([
+    db.from("mm_blacklist").select("email"),
+    db.from("crm_lead").select("email").eq("no_contatto", true).not("email", "is", null),
+  ]);
+  const nero = new Set([
+    ...(vietati ?? []).map((r: { email: string }) => r.email.toLowerCase()),
+    ...(opposti ?? []).map((r: { email: string }) => r.email.toLowerCase()),
+  ]);
+
+  const bloccati = righe.filter((r) => nero.has(r.destinatario.toLowerCase()));
+  if (bloccati.length) {
+    await db.from("mm_email").update({
+      stato: "annullata",
+      errore: "Il destinatario si è opposto o è in blacklist: l'invio è stato rifiutato.",
+    }).in("id", bloccati.map((r) => r.id));
+  }
+  const ammessi = righe.filter((r) => !nero.has(r.destinatario.toLowerCase()));
+  if (!ammessi.length) {
+    throw new ErroreCliente(
+      `${plurale(bloccati.length, "messaggio era diretto", "messaggi erano diretti")} a chi si è opposto: non è partito niente.`,
+    );
+  }
+
+  const { casella, password } = await casellaConPassword(smtpId);
+  if (casella.stato === "sospeso") throw new ErroreCliente("La casella è in pausa. Riattivala per spedire.");
+  const residua = quotaResidua(casella);
+  if (residua <= 0) {
+    throw new ErroreCliente(`La casella «${casella.nome}» ha già raggiunto il limite di oggi. Riprova domani.`);
+  }
+
+  const blocco = ammessi.slice(0, Math.min(BLOCCO_MASSIMO, residua));
+  const client = await apriClient(casella, password);
+  const inizio = Date.now();
+  let partite = 0, fallite = 0, fermato = false;
+
+  for (const [i, m] of blocco.entries()) {
+    if (Date.now() - inizio > TEMPO_MASSIMO) { fermato = true; break; }
+    const testoFinale = casella.firma_attiva && casella.firma
+      ? `${m.corpo}\n\n${casella.firma}`
+      : m.corpo;
+    try {
+      await client.send({
+        from: intestazioneDa(casella),
+        to: m.destinatario,
+        replyTo: (casella.rispondi_a as string) || undefined,
+        subject: m.oggetto,
+        content: testoFinale,
+      });
+      await db.from("mm_email").update({
+        stato: "inviata", inviata_il: new Date().toISOString(), errore: null, smtp_id: smtpId,
+      }).eq("id", m.id);
+      partite++;
+    } catch (e) {
+      await db.from("mm_email").update({
+        stato: "fallita", errore: leggibile(e), smtp_id: smtpId,
+      }).eq("id", m.id);
+      fallite++;
+    }
+    /* La pausa vale fra un messaggio e l'altro, non dopo
+       l'ultimo: aspettare a vuoto allunga solo la richiesta. */
+    if (pausa && i < blocco.length - 1) await attendi(pausa * 1000);
+  }
+
+  try { await client.close(); } catch { /* connessione già chiusa */ }
+  if (partite) await registraInvio(casella, partite);
+
+  const rimasti = ammessi.length - partite - fallite;
+  return {
+    partite, fallite, rimasti, fermato,
+    bloccati: bloccati.length,
+    limite: residua < ammessi.length ? residua : null,
+  };
+}
+
 // ---------------- Email AI Writer ----------------
 
 /* Scrive la bozza di un messaggio a partire da quello che si sa
@@ -1060,6 +1388,14 @@ const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> =
   "lista-togli": listaTogli,
   "lead-aggiungi": leadAggiungi,
   "ai-scrivi": aiScrivi,
+  "campagna-salva": campagnaSalva,
+  "campagna-elimina": campagnaElimina,
+  "posta-elenco": postaElenco,
+  "posta-salva": postaSalva,
+  "posta-stato": postaStato,
+  "posta-elimina": postaElimina,
+  "posta-programma": postaProgramma,
+  "posta-invia": postaInvia,
   "smtp-salva": smtpSalva,
   "smtp-elimina": smtpElimina,
   "smtp-stato": smtpStato,
