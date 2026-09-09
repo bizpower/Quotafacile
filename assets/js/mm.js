@@ -95,7 +95,10 @@
     QF().render();
   }
 
-  function dimentica() { dati = null; fase = "vuoto"; avviso = null; dettaglio = null; }
+  function dimentica() {
+    dati = null; fase = "vuoto"; avviso = null; dettaglio = null;
+    posta = null; bozza = null; contenuto = null; listaAperta = null;
+  }
 
   /* ---------------- DATI ---------------- */
   const D = () => dati || {
@@ -146,18 +149,6 @@
       cosa: "La coda di ciò che è scritto e approvato ma non ancora partito: si corregge, si programma, si annulla.",
       come: "Ogni messaggio è una riga con il suo testo definitivo, non un modello da riempire al momento dell'invio.",
       serve: "Una casella di invio configurata."
-    },
-    "ai-writer": {
-      titolo: "Email AI Writer",
-      cosa: "Scrivere il testo di un messaggio a partire da ciò che si sa dell'azienda destinataria.",
-      come: "Un modello linguistico chiamato dal server. Il testo prodotto è una bozza da leggere, mai qualcosa che parte da solo.",
-      serve: "Una chiave API di un fornitore di modelli. Ogni email scritta ha un costo: va deciso quale usare."
-    },
-    modelli: {
-      titolo: "Templates",
-      cosa: "I modelli riutilizzabili con i segnaposto, e l'anteprima su un destinatario vero.",
-      come: "Assorbe i modelli che il CRM ha già nella sezione Mail: non si riparte da zero, si spostano qui.",
-      serve: "Niente."
     },
     registro: {
       titolo: "Send Log",
@@ -756,6 +747,233 @@
     </div>`;
   }
 
+  /* ---------------- SEZIONI · TEMPLATES e AI WRITER ----------------
+     I modelli non si riscrivono: sono quelli che il CRM ha già
+     nella sezione Posta, letti e salvati dalla stessa funzione.
+     Avere due posti che scrivono gli stessi modelli vorrebbe dire
+     due elenchi che con il tempo divergono. */
+
+  const API_MAIL = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-mail";
+
+  let posta = null;          // { modelli, inviate, configurata }
+  let modelloAperto = null;  // modello in modifica, o "nuovo"
+  let anteprima = null;      // { oggetto, corpo, avvisi }
+  let bozza = null;          // quello che ha scritto il modello
+  const scrittura = { lead_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "" };
+  let scrivendo = false;
+
+  const SCOPI = {
+    presentazione: "Presentare QuotaFacile",
+    preventivo: "Proporre un preventivo gratuito",
+    sollecito: "Richiamare un contatto senza risposta",
+    informativa: "Segnalare una novità normativa"
+  };
+  const TONI = { diretto: "Diretto", cordiale: "Cordiale", formale: "Formale" };
+  const SEGNAPOSTO = {
+    "{azienda}": "il nome dell'attività",
+    "{citta}": "la sua città",
+    "{telefono}": "il suo telefono",
+    "{mittente}": "chi firma il messaggio"
+  };
+
+  async function chiamaMail(azione, d = {}, timeout = 30000) {
+    const stop = new AbortController();
+    const t = setTimeout(() => stop.abort(), timeout);
+    try {
+      const r = await fetch(API_MAIL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-qf-admin": chiave() },
+        body: JSON.stringify({ azione, dati: d }),
+        signal: stop.signal
+      });
+      const j = await r.json().catch(() => ({}));
+      return { ok: r.ok && j.ok === true, status: r.status, ...j };
+    } catch (e) {
+      return { ok: false, status: 0, errore: e.name === "AbortError" ? "Tempo scaduto" : "Servizio non raggiungibile" };
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  async function caricaPosta() {
+    const e = await chiamaMail("elenco");
+    posta = e.ok ? { modelli: e.modelli || [], inviate: e.inviate || [] } : { modelli: [], inviate: [] };
+    if (!e.ok) QF().toast(e.errore || "Modelli non leggibili.");
+    QF().render();
+  }
+
+  /* --- Templates --- */
+
+  function modelliView() {
+    if (!posta) return `<div class="card"><p class="muted">Carico i modelli…</p></div>`;
+    const mm = posta.modelli;
+    return `
+    <div class="mm-testata mm-testata-sezione">
+      <p class="muted" style="margin:0;max-width:44rem">
+        I testi riutilizzabili, con i segnaposto che vengono sostituiti al momento dell'invio.
+        Sono gli stessi che il CRM usa nella sezione Posta: uno solo, non due elenchi che divergono.
+      </p>
+      <div class="mm-azioni">
+        <button class="btn btn-primary btn-sm" id="mm-modello-nuovo">＋ Nuovo modello</button>
+      </div>
+    </div>
+
+    <div class="card mm-segnaposto">
+      <strong>Segnaposto disponibili</strong>
+      <p>${Object.entries(SEGNAPOSTO).map(([k, v]) => `<code>${k}</code> ${esc(v)}`).join(" · ")}</p>
+      <p class="privacy-hint" style="margin:.3rem 0 0">
+        Quello che resta non sostituito parte così com'è, graffe comprese: l'anteprima lo segnala prima.
+      </p>
+    </div>
+
+    ${mm.length === 0 ? `
+      <div class="card"><p class="muted mm-vuoto" style="border:0;padding:2.4rem 1rem">
+        Nessun modello. Creane uno, oppure fattene scrivere una bozza dall'<a href="#/admin/crm/mail/ai-writer">Email AI Writer</a>.
+      </p></div>`
+    : `<div class="mm-caselle">${mm.map(m => `
+        <div class="card mm-modello ${m.attivo ? "" : "spento"}">
+          <div class="mm-testata">
+            <div style="min-width:0">
+              <h3 style="margin:0">${esc(m.nome)}</h3>
+              <p class="muted" style="margin:.15rem 0 0;font-size:.78rem">${esc(m.oggetto)}</p>
+            </div>
+            <span class="pill ${m.attivo ? "" : "pill-on"}">${esc(m.scopo)}${m.attivo ? "" : " · spento"}</span>
+          </div>
+          <pre class="mm-modello-corpo">${esc(m.corpo)}</pre>
+          <div class="mm-azioni">
+            <button class="btn btn-outline btn-sm" data-anteprima="${esc(m.id)}">👁 Anteprima</button>
+            <button class="btn btn-ghost btn-sm" data-modello="${esc(m.id)}">Modifica</button>
+            <button class="btn btn-ghost btn-sm danger" data-modello-elimina="${esc(m.id)}">🗑</button>
+          </div>
+        </div>`).join("")}</div>`}
+
+    ${modelloAperto ? modelloModuloView() : ""}
+    ${anteprima ? anteprimaView() : ""}`;
+  }
+
+  function modelloModuloView() {
+    const m = modelloAperto;
+    return `
+    <div class="mm-velo" data-chiudi-modello>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>${m.id ? `Modifica «${esc(m.nome)}»` : "Nuovo modello"}</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-modello>Chiudi</button>
+        </div>
+        <form id="mm-modello-form">
+          <div class="mm-campi">
+            <label class="field"><span>Nome *</span>
+              <input id="t-nome" required value="${esc(m.nome || "")}" placeholder="Primo contatto ristoranti"></label>
+            <label class="field"><span>Scopo</span>
+              <select id="t-scopo">
+                ${["contatto", "preventivo", "sollecito", "informativa"].map(s => `
+                  <option value="${s}" ${m.scopo === s ? "selected" : ""}>${s}</option>`).join("")}
+              </select></label>
+            <label class="field mm-campo-largo"><span>Oggetto *</span>
+              <input id="t-oggetto" required value="${esc(m.oggetto || "")}" placeholder="Una domanda sulle vostre polizze, {azienda}"></label>
+            <label class="field mm-campo-largo"><span>Testo *</span>
+              <textarea id="t-corpo" required rows="12" class="mail-corpo">${esc(m.corpo || "")}</textarea></label>
+            <label class="field mm-campo-largo mm-interruttore">
+              <input id="t-attivo" type="checkbox" ${m.attivo !== false ? "checked" : ""}>
+              <span>Modello attivo<em>Se spento resta qui ma non compare fra quelli usabili.</em></span>
+            </label>
+          </div>
+          <div class="mm-azioni" style="justify-content:flex-end">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-modello>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm">Salva</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  }
+
+  function anteprimaView() {
+    return `
+    <div class="mm-velo" data-chiudi-anteprima>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Anteprima</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-anteprima>Chiudi</button>
+        </div>
+        ${anteprima.avvisi?.length ? `
+          <div class="legal-warning" role="status">${anteprima.avvisi.map(esc).join("<br>")}</div>` : ""}
+        <table class="admin-kv"><tr><th>Oggetto</th><td>${esc(anteprima.oggetto)}</td></tr></table>
+        <pre class="mm-modello-corpo" style="max-height:22rem">${esc(anteprima.corpo)}</pre>
+      </div>
+    </div>`;
+  }
+
+  /* --- Email AI Writer --- */
+
+  function scrittoreView() {
+    const conEmail = (contenuto?.lead || []);
+    return `
+    <div class="card">
+      <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">
+        Il modello scrive una bozza a partire da quello che sappiamo dell'azienda. È una bozza da
+        leggere e correggere: da qui non parte niente, e nessun testo scritto così viene spedito
+        senza che qualcuno lo abbia riletto.
+      </p>
+      <form id="mm-ai-form">
+        <div class="mm-campi">
+          <label class="field"><span>Scopo</span>
+            <select id="a-scopo">
+              ${Object.entries(SCOPI).map(([k, v]) => `<option value="${k}" ${scrittura.scopo === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
+            </select></label>
+          <label class="field"><span>Tono</span>
+            <select id="a-tono">
+              ${Object.entries(TONI).map(([k, v]) => `<option value="${k}" ${scrittura.tono === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
+            </select></label>
+          <label class="field mm-campo-largo"><span>Per quale azienda</span>
+            <select id="a-lead">
+              <option value="">Nessuna in particolare — scrivi un testo con i segnaposto</option>
+              ${conEmail.filter(l => !l.no_contatto).map(l => `
+                <option value="${esc(l.id)}" ${scrittura.lead_id === l.id ? "selected" : ""}>${esc(l.nome)}${l.citta ? ` · ${esc(l.citta)}` : ""}</option>`).join("")}
+            </select>
+            ${conEmail.length === 0 ? `
+              <em class="muted" style="font-size:.76rem">Apri una lista in <a href="#/admin/crm/mail/liste">Lead Lists</a> per scegliere un'azienda: qui compaiono quelle della lista aperta.</em>` : ""}
+          </label>
+          <label class="field mm-campo-largo"><span>Indicazioni aggiuntive</span>
+            <textarea id="a-istruzioni" rows="3" placeholder="Es. cita che siamo di zona, niente riferimenti al prezzo">${esc(scrittura.istruzioni)}</textarea></label>
+        </div>
+        <div class="mm-azioni" style="margin-top:.8rem">
+          <button type="submit" class="btn btn-primary btn-sm" ${scrivendo ? "disabled" : ""}>
+            ${scrivendo ? "Scrive…" : "✨ Scrivi la bozza"}</button>
+          <span class="muted" style="font-size:.78rem">Ogni bozza costa: il conto esatto compare qui sotto.</span>
+        </div>
+      </form>
+    </div>
+
+    ${bozza ? `
+      <div class="card">
+        <div class="mm-testata">
+          <h3>Bozza</h3>
+          <span class="muted" style="font-size:.75rem">
+            ${esc(bozza.modello)} · ${bozza.token.ingresso}+${bozza.token.uscita} token ·
+            ${bozza.costo < 0.01 ? "meno di un centesimo di dollaro" : `${bozza.costo.toFixed(3)} $`}
+          </span>
+        </div>
+        ${!bozza.oggetto ? `
+          <div class="legal-warning" role="status">
+            Il modello non ha restituito l'oggetto nel formato atteso: il testo è tutto qui sotto,
+            l'oggetto va scritto a mano. Meglio che ve ne accorgiate ora.
+          </div>` : ""}
+        <label class="field"><span>Oggetto</span>
+          <input id="b-oggetto" value="${esc(bozza.oggetto)}"></label>
+        <label class="field" style="margin-top:.6rem"><span>Testo</span>
+          <textarea id="b-corpo" rows="12" class="mail-corpo">${esc(bozza.corpo)}</textarea></label>
+        <div class="mm-azioni" style="margin-top:.7rem">
+          <button class="btn btn-primary btn-sm" id="mm-bozza-modello">Salvala come modello</button>
+          <button class="btn btn-ghost btn-sm" id="mm-bozza-scarta">Scarta</button>
+        </div>
+        <p class="privacy-hint">
+          Per scrivere questa bozza il nome, il settore, la città e il sito dell'azienda sono usciti dal
+          database e sono arrivati ad Anthropic, che elabora il testo. È un trattamento in più rispetto a
+          quelli dichiarati nell'informativa: se questa sezione entra nell'uso quotidiano, va aggiunto lì.
+        </p>
+      </div>` : ""}`;
+  }
+
   /* ---------------- SEZIONE · SMTP & SENDING ----------------
      Le caselle da cui esce la posta. Su Lovable la password
      finiva in una colonna della tabella; qui viene consegnata al
@@ -1171,6 +1389,8 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
             : attiva === "smtp" ? smtpView()
             : attiva === "lead-finder" ? finderView()
             : attiva === "liste" ? listeView()
+            : attiva === "modelli" ? modelliView()
+            : attiva === "ai-writer" ? scrittoreView()
             : inArrivoView(attiva)}
         </div>
       </div>`;
@@ -1207,6 +1427,8 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     bindSmtp();
     bindFinder();
     bindListe();
+    bindModelli();
+    bindScrittore();
   }
 
   /* Quale lista è aperta lo dice l'indirizzo, non una variabile:
@@ -1545,6 +1767,122 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     a.click();
     URL.revokeObjectURL(url);
     QF().toast(`${plurale(righe.length, "riga esportata", "righe esportate")}.`);
+  }
+
+  /* ---------------- EVENTI · TEMPLATES ---------------- */
+  function bindModelli() {
+    const $ = s => document.querySelector(s);
+    if (rottaCorrente !== "modelli" && rottaCorrente !== "ai-writer") return;
+    if (!posta) { caricaPosta(); return; }
+
+    $("#mm-modello-nuovo")?.addEventListener("click", () => {
+      modelloAperto = { nome: "", oggetto: "", corpo: "", scopo: "contatto", attivo: true };
+      QF().render();
+    });
+
+    document.querySelectorAll("[data-modello]").forEach(b =>
+      b.addEventListener("click", () => {
+        modelloAperto = posta.modelli.find(m => m.id === b.dataset.modello) || null;
+        QF().render();
+      }));
+
+    document.querySelectorAll("[data-chiudi-modello]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        modelloAperto = null; QF().render();
+      }));
+    if (modelloAperto) chiudiConEsc(() => { modelloAperto = null; });
+
+    $("#mm-modello-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const esito = await chiamaMail("salva-modello", {
+        id: modelloAperto.id || undefined,
+        nome: $("#t-nome").value, oggetto: $("#t-oggetto").value,
+        corpo: $("#t-corpo").value, scopo: $("#t-scopo").value,
+        attivo: $("#t-attivo").checked
+      });
+      if (!esito.ok) { QF().toast(esito.errore || "Salvataggio non riuscito."); return; }
+      modelloAperto = null;
+      QF().toast("Modello salvato.");
+      await caricaPosta();
+    });
+
+    document.querySelectorAll("[data-modello-elimina]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const m = posta.modelli.find(x => x.id === b.dataset.modelloElimina);
+        if (!confirm(`Eliminare «${m?.nome}»? Le email già partite restano nel registro con il testo che avevano.`)) return;
+        const e = await chiamaMail("elimina-modello", { id: b.dataset.modelloElimina });
+        if (!e.ok) { QF().toast(e.errore || "Non riuscito."); return; }
+        QF().toast("Modello eliminato.");
+        await caricaPosta();
+      }));
+
+    document.querySelectorAll("[data-anteprima]").forEach(b =>
+      b.addEventListener("click", async () => {
+        /* L'anteprima si fa su un lead vero quando ce n'è uno
+           sotto mano: un modello che sembra a posto con dei
+           segnaposto vuoti è il modo per accorgersene dopo. */
+        const lead = (contenuto?.lead || []).find(l => !l.no_contatto);
+        const e = await chiamaMail("anteprima", { modelloId: b.dataset.anteprima, leadId: lead?.id });
+        if (!e.ok) { QF().toast(e.errore || "Anteprima non riuscita."); return; }
+        anteprima = { oggetto: e.oggetto, corpo: e.corpo, avvisi: e.avvisi };
+        QF().render();
+      }));
+
+    document.querySelectorAll("[data-chiudi-anteprima]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        anteprima = null; QF().render();
+      }));
+    if (anteprima) chiudiConEsc(() => { anteprima = null; });
+  }
+
+  /* ---------------- EVENTI · AI WRITER ---------------- */
+  function bindScrittore() {
+    const $ = s => document.querySelector(s);
+
+    $("#mm-ai-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      scrittura.scopo = $("#a-scopo").value;
+      scrittura.tono = $("#a-tono").value;
+      scrittura.lead_id = $("#a-lead").value;
+      scrittura.istruzioni = $("#a-istruzioni").value;
+      scrivendo = true; QF().render();
+      const esito = await chiama("ai-scrivi", { ...scrittura, mittente_id: mittente()?.id }, 120000);
+      scrivendo = false;
+      if (!esito.ok) { QF().toast(esito.errore || "Scrittura non riuscita."); QF().render(); return; }
+      bozza = esito;
+      QF().render();
+    });
+
+    /* Il testo modificato a mano si legge prima del render: dopo,
+       la casella è già stata ricostruita con quello di partenza. */
+    const leggiBozza = () => {
+      if (!$("#b-oggetto")) return;
+      bozza = { ...bozza, oggetto: $("#b-oggetto").value, corpo: $("#b-corpo").value };
+    };
+
+    $("#mm-bozza-scarta")?.addEventListener("click", () => { bozza = null; QF().render(); });
+
+    $("#mm-bozza-modello")?.addEventListener("click", async () => {
+      leggiBozza();
+      if (!bozza.oggetto.trim() || !bozza.corpo.trim()) {
+        QF().toast("Servono oggetto e testo per salvarlo come modello.");
+        return;
+      }
+      const nome = prompt("Con che nome salvarlo?", `Bozza ${new Date().toLocaleDateString("it-IT")}`);
+      if (!nome) return;
+      const esito = await chiamaMail("salva-modello", {
+        nome, oggetto: bozza.oggetto, corpo: bozza.corpo,
+        scopo: scrittura.scopo === "presentazione" ? "contatto" : scrittura.scopo,
+        attivo: true
+      });
+      if (!esito.ok) { QF().toast(esito.errore || "Salvataggio non riuscito."); return; }
+      bozza = null;
+      QF().toast("Salvata fra i modelli.");
+      await caricaPosta();
+      location.hash = "#/admin/crm/mail/modelli";
+    });
   }
 
   function bindSmtp() {
