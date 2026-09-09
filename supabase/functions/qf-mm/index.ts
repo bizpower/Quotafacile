@@ -5,7 +5,15 @@
 // dentro QuotaFacile. Undici sezioni; questa funzione le serve
 // tutte, una azione per volta.
 //
-// Costruite finora: la Dashboard e le caselle di invio.
+// Costruite finora: la Dashboard, le caselle di invio, le liste
+// di lead.
+//
+// I LEAD NON SI DUPLICANO
+// Su Lovable ogni lista aveva le proprie righe: la stessa azienda
+// in tre liste erano tre schede che invecchiavano separate, e
+// l'opposizione registrata su una non fermava le altre due. Qui
+// il lead vive una volta sola in crm_lead — lo stesso archivio
+// della pipeline del CRM — e le liste ci puntano.
 //
 // LE PASSWORD DELLE CASELLE STANNO NEL VAULT
 // Su Lovable la password del server di posta era una colonna
@@ -165,7 +173,9 @@ async function panoramica() {
   ] = await Promise.all([
     db.from("mm_mittenti").select("*").order("creato_il"),
     caselle().then((data) => ({ data, error: null })),
-    db.from("mm_liste").select("*").order("creata_il", { ascending: false }),
+    /* Le liste con quanti lead contengono: una lista senza il suo
+       numero accanto costringe ad aprirla per sapere se è vuota. */
+    db.from("mm_liste").select("*,mm_lista_lead(count)").order("creata_il", { ascending: false }),
     db.from("mm_campagne").select("*").order("creata_il", { ascending: false }).limit(50),
     db.from("mm_email").select("id,destinatario,oggetto,inviata_il,mittente_id")
       .eq("stato", "inviata").order("inviata_il", { ascending: false }).limit(6),
@@ -219,7 +229,10 @@ async function panoramica() {
   return {
     mittenti: mittenti.data ?? [],
     smtp: smtp.data ?? [],
-    liste: liste.data ?? [],
+    liste: (liste.data ?? []).map((l: Record<string, unknown>) => {
+      const { mm_lista_lead, ...resto } = l as { mm_lista_lead?: { count: number }[] };
+      return { ...resto, quanti: mm_lista_lead?.[0]?.count ?? 0 };
+    }),
     campagne: campagne.data ?? [],
     ultimeInviate: ultimeInviate.data ?? [],
     ultimiErrori: ultimiErrori.data ?? [],
@@ -653,8 +666,219 @@ async function smtpDns(d: Record<string, unknown>) {
   return { esito };
 }
 
+// ---------------- Liste ----------------
+
+/* Una lista è un punto di vista sui lead del CRM, non una copia.
+   Su Lovable ogni lista aveva le proprie righe: la stessa azienda
+   in tre liste erano tre record che invecchiavano ognuno per
+   conto suo, e l'opposizione registrata su uno non fermava gli
+   altri due. Qui il lead è uno, e le liste ci puntano. */
+
+async function listaSalva(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  const nome = testo(d.nome, 120);
+  if (!nome) throw new ErroreCliente("Dai un nome alla lista.");
+  const riga = {
+    nome,
+    descrizione: testo(d.descrizione, 500),
+    mittente_id: testo(d.mittente_id, 40),
+  };
+  if (id) {
+    const { error } = await db.from("mm_liste").update(riga).eq("id", id);
+    if (error) throw new Error(error.message);
+    return { id };
+  }
+  const { data, error } = await db.from("mm_liste").insert(riga).select("id").single();
+  if (error) throw new Error(error.message);
+  return { id: data.id };
+}
+
+async function listaElimina(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new ErroreCliente("Manca l'identificativo della lista");
+  const { error } = await db.from("mm_liste").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  /* I lead restano: erano già in archivio prima della lista e
+     continuano a esserci dopo. Sparisce l'appartenenza. */
+  return { eliminata: id };
+}
+
+/* Le colonne dei lead che servono al mail marketing. Non tutte:
+   note e stato della trattativa sono lavoro della pipeline. */
+const COLONNE_LEAD =
+  "id,nome,categoria,citta,provincia,indirizzo,telefono,sito,email," +
+  "valutazione,recensioni,fonte,raccolto_il,query_origine,no_contatto,no_contatto_motivo";
+
+async function listaContenuto(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new ErroreCliente("Manca l'identificativo della lista");
+
+  const { data: dentro, error } = await db.from("mm_lista_lead")
+    .select("lead_id,aggiunto_il").eq("lista_id", id)
+    .order("aggiunto_il", { ascending: false });
+  if (error) throw new Error(error.message);
+  const ids = (dentro ?? []).map((r: { lead_id: string }) => r.lead_id);
+  if (!ids.length) return { lead: [], altreListe: {} };
+
+  const [{ data: lead }, { data: altrove }] = await Promise.all([
+    db.from("crm_lead").select(COLONNE_LEAD).in("id", ids),
+    /* In quante altre liste sta ognuno: non è un doppione da
+       togliere — il lead è uno solo — ma sapere che scriverai
+       due volte alla stessa azienda cambia cosa scrivi. */
+    db.from("mm_lista_lead").select("lead_id,lista_id").in("lead_id", ids).neq("lista_id", id),
+  ]);
+
+  const altreListe: Record<string, string[]> = {};
+  for (const r of (altrove ?? []) as { lead_id: string; lista_id: string }[]) {
+    (altreListe[r.lead_id] ??= []).push(r.lista_id);
+  }
+  const quando = new Map((dentro ?? []).map((r: { lead_id: string; aggiunto_il: string }) => [r.lead_id, r.aggiunto_il]));
+  const ordinati = (lead ?? [])
+    .map((l: Record<string, unknown>) => ({ ...l, aggiunto_il: quando.get(l.id as string) }))
+    .sort((a, b) => String(b.aggiunto_il).localeCompare(String(a.aggiunto_il)));
+
+  return { lead: ordinati, altreListe };
+}
+
+async function listaAggiungi(d: Record<string, unknown>) {
+  const lista = testo(d.lista_id, 40);
+  if (!lista) throw new ErroreCliente("Manca la lista di destinazione");
+
+  /* Si può indicare i lead per identificativo o per place_id:
+     il Lead Finder ha in mano i secondi, la pipeline i primi. */
+  const ids = Array.isArray(d.lead_ids) ? d.lead_ids.map(String).slice(0, 500) : [];
+  const places = Array.isArray(d.place_ids) ? d.place_ids.map(String).slice(0, 500) : [];
+  let daLegare = ids;
+
+  if (places.length) {
+    const { data, error } = await db.from("crm_lead").select("id").in("place_id", places);
+    if (error) throw new Error(error.message);
+    daLegare = [...new Set([...daLegare, ...(data ?? []).map((r: { id: string }) => r.id)])];
+  }
+  if (!daLegare.length) throw new ErroreCliente("Nessun lead da aggiungere.");
+
+  const { error } = await db.from("mm_lista_lead")
+    .upsert(daLegare.map((lead_id) => ({ lista_id: lista, lead_id })),
+      { onConflict: "lista_id,lead_id", ignoreDuplicates: true });
+  if (error) {
+    if ((error as { code?: string }).code === "23503") {
+      throw new ErroreCliente("La lista non esiste più, oppure uno dei lead è stato eliminato.");
+    }
+    throw new Error(error.message);
+  }
+  /* Quante ce ne sono davvero adesso, non quante ne ha scritte
+     la riga sopra: con ignoreDuplicates il conteggio dell'upsert
+     dipende da quante erano già lì, e non è quello che si vuole
+     sapere. */
+  const { count } = await db.from("mm_lista_lead")
+    .select("lead_id", { count: "exact", head: true })
+    .eq("lista_id", lista).in("lead_id", daLegare);
+  return { aggiunti: count ?? daLegare.length, richiesti: daLegare.length };
+}
+
+async function listaTogli(d: Record<string, unknown>) {
+  const lista = testo(d.lista_id, 40);
+  const lead = testo(d.lead_id, 40);
+  if (!lista || !lead) throw new ErroreCliente("Manca la lista o il lead");
+  const { error } = await db.from("mm_lista_lead")
+    .delete().eq("lista_id", lista).eq("lead_id", lead);
+  if (error) throw new Error(error.message);
+  /* Fuori dalla lista, non fuori dall'archivio: il lead resta,
+     con la sua storia e la sua lavorazione. */
+  return { tolto: lead };
+}
+
+// ---------------- Lead a mano e da file ----------------
+
+/* Google Places non dà l'indirizzo email, e non tutte le aziende
+   arrivano da una ricerca: queste due strade coprono il resto.
+   La provenienza viene scritta comunque, perché «da dove avete
+   il mio indirizzo» deve avere una risposta nel database. */
+
+function leadDaCampi(r: Record<string, unknown>, fonte: string) {
+  const nome = testo(r.nome, 200) || testo(r.email, 200);
+  if (!nome) return null;
+  const email = (testo(r.email, 200) || "").toLowerCase() || null;
+  if (email && !emailValida(email)) return null;
+  return {
+    nome,
+    email,
+    categoria: testo(r.categoria, 60),
+    citta: testo(r.citta, 120),
+    provincia: testo(r.provincia, 10),
+    indirizzo: testo(r.indirizzo, 300),
+    telefono: testo(r.telefono, 60),
+    sito: testo(r.sito, 300),
+    fonte,
+    query_origine: testo(r.origine, 300),
+  };
+}
+
+async function leadAggiungi(d: Record<string, unknown>) {
+  const lista = testo(d.lista_id, 40);
+  const righe = Array.isArray(d.lead) ? d.lead : [d];
+  const fonte = String(d.fonte) === "file" ? "file" : "manuale";
+
+  const buone: Record<string, unknown>[] = [];
+  let scartate = 0;
+  for (const r of righe.slice(0, 1000)) {
+    const riga = leadDaCampi(r as Record<string, unknown>, fonte);
+    if (riga) buone.push(riga); else scartate++;
+  }
+  if (!buone.length) {
+    throw new ErroreCliente(
+      scartate
+        ? `Nessuna riga utilizzabile: ${plurale(scartate, "riga è", "righe sono")} senza nome o con un indirizzo email non valido.`
+        : "Serve almeno il nome dell'attività, oppure un indirizzo email.",
+    );
+  }
+
+  /* Chi ha già quell'indirizzo in archivio non viene inserito una
+     seconda volta: viene solo legato alla lista. Reimportare lo
+     stesso file due volte è la cosa più facile che capiti, e
+     senza questo controllo produrrebbe due schede della stessa
+     azienda che da lì in poi invecchiano separate. */
+  const indirizzi = [...new Set(buone.map((r) => r.email).filter(Boolean))] as string[];
+  const { data: noti } = indirizzi.length
+    ? await db.from("crm_lead").select("id,email").in("email", indirizzi)
+    : { data: [] };
+  const perEmail = new Map((noti ?? []).map((r: { id: string; email: string }) => [r.email.toLowerCase(), r.id]));
+
+  const daInserire = buone.filter((r) => !r.email || !perEmail.has(String(r.email)));
+  const gia = buone.length - daInserire.length;
+
+  let nuovi: string[] = [];
+  if (daInserire.length) {
+    const { data, error } = await db.from("crm_lead").insert(daInserire).select("id");
+    if (error) throw new Error(error.message);
+    nuovi = (data ?? []).map((r: { id: string }) => r.id);
+  }
+
+  const daLegare = [...new Set([...nuovi, ...perEmail.values()])];
+  if (lista && daLegare.length) {
+    const { error: e2 } = await db.from("mm_lista_lead")
+      .upsert(daLegare.map((lead_id) => ({ lista_id: lista, lead_id })),
+        { onConflict: "lista_id,lead_id", ignoreDuplicates: true });
+    if (e2) {
+      if ((e2 as { code?: string }).code === "23503") {
+        throw new ErroreCliente("La lista non esiste più.");
+      }
+      throw new Error(e2.message);
+    }
+  }
+  return { inseriti: nuovi.length, gia, scartate };
+}
+
+const plurale = (n: number, uno: string, molti: string) => `${n} ${n === 1 ? uno : molti}`;
+
 const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
   panoramica: () => panoramica(),
+  "lista-salva": listaSalva,
+  "lista-elimina": listaElimina,
+  "lista-contenuto": listaContenuto,
+  "lista-aggiungi": listaAggiungi,
+  "lista-togli": listaTogli,
+  "lead-aggiungi": leadAggiungi,
   "smtp-salva": smtpSalva,
   "smtp-elimina": smtpElimina,
   "smtp-stato": smtpStato,
