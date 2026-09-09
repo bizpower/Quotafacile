@@ -869,8 +869,18 @@ create table if not exists public.mm_smtp (
   nome               text not null,
   host               text not null,
   porta              integer not null default 465,
+  -- 465 apre gia in TLS, 587 ci passa dopo con STARTTLS: e la
+  -- coppia che si sbaglia piu spesso, e l'errore che ne esce non
+  -- somiglia alla causa.
+  tls                boolean not null default true,
   utente             text not null,
   from_email         text not null,
+  from_nome          text not null default '',
+  rispondi_a         text,
+  firma              text,
+  firma_attiva       boolean not null default true,
+  -- l'identificativo del segreto nel Vault, non il segreto
+  segreto_id         uuid,
   stato              text not null default 'nuovo'
                        check (stato in ('nuovo','attivo','errore','sospeso')),
   -- Aruba taglia le connessioni a chi supera la propria soglia:
@@ -881,12 +891,30 @@ create table if not exists public.mm_smtp (
   ultimo_uso         timestamptz,
   ultimo_test_il     timestamptz,
   ultimo_test_esito  text check (ultimo_test_esito in ('ok','errore')),
-  ultimo_test_errore text
+  ultimo_test_errore text,
+
+  -- SPF, DKIM e DMARC: i tre documenti che dicono a chi riceve
+  -- che il dominio ha davvero autorizzato chi spedisce. Senza,
+  -- la posta parte lo stesso e finisce nello spam.
+  spf_stato          text not null default 'non_verificato'
+                       check (spf_stato in ('ok','avviso','assente','non_verificato')),
+  dkim_stato         text not null default 'non_verificato'
+                       check (dkim_stato in ('ok','avviso','assente','non_verificato')),
+  dmarc_stato        text not null default 'non_verificato'
+                       check (dmarc_stato in ('ok','avviso','assente','non_verificato')),
+  dkim_selettore     text,
+  punteggio          integer,
+  dns_esito          jsonb,
+  dns_verificato_il  timestamptz
 );
 
 alter table public.mm_smtp enable row level security;
 create index if not exists mm_smtp_mittente_idx on public.mm_smtp (mittente_id);
 
+comment on column public.mm_smtp.segreto_id is
+  'Riferimento al segreto nel Vault di Supabase. La password non sta in questa tabella: qui c''e solo il numero della cassetta, e la chiave ce l''ha il database.';
+comment on column public.mm_smtp.punteggio is
+  'Quanto il dominio e credibile per chi riceve: SPF 40, DKIM 40, DMARC 20. Non dice se l''email arriva, dice se ha i documenti in regola.';
 comment on column public.mm_smtp.limite_giornaliero is
   'Soglia giornaliera concordata col fornitore. Superarla non fa arrivare più posta: fa sospendere la casella.';
 
@@ -1002,3 +1030,51 @@ begin
       'create policy "solo chi vede tutto" on public.%I for select to authenticated using (crm_interno.vede_tutto())', t);
   end loop;
 end $$;
+
+-- ---- 9h. Il Vault, raggiungibile solo dal server ----
+-- vault.decrypted_secrets non e esposto da PostgREST, e non deve
+-- esserlo. Queste tre funzioni stanno in public perche la Edge
+-- Function possa chiamarle, ma l'esecuzione e tolta a tutti
+-- tranne service_role: chi ha la chiave pubblica del sito non
+-- puo nemmeno provarci.
+
+create or replace function public.mm_segreto_scrivi(p_id uuid, p_valore text, p_nome text)
+returns uuid
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare v_id uuid;
+begin
+  if p_id is not null and exists (select 1 from vault.secrets where id = p_id) then
+    perform vault.update_secret(p_id, p_valore);
+    return p_id;
+  end if;
+  select vault.create_secret(p_valore, p_nome, 'Password della casella di invio ' || p_nome) into v_id;
+  return v_id;
+end $$;
+
+create or replace function public.mm_segreto_leggi(p_id uuid)
+returns text
+language sql
+security definer
+set search_path = ''
+as $$
+  select decrypted_secret from vault.decrypted_secrets where id = p_id;
+$$;
+
+create or replace function public.mm_segreto_elimina(p_id uuid)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  delete from vault.secrets where id = p_id;
+$$;
+
+revoke execute on function public.mm_segreto_scrivi(uuid, text, text)  from public, anon, authenticated;
+revoke execute on function public.mm_segreto_leggi(uuid)               from public, anon, authenticated;
+revoke execute on function public.mm_segreto_elimina(uuid)             from public, anon, authenticated;
+grant  execute on function public.mm_segreto_scrivi(uuid, text, text)  to service_role;
+grant  execute on function public.mm_segreto_leggi(uuid)               to service_role;
+grant  execute on function public.mm_segreto_elimina(uuid)             to service_role;
