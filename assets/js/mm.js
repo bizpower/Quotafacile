@@ -135,18 +135,6 @@
   ];
 
   const INARRIVO = {
-    "lead-finder": {
-      titolo: "Lead Finder",
-      cosa: "Cercare attività per categoria e zona e salvarle come lead, con la ricerca che le ha prodotte scritta accanto.",
-      come: "Le stesse API ufficiali di Google che alimentano già «Lead locali» nel CRM, così un'attività trovata resta una riga sola.",
-      serve: "Il segreto QF_GOOGLE_KEY, già necessario per la sezione «Lead locali»."
-    },
-    liste: {
-      titolo: "Lead Lists",
-      cosa: "Raggruppare i lead in liste da usare come destinatari di una campagna, con conteggi e sovrapposizioni fra liste.",
-      come: "Le liste puntano ai lead del CRM invece di copiarli: un'azienda che si oppone sparisce da tutte le liste insieme.",
-      serve: "Niente: le tabelle ci sono già."
-    },
     campagne: {
       titolo: "Campaigns",
       cosa: "Preparare un invio a una lista partendo da un modello, rivederlo riga per riga e programmarlo.",
@@ -400,6 +388,370 @@
         </div>
         <p>${esc(s[1])}</p>
         <p class="privacy-hint">L'elenco riga per riga arriva con la sezione che produce questi messaggi.</p>
+      </div>
+    </div>`;
+  }
+
+  /* ---------------- SEZIONI · LEAD FINDER e LEAD LISTS ----------------
+     La ricerca non è riscritta: è la stessa funzione qf-lead che
+     alimenta «Lead locali» nel CRM. Due copie dello stesso codice
+     Google vorrebbero dire due comportamenti che con il tempo
+     divergono, e un'attività trovata due volte con due schede
+     diverse.
+
+     Su Lovable ogni lista aveva le proprie righe di lead: la
+     stessa azienda in tre liste erano tre record, e l'opposizione
+     registrata su uno non fermava gli altri due. Qui il lead è
+     uno e le liste ci puntano, quindi togliere un'azienda la
+     toglie da tutte insieme. */
+
+  const API_LEAD = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-lead";
+
+  const CATEGORIE = {
+    ristorazione: "Ristoranti e pizzerie", bar: "Bar e caffetterie",
+    hotel: "Hotel e B&B", cantine: "Cantine e aziende vinicole",
+    enoteche: "Enoteche", agriturismi: "Agriturismi",
+    officine: "Officine e autoriparazioni", concessionarie: "Concessionarie auto",
+    edilizia: "Imprese edili", impiantisti: "Impiantisti",
+    studi: "Commercialisti e consulenti", avvocati: "Studi legali",
+    medici: "Studi medici e dentisti", palestre: "Palestre e centri fitness",
+    parrucchieri: "Parrucchieri ed estetica", negozi: "Negozi al dettaglio",
+    supermercati: "Supermercati e alimentari", trasporti: "Trasporti e logistica",
+    agenzie_immobiliari: "Agenzie immobiliari", assicurazioni: "Agenzie assicurative"
+  };
+
+  /* Lo stato della ricerca vive finché la scheda è aperta: dei
+     risultati non salvati non si fa un archivio. */
+  const ricerca = {
+    zona: "", citta: "Milano", provincia: "MI",
+    categorie: ["ristorazione"], raggio: 2000, soloQualita: true
+  };
+  let risultati = null;      // null = mai cercato
+  let scelti = new Set();
+  let cercando = false;
+  let avvisiRicerca = [];
+  let salvaAperto = false;
+  let listaScelta = "";
+  let nuovaLista = "";
+
+  /* Quale voce è a schermo: bind() non riceve l'indirizzo. */
+  let rottaCorrente = "dashboard";
+
+  let listaAperta = null;
+  let contenuto = null;      // { lead, altreListe }
+  let listaModulo = null;    // lista in creazione/modifica
+  let leadModulo = null;     // lead a mano
+
+  const RAGGI = [
+    [500, "500 m"], [1000, "1 km"], [2000, "2 km"], [5000, "5 km"], [10000, "10 km"]
+  ];
+
+  async function chiamaLead(azione, d = {}, timeout = 90000) {
+    const stop = new AbortController();
+    const t = setTimeout(() => stop.abort(), timeout);
+    try {
+      const r = await fetch(API_LEAD, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-qf-admin": chiave() },
+        body: JSON.stringify({ azione, dati: d }),
+        signal: stop.signal
+      });
+      const j = await r.json().catch(() => ({}));
+      return { ok: r.ok && j.ok === true, status: r.status, ...j };
+    } catch (e) {
+      return { ok: false, status: 0, errore: e.name === "AbortError" ? "Tempo scaduto" : "Servizio non raggiungibile" };
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  /* --- Lead Finder --- */
+
+  function finderView() {
+    return `
+    <div class="card">
+      <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">
+        Cerca attività su Google e salvale in una lista. È la stessa ricerca di «Lead locali»
+        nel CRM: un'attività trovata qui e lì resta una riga sola, con la ricerca che l'ha
+        prodotta scritta accanto.
+      </p>
+      <form id="mm-cerca-form">
+        <div class="lead-categorie">
+          ${Object.entries(CATEGORIE).map(([k, v]) => `
+            <button type="button" class="chip ${ricerca.categorie.includes(k) ? "active" : ""}" data-cat="${k}">${v}</button>`).join("")}
+        </div>
+        <div class="mm-campi" style="margin-top:.8rem">
+          <label class="field"><span>Città</span>
+            <input id="c-citta" value="${esc(ricerca.citta)}" placeholder="Milano"></label>
+          <label class="field"><span>Provincia</span>
+            <input id="c-prov" maxlength="2" value="${esc(ricerca.provincia)}" placeholder="MI"></label>
+          <label class="field mm-campo-largo"><span>Via o zona (per centrare meglio)</span>
+            <input id="c-zona" value="${esc(ricerca.zona)}" placeholder="Via Dante 10 — lascia vuoto per cercare in tutta la città"></label>
+          <label class="field"><span>Raggio</span>
+            <select id="c-raggio">
+              ${RAGGI.map(([v, et]) => `<option value="${v}" ${ricerca.raggio === v ? "selected" : ""}>${et}</option>`).join("")}
+            </select></label>
+          <label class="field mm-interruttore" style="align-self:end">
+            <input id="c-qualita" type="checkbox" ${ricerca.soloQualita ? "checked" : ""}>
+            <span>Solo attività con buone recensioni
+              <em>Almeno 3,5 stelle e 5 recensioni.</em></span>
+          </label>
+        </div>
+        <div class="mm-azioni" style="margin-top:.8rem">
+          <button type="submit" class="btn btn-primary btn-sm" ${cercando ? "disabled" : ""}>
+            ${cercando ? "Cerco…" : "🔎 Cerca"}</button>
+          <span class="muted" style="font-size:.78rem">
+            ${plurale(ricerca.categorie.length, "categoria scelta", "categorie scelte")} · massimo 4</span>
+        </div>
+      </form>
+    </div>
+
+    ${avvisiRicerca.length ? `
+      <div class="legal-warning" role="status">${avvisiRicerca.map(esc).join("<br>")}</div>` : ""}
+
+    ${risultati === null ? "" : risultati.length === 0 ? `
+      <div class="card"><p class="muted mm-vuoto" style="border:0">
+        Nessun risultato. Prova un raggio più ampio o un'altra categoria.</p></div>`
+    : `
+      <div class="card">
+        <div class="mm-testata">
+          <h3>${plurale(risultati.length, "attività trovata", "attività trovate")}</h3>
+          <span class="muted" style="font-size:.78rem">
+            ${risultati.filter(r => r.gia).length
+              ? `${plurale(risultati.filter(r => r.gia).length, "è già in archivio", "sono già in archivio")}`
+              : "nessuna già in archivio"}</span>
+        </div>
+        <div class="mm-tabella">
+          <table>
+            <thead><tr>
+              <th style="width:2.2rem"><input type="checkbox" id="mm-tutti"
+                ${risultati.filter(r => !r.gia).length && risultati.filter(r => !r.gia).every(r => scelti.has(r.place_id)) ? "checked" : ""}></th>
+              <th>Attività</th><th>Città</th><th>Contatti</th><th>Recensioni</th>
+            </tr></thead>
+            <tbody>
+              ${risultati.map(r => `
+                <tr class="${r.gia ? "gia-presente" : ""}">
+                  <td><input type="checkbox" data-scegli="${esc(r.place_id)}" ${scelti.has(r.place_id) ? "checked" : ""}></td>
+                  <td>
+                    <strong>${esc(r.nome)}</strong>
+                    ${r.gia ? `<span class="pill pill-on">già in archivio</span>` : ""}
+                    <span class="muted" style="display:block;font-size:.74rem">${esc(r.indirizzo || "")}</span>
+                  </td>
+                  <td>${esc(r.citta || "—")}</td>
+                  <td class="mm-contatti">
+                    ${r.telefono ? `<a href="tel:${esc(r.telefono)}">${esc(r.telefono)}</a>` : ""}
+                    ${r.sito ? `<a href="${esc(r.sito)}" target="_blank" rel="noopener">${esc(r.sito.replace(/^https?:\/\//, "").slice(0, 32))}</a>` : ""}
+                    ${!r.telefono && !r.sito ? "—" : ""}
+                  </td>
+                  <td>${r.valutazione ? `★ ${r.valutazione} <span class="muted">(${r.recensioni ?? 0})</span>` : "—"}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+        ${scelti.size ? `
+          <div class="mm-barra-scelta">
+            <span>${plurale(scelti.size, "selezionata", "selezionate")}</span>
+            <div class="mm-azioni">
+              <button class="btn btn-outline btn-sm" id="mm-csv-risultati">Scarica CSV</button>
+              <button class="btn btn-primary btn-sm" id="mm-salva-lista">Salva in una lista</button>
+            </div>
+          </div>` : ""}
+      </div>`}
+
+    ${salvaAperto ? salvaView() : ""}`;
+  }
+
+  function salvaView() {
+    return `
+    <div class="mm-velo" data-chiudi-salva>
+      <div class="card mm-dialogo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Salva ${plurale(scelti.size, "attività", "attività")}</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-salva>Chiudi</button>
+        </div>
+        <form id="mm-salva-form">
+          <label class="field"><span>In quale lista</span>
+            <select id="s-lista">
+              <option value="">— scegli —</option>
+              ${D().liste.map(l => `<option value="${esc(l.id)}" ${listaScelta === l.id ? "selected" : ""}>${esc(l.nome)} (${l.quanti ?? 0})</option>`).join("")}
+              <option value="__nuova__" ${listaScelta === "__nuova__" ? "selected" : ""}>＋ Crea una lista nuova</option>
+            </select></label>
+          ${listaScelta === "__nuova__" ? `
+            <label class="field" style="margin-top:.6rem"><span>Nome della lista</span>
+              <input id="s-nome" required value="${esc(nuovaLista)}" placeholder="Ristoranti Milano · settembre"></label>` : ""}
+          <p class="privacy-hint">
+            Le attività già in archivio non vengono duplicate: se erano già state trovate,
+            vengono solo aggiunte a questa lista con la lavorazione che hanno già.
+          </p>
+          <div class="mm-azioni" style="justify-content:flex-end">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-salva>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm">Salva</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  }
+
+  /* --- Lead Lists --- */
+
+  function listeView() {
+    const ll = D().liste;
+    return `
+    <div class="mm-testata mm-testata-sezione">
+      <p class="muted" style="margin:0;max-width:44rem">
+        Le liste sono punti di vista sull'archivio dei lead, non copie: la stessa azienda può
+        stare in più liste, ma resta una riga sola. Se si oppone, sparisce da tutte insieme.
+      </p>
+      <div class="mm-azioni">
+        <button class="btn btn-primary btn-sm" id="mm-lista-nuova">＋ Nuova lista</button>
+      </div>
+    </div>
+
+    ${ll.length === 0 ? `
+      <div class="card"><p class="muted mm-vuoto" style="border:0;padding:2.4rem 1rem">
+        Nessuna lista. Creane una, oppure vai nel <a href="#/admin/crm/mail/lead-finder">Lead Finder</a>
+        e salva lì i risultati di una ricerca.</p></div>`
+    : `
+      <div class="mm-liste-shell">
+        <nav class="mm-liste-elenco">
+          ${ll.map(l => `
+            <a class="mm-lista-voce ${listaAperta === l.id ? "attiva" : ""}" href="#/admin/crm/mail/liste?l=${esc(l.id)}">
+              <span class="mm-lista-nome">${esc(l.nome)}</span>
+              <span class="pill">${l.quanti ?? 0}</span>
+            </a>`).join("")}
+        </nav>
+        <div class="card mm-lista-contenuto">
+          ${!listaAperta ? `<p class="muted mm-vuoto" style="border:0">Scegli una lista per vederne i lead.</p>`
+          : contenutoView()}
+        </div>
+      </div>`}
+
+    ${listaModulo ? listaModuloView() : ""}
+    ${leadModulo ? leadModuloView() : ""}`;
+  }
+
+  function contenutoView() {
+    const l = D().liste.find(x => x.id === listaAperta);
+    if (!l) return `<p class="muted mm-vuoto" style="border:0">Questa lista non esiste più.</p>`;
+    if (!contenuto) return `<p class="muted">Carico la lista…</p>`;
+
+    const lead = contenuto.lead;
+    const conEmail = lead.filter(x => x.email).length;
+    const opposti = lead.filter(x => x.no_contatto).length;
+
+    return `
+    <div class="mm-testata">
+      <div style="min-width:0">
+        <h3 style="margin:0">${esc(l.nome)}</h3>
+        <p class="muted" style="margin:.15rem 0 0;font-size:.78rem">
+          ${plurale(lead.length, "lead", "lead")} ·
+          ${conEmail} con indirizzo email${opposti ? ` · <strong>${plurale(opposti, "opposto", "opposti")}</strong>` : ""}
+        </p>
+      </div>
+      <div class="mm-azioni">
+        <button class="btn btn-outline btn-sm" id="mm-lead-mano">＋ A mano</button>
+        <button class="btn btn-outline btn-sm" id="mm-importa">⬆ Importa CSV</button>
+        <button class="btn btn-outline btn-sm" id="mm-esporta" ${lead.length ? "" : "disabled"}>⬇ Esporta CSV</button>
+        <button class="btn btn-ghost btn-sm" id="mm-lista-modifica">Rinomina</button>
+        <button class="btn btn-ghost btn-sm danger" id="mm-lista-elimina">🗑</button>
+      </div>
+    </div>
+    <input type="file" id="mm-file" accept=".csv,text/csv" hidden>
+
+    ${conEmail === 0 && lead.length ? `
+      <p class="legal-warning" style="font-size:.82rem">
+        Nessuno di questi lead ha un indirizzo email. Google non lo fornisce: va cercato sul
+        sito dell'attività e scritto a mano, oppure importato da un file.
+      </p>` : ""}
+
+    ${lead.length === 0 ? `
+      <p class="muted mm-vuoto" style="border:0">
+        Lista vuota. Aggiungi un lead a mano, importa un CSV, oppure salvaci una ricerca dal Lead Finder.</p>`
+    : `
+      <div class="mm-tabella">
+        <table>
+          <thead><tr><th>Attività</th><th>Contatti</th><th>Provenienza</th><th></th></tr></thead>
+          <tbody>
+            ${lead.map(x => {
+              const altre = contenuto.altreListe[x.id]?.length || 0;
+              return `
+              <tr class="${x.no_contatto ? "opposto" : ""}">
+                <td>
+                  <strong>${esc(x.nome)}</strong>
+                  ${x.no_contatto ? `<span class="pill pill-on" title="${esc(x.no_contatto_motivo || "")}">si è opposto</span>` : ""}
+                  ${altre ? `<span class="pill">${altre === 1 ? "anche in un'altra lista" : `anche in ${altre} altre liste`}</span>` : ""}
+                  <span class="muted" style="display:block;font-size:.74rem">
+                    ${esc([CATEGORIE[x.categoria] || x.categoria, x.citta].filter(Boolean).join(" · "))}</span>
+                </td>
+                <td class="mm-contatti">
+                  ${x.email ? `<a href="mailto:${esc(x.email)}">${esc(x.email)}</a>` : `<span class="muted">senza email</span>`}
+                  ${x.telefono ? `<a href="tel:${esc(x.telefono)}">${esc(x.telefono)}</a>` : ""}
+                </td>
+                <td class="muted" style="font-size:.74rem">
+                  ${esc(x.fonte === "google_places" ? "Google" : x.fonte === "file" ? "da file" : "a mano")}
+                  ${x.raccolto_il ? `<br>${dataOra(x.raccolto_il)}` : ""}
+                </td>
+                <td><button class="btn btn-ghost btn-sm danger" data-togli="${esc(x.id)}" title="Togli dalla lista">✕</button></td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>`}`;
+  }
+
+  function listaModuloView() {
+    const nuova = !listaModulo.id;
+    return `
+    <div class="mm-velo" data-chiudi-lista>
+      <div class="card mm-dialogo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>${nuova ? "Nuova lista" : "Rinomina la lista"}</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-lista>Chiudi</button>
+        </div>
+        <form id="mm-lista-form">
+          <label class="field"><span>Nome *</span>
+            <input id="l-nome" required value="${esc(listaModulo.nome || "")}" placeholder="Ristoranti Milano · settembre"></label>
+          <label class="field" style="margin-top:.6rem"><span>A cosa serve</span>
+            <input id="l-desc" value="${esc(listaModulo.descrizione || "")}" placeholder="facoltativo"></label>
+          <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-lista>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm">${nuova ? "Crea" : "Salva"}</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  }
+
+  function leadModuloView() {
+    return `
+    <div class="mm-velo" data-chiudi-lead>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Aggiungi un'attività a mano</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-lead>Chiudi</button>
+        </div>
+        <form id="mm-lead-form">
+          <div class="mm-campi">
+            <label class="field mm-campo-largo"><span>Nome dell'attività *</span>
+              <input id="m-nome" required placeholder="Trattoria del Ponte"></label>
+            <label class="field"><span>Email</span><input id="m-email" type="email"></label>
+            <label class="field"><span>Telefono</span><input id="m-tel"></label>
+            <label class="field"><span>Città</span><input id="m-citta"></label>
+            <label class="field"><span>Provincia</span><input id="m-prov" maxlength="2"></label>
+            <label class="field mm-campo-largo"><span>Indirizzo</span><input id="m-ind"></label>
+            <label class="field mm-campo-largo"><span>Sito</span><input id="m-sito"></label>
+            <label class="field mm-campo-largo"><span>Dove l'hai trovata</span>
+              <input id="m-origine" placeholder="es. fiera di settembre, segnalazione di un cliente"></label>
+          </div>
+          <p class="privacy-hint">
+            L'ultimo campo non è burocrazia: se un giorno qualcuno chiede da dove avete il suo
+            indirizzo, questa è la risposta, e deve stare nel database prima della domanda.
+          </p>
+          <div class="mm-azioni" style="justify-content:flex-end">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-lead>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm">Aggiungi</button>
+          </div>
+        </form>
       </div>
     </div>`;
   }
@@ -744,6 +1096,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
   /* ---------------- SHELL ---------------- */
   function view(voce) {
     const attiva = VOCI.some(v => v[0] === voce) ? voce : "dashboard";
+    rottaCorrente = attiva;
     const m = mittente();
 
     if (fase !== "pronto") {
@@ -816,6 +1169,8 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
           </div>
           ${attiva === "dashboard" ? dashboardView()
             : attiva === "smtp" ? smtpView()
+            : attiva === "lead-finder" ? finderView()
+            : attiva === "liste" ? listeView()
             : inArrivoView(attiva)}
         </div>
       </div>`;
@@ -850,6 +1205,30 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     if (dettaglio) chiudiConEsc(() => { dettaglio = null; });
 
     bindSmtp();
+    bindFinder();
+    bindListe();
+  }
+
+  /* Quale lista è aperta lo dice l'indirizzo, non una variabile:
+     così il link a una lista si può mandare a qualcuno e il tasto
+     indietro torna dove promette. */
+  function listaDallUrl() {
+    const q = (location.hash || "").split("?")[1];
+    return q ? new URLSearchParams(q).get("l") : null;
+  }
+
+  async function apriLista(id) {
+    listaAperta = id;
+    contenuto = null;
+    QF().render();
+    if (!id) return;
+    const e = await chiama("lista-contenuto", { id });
+    /* Se nel frattempo si è cambiata lista, questa risposta è
+       vecchia: scriverla mostrerebbe i lead di un'altra. */
+    if (listaAperta !== id) return;
+    contenuto = e.ok ? { lead: e.lead || [], altreListe: e.altreListe || {} } : { lead: [], altreListe: {} };
+    if (!e.ok) QF().toast(e.errore || "Lista non leggibile.");
+    QF().render();
   }
 
   /* Un solo posto in cui Escape chiude quello che è aperto. */
@@ -860,6 +1239,312 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
       chiudi(); QF().render();
     };
     document.addEventListener("keydown", esci);
+  }
+
+  /* ---------------- EVENTI · LEAD FINDER ---------------- */
+  function bindFinder() {
+    const $ = s => document.querySelector(s);
+
+    /* I campi si leggono prima di ogni ridisegno: toccare una
+       categoria dopo aver scritto la città non deve cancellarla. */
+    const leggiRicerca = () => {
+      if (!$("#c-citta")) return;
+      ricerca.citta = $("#c-citta").value;
+      ricerca.provincia = $("#c-prov").value;
+      ricerca.zona = $("#c-zona").value;
+      ricerca.raggio = Number($("#c-raggio").value);
+      ricerca.soloQualita = $("#c-qualita").checked;
+    };
+
+    document.querySelectorAll("[data-cat]").forEach(b =>
+      b.addEventListener("click", () => {
+        leggiRicerca();
+        const k = b.dataset.cat;
+        if (ricerca.categorie.includes(k)) ricerca.categorie = ricerca.categorie.filter(x => x !== k);
+        else if (ricerca.categorie.length >= 4) { QF().toast("Massimo quattro categorie per ricerca."); return; }
+        else ricerca.categorie.push(k);
+        QF().render();
+      }));
+
+    $("#mm-cerca-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      leggiRicerca();
+      if (!ricerca.categorie.length) { QF().toast("Scegli almeno una categoria."); return; }
+      if (!ricerca.citta.trim() && !ricerca.zona.trim()) { QF().toast("Indica almeno la città."); return; }
+      cercando = true; QF().render();
+      const esito = await chiamaLead("cerca", {
+        modalita: "precisa",
+        via: ricerca.zona, citta: ricerca.citta, provincia: ricerca.provincia,
+        categorie: ricerca.categorie, raggio: ricerca.raggio,
+        soloQualita: ricerca.soloQualita, massimo: 50
+      });
+      cercando = false;
+      if (!esito.ok) { risultati = null; avvisiRicerca = []; QF().toast(esito.errore || "Ricerca non riuscita."); QF().render(); return; }
+      risultati = esito.risultati || [];
+      avvisiRicerca = esito.avvisi || [];
+      /* Preselezionate solo quelle nuove: chi è già in archivio
+         sta magari lavorando qualcuno, e riproporlo come nuovo
+         è il modo per scrivergli due volte. */
+      scelti = new Set(risultati.filter(r => !r.gia).map(r => r.place_id));
+      QF().render();
+    });
+
+    $("#mm-tutti")?.addEventListener("change", e => {
+      const nuovi = risultati.filter(r => !r.gia);
+      scelti = e.target.checked ? new Set(nuovi.map(r => r.place_id)) : new Set();
+      QF().render();
+    });
+
+    document.querySelectorAll("[data-scegli]").forEach(c =>
+      c.addEventListener("change", () => {
+        const id = c.dataset.scegli;
+        if (c.checked) scelti.add(id); else scelti.delete(id);
+        QF().render();
+      }));
+
+    $("#mm-csv-risultati")?.addEventListener("click", () => {
+      const righe = risultati.filter(r => scelti.has(r.place_id));
+      scaricaCsv(righe.map(r => ({
+        nome: r.nome, categoria: CATEGORIE[r.categoria] || r.categoria, citta: r.citta,
+        provincia: r.provincia, indirizzo: r.indirizzo, telefono: r.telefono,
+        sito: r.sito, email: "", valutazione: r.valutazione, recensioni: r.recensioni
+      })), "ricerca");
+    });
+
+    $("#mm-salva-lista")?.addEventListener("click", () => {
+      salvaAperto = true;
+      listaScelta = D().liste[0]?.id || "__nuova__";
+      QF().render();
+    });
+
+    $("#s-lista")?.addEventListener("change", e => {
+      if (document.getElementById("s-nome")) nuovaLista = document.getElementById("s-nome").value;
+      listaScelta = e.target.value;
+      QF().render();
+    });
+
+    document.querySelectorAll("[data-chiudi-salva]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        salvaAperto = false; QF().render();
+      }));
+    if (salvaAperto) chiudiConEsc(() => { salvaAperto = false; });
+
+    $("#mm-salva-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      let lista = listaScelta;
+      if (!lista) { QF().toast("Scegli una lista."); return; }
+      if (lista === "__nuova__") {
+        nuovaLista = document.getElementById("s-nome").value.trim();
+        const c = await chiama("lista-salva", { nome: nuovaLista, mittente_id: mittente()?.id });
+        if (!c.ok) { QF().toast(c.errore || "Lista non creata."); return; }
+        lista = c.id;
+      }
+
+      const selezionate = risultati.filter(r => scelti.has(r.place_id));
+      /* Prima in archivio (chi c'è già resta com'è), poi nella
+         lista: sono due cose diverse e vanno in quest'ordine. */
+      const nuove = selezionate.filter(r => !r.gia);
+      if (nuove.length) {
+        const s = await chiamaLead("salva", { lead: nuove, query: `${ricerca.citta} · ${ricerca.categorie.join(", ")}` });
+        if (!s.ok) { QF().toast(s.errore || "Salvataggio non riuscito."); return; }
+      }
+      const a = await chiama("lista-aggiungi", { lista_id: lista, place_ids: selezionate.map(r => r.place_id) });
+      if (!a.ok) { QF().toast(a.errore || "Non riuscito ad aggiungerle alla lista."); return; }
+
+      salvaAperto = false; nuovaLista = "";
+      scelti = new Set();
+      risultati = risultati.map(r => ({ ...r, gia: true }));
+      QF().toast(`${plurale(a.aggiunti, "attività aggiunta", "attività aggiunte")} alla lista.`);
+      await carica();
+    });
+  }
+
+  /* ---------------- EVENTI · LEAD LISTS ---------------- */
+  function bindListe() {
+    const $ = s => document.querySelector(s);
+
+    /* La lista aperta la decide l'indirizzo: se è cambiato, si
+       carica il contenuto nuovo. */
+    if (rottaCorrente === "liste") {
+      const voluta = listaDallUrl();
+      if (voluta !== listaAperta) { apriLista(voluta); return; }
+    }
+
+    $("#mm-lista-nuova")?.addEventListener("click", () => { listaModulo = { nome: "" }; QF().render(); });
+    $("#mm-lista-modifica")?.addEventListener("click", () => {
+      listaModulo = D().liste.find(x => x.id === listaAperta) || null;
+      QF().render();
+    });
+
+    document.querySelectorAll("[data-chiudi-lista]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        listaModulo = null; QF().render();
+      }));
+    if (listaModulo) chiudiConEsc(() => { listaModulo = null; });
+
+    $("#mm-lista-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const esito = await chiama("lista-salva", {
+        id: listaModulo.id || undefined,
+        nome: $("#l-nome").value,
+        descrizione: $("#l-desc").value,
+        mittente_id: mittente()?.id
+      });
+      if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+      const era = listaModulo.id;
+      listaModulo = null;
+      QF().toast(era ? "Lista rinominata." : "Lista creata.");
+      await carica();
+      if (!era) location.hash = `#/admin/crm/mail/liste?l=${esito.id}`;
+    });
+
+    $("#mm-lista-elimina")?.addEventListener("click", async () => {
+      const l = D().liste.find(x => x.id === listaAperta);
+      if (!confirm(`Eliminare la lista «${l?.nome}»? I lead restano in archivio: sparisce solo il raggruppamento.`)) return;
+      const e = await chiama("lista-elimina", { id: listaAperta });
+      if (!e.ok) { QF().toast(e.errore || "Non riuscito."); return; }
+      QF().toast("Lista eliminata. I lead sono rimasti in archivio.");
+      listaAperta = null; contenuto = null;
+      location.hash = "#/admin/crm/mail/liste";
+      await carica();
+    });
+
+    document.querySelectorAll("[data-togli]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const e = await chiama("lista-togli", { lista_id: listaAperta, lead_id: b.dataset.togli });
+        if (!e.ok) { QF().toast(e.errore || "Non riuscito."); return; }
+        QF().toast("Tolto dalla lista. Resta in archivio.");
+        const id = listaAperta;
+        await carica();
+        listaAperta = null;
+        await apriLista(id);
+      }));
+
+    /* Lead a mano */
+    $("#mm-lead-mano")?.addEventListener("click", () => { leadModulo = {}; QF().render(); });
+    document.querySelectorAll("[data-chiudi-lead]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        leadModulo = null; QF().render();
+      }));
+    if (leadModulo) chiudiConEsc(() => { leadModulo = null; });
+
+    $("#mm-lead-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const esito = await chiama("lead-aggiungi", {
+        lista_id: listaAperta,
+        nome: $("#m-nome").value, email: $("#m-email").value, telefono: $("#m-tel").value,
+        citta: $("#m-citta").value, provincia: $("#m-prov").value,
+        indirizzo: $("#m-ind").value, sito: $("#m-sito").value,
+        origine: $("#m-origine").value
+      });
+      if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+      leadModulo = null;
+      QF().toast("Aggiunto alla lista.");
+      const id = listaAperta;
+      await carica();
+      listaAperta = null;
+      await apriLista(id);
+    });
+
+    /* Import ed export */
+    $("#mm-importa")?.addEventListener("click", () => $("#mm-file")?.click());
+    $("#mm-file")?.addEventListener("change", async e => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const righe = leggiCsv(await file.text());
+      if (!righe.length) { QF().toast("Il file non contiene righe leggibili."); return; }
+      if (!confirm(`Importare ${plurale(righe.length, "riga", "righe")} in questa lista?`)) return;
+      const esito = await chiama("lead-aggiungi", { lista_id: listaAperta, lead: righe, fonte: "file" }, 60000);
+      if (!esito.ok) { QF().toast(esito.errore || "Import non riuscito."); return; }
+      const note = [
+        esito.gia ? `${plurale(esito.gia, "era già in archivio", "erano già in archivio")} e ${esito.gia === 1 ? "è stata aggiunta" : "sono state aggiunte"} solo alla lista` : null,
+        esito.scartate ? `${esito.scartate} scartate perché senza nome o con email non valida` : null
+      ].filter(Boolean);
+      QF().toast(`${plurale(esito.inseriti, "nuova attività importata", "nuove attività importate")}${note.length ? `; ${note.join("; ")}` : ""}.`);
+      const id = listaAperta;
+      await carica();
+      listaAperta = null;
+      await apriLista(id);
+    });
+
+    $("#mm-esporta")?.addEventListener("click", () => {
+      const l = D().liste.find(x => x.id === listaAperta);
+      scaricaCsv((contenuto?.lead || []).map(x => ({
+        nome: x.nome, email: x.email, telefono: x.telefono, sito: x.sito,
+        citta: x.citta, provincia: x.provincia, indirizzo: x.indirizzo,
+        categoria: CATEGORIE[x.categoria] || x.categoria,
+        fonte: x.fonte, origine: x.query_origine,
+        no_contatto: x.no_contatto ? "si" : ""
+      })), l?.nome || "lista");
+    });
+  }
+
+  /* ---------------- CSV ----------------
+     Un formato che Excel apre senza chiedere niente: separatore
+     punto e virgola, e il BOM davanti perché le lettere accentate
+     non diventino geroglifici. */
+
+  const INTESTAZIONI = {
+    nome: ["nome", "azienda", "attività", "attivita", "ragione sociale", "business_name", "name", "company"],
+    email: ["email", "mail", "e-mail", "posta"],
+    telefono: ["telefono", "tel", "phone", "cellulare"],
+    sito: ["sito", "sito web", "website", "url", "web"],
+    citta: ["città", "citta", "comune", "city"],
+    provincia: ["provincia", "prov", "pr"],
+    indirizzo: ["indirizzo", "via", "address"],
+    categoria: ["categoria", "settore", "category"],
+    origine: ["origine", "fonte", "provenienza", "source"]
+  };
+
+  function leggiCsv(testo) {
+    const righe = [];
+    let riga = [], campo = "", virgolette = false;
+    for (let i = 0; i < testo.length; i++) {
+      const c = testo[i];
+      if (virgolette) {
+        if (c === '"' && testo[i + 1] === '"') { campo += '"'; i++; }
+        else if (c === '"') virgolette = false;
+        else campo += c;
+      } else if (c === '"') virgolette = true;
+      else if (c === "," || c === ";" || c === "\t") { riga.push(campo); campo = ""; }
+      else if (c === "\n") { riga.push(campo); righe.push(riga); riga = []; campo = ""; }
+      else if (c !== "\r") campo += c;
+    }
+    if (campo || riga.length) { riga.push(campo); righe.push(riga); }
+
+    const testa = (righe.shift() || []).map(h => h.trim().toLowerCase().replace(/^﻿/, ""));
+    /* Le intestazioni si riconoscono in italiano e in inglese:
+       un file esportato da un gestionale italiano non deve essere
+       rinominato a mano prima di poter entrare. */
+    const dove = {};
+    for (const [campo2, nomi] of Object.entries(INTESTAZIONI)) {
+      const i = testa.findIndex(h => nomi.includes(h));
+      if (i >= 0) dove[campo2] = i;
+    }
+    return righe
+      .filter(r => r.some(v => v.trim()))
+      .map(r => Object.fromEntries(Object.entries(dove).map(([k, i]) => [k, (r[i] || "").trim()])))
+      .filter(r => r.nome || r.email);
+  }
+
+  function scaricaCsv(righe, nome) {
+    if (!righe.length) { QF().toast("Non c'è niente da esportare."); return; }
+    const colonne = Object.keys(righe[0]);
+    const cella = v => {
+      const s = v == null ? "" : String(v);
+      return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const testo = "﻿" + [colonne.join(";"), ...righe.map(r => colonne.map(c => cella(r[c])).join(";"))].join("\n");
+    const url = URL.createObjectURL(new Blob([testo], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${nome.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    QF().toast(`${plurale(righe.length, "riga esportata", "righe esportate")}.`);
   }
 
   function bindSmtp() {

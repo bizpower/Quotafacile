@@ -943,6 +943,14 @@ create index if not exists mm_lista_lead_lead_idx on public.mm_lista_lead (lead_
 comment on table public.mm_lista_lead is
   'Appartenenza di un lead a una lista. Il lead resta uno solo, in crm_lead: le liste sono punti di vista su quell''elenco, non copie.';
 
+-- I lead che arrivano a mano o da un file non hanno un place_id
+-- di Google, quindi l'unicita su quella colonna non li copre:
+-- il doppione si riconosce dall'indirizzo email, che e anche il
+-- solo modo in cui reimportare due volte lo stesso file
+-- produrrebbe due schede della stessa azienda.
+create index if not exists crm_lead_email_idx
+  on public.crm_lead (lower(email)) where email is not null;
+
 -- ---- 9d. Campagne ----
 create table if not exists public.mm_campagne (
   id               uuid primary key default gen_random_uuid(),
