@@ -959,6 +959,12 @@ create table if not exists public.mm_campagne (
   mittente_id      uuid references public.mm_mittenti(id) on delete set null,
   lista_id         uuid references public.mm_liste(id) on delete set null,
   modello_id       uuid references public.crm_email_modelli(id) on delete set null,
+  smtp_id          uuid references public.mm_smtp(id) on delete set null,
+  -- Un invio di massa senza pause somiglia a uno spam anche
+  -- quando non lo e: la pausa fra un messaggio e l'altro serve a
+  -- non farsi chiudere la casella. Sotto i 15 secondi, su una
+  -- casella condivisa, il fornitore sospende.
+  pausa_secondi    integer not null default 60,
   stato            text not null default 'bozza'
                      check (stato in ('bozza','in_revisione','programmata','in_corso','completata','annullata')),
   programmata_per  timestamptz,
@@ -988,6 +994,10 @@ create table if not exists public.mm_email (
   programmata_per  timestamptz,
   inviata_il       timestamptz,
   errore           text,
+  -- Una email corretta a mano non va rigenerata: chi l'ha
+  -- riscritta aveva un motivo, e sovrascriverla lo cancella in
+  -- silenzio.
+  modificata       boolean not null default false,
   meta             jsonb not null default '{}'::jsonb
 );
 
@@ -997,6 +1007,7 @@ create index if not exists mm_email_coda_idx      on public.mm_email (programmat
   where stato = 'in_coda';
 create index if not exists mm_email_campagna_idx  on public.mm_email (campagna_id);
 create index if not exists mm_email_dest_idx      on public.mm_email (lower(destinatario), creata_il desc);
+create index if not exists mm_email_lead_idx      on public.mm_email (lead_id) where lead_id is not null;
 
 -- ---- 9f. Blacklist ----
 -- crm_lead.no_contatto copre chi è già nel CRM. Questa copre

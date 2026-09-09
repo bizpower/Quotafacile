@@ -98,6 +98,7 @@
   function dimentica() {
     dati = null; fase = "vuoto"; avviso = null; dettaglio = null;
     posta = null; bozza = null; contenuto = null; listaAperta = null;
+    postaDati = null; scelte = new Set(); postaAperta = null;
   }
 
   /* ---------------- DATI ---------------- */
@@ -138,24 +139,6 @@
   ];
 
   const INARRIVO = {
-    campagne: {
-      titolo: "Campaigns",
-      cosa: "Preparare un invio a una lista partendo da un modello, rivederlo riga per riga e programmarlo.",
-      come: "Ogni campagna genera le sue email in stato «bozza»: si guardano tutte prima che parta qualcosa.",
-      serve: "Una casella di invio configurata."
-    },
-    pronte: {
-      titolo: "Email Ready",
-      cosa: "La coda di ciò che è scritto e approvato ma non ancora partito: si corregge, si programma, si annulla.",
-      come: "Ogni messaggio è una riga con il suo testo definitivo, non un modello da riempire al momento dell'invio.",
-      serve: "Una casella di invio configurata."
-    },
-    registro: {
-      titolo: "Send Log",
-      cosa: "Tutto ciò che è partito e tutto ciò che è fallito, con l'errore esatto e la possibilità di cercare per indirizzo.",
-      come: "Assorbe il registro che il CRM ha già nella sezione Mail.",
-      serve: "Niente."
-    },
     automazioni: {
       titolo: "Automazioni",
       cosa: "Sequenze: un secondo messaggio dopo N giorni a chi non ha risposto, e lo stop automatico appena risponde.",
@@ -741,6 +724,295 @@
           <div class="mm-azioni" style="justify-content:flex-end">
             <button type="button" class="btn btn-ghost btn-sm" data-chiudi-lead>Annulla</button>
             <button type="submit" class="btn btn-primary btn-sm">Aggiungi</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  }
+
+  /* ---------------- SEZIONI · CAMPAIGNS e EMAIL READY ----------------
+     La campagna prepara, non spedisce: genera un messaggio per
+     ogni destinatario e lo lascia in bozza. Il momento in cui
+     qualcosa parte è sempre un clic separato, su email che
+     qualcuno ha guardato. */
+
+  let campagnaModulo = null;
+  let postaDati = null;       // { posta, conteggi }
+  let filtroPosta = { stato: "tutti", cerca: "", campagna_id: "" };
+  let scelte = new Set();
+  let postaAperta = null;     // messaggio in lettura o modifica
+  let invioAperto = null;     // "adesso" | "programma"
+  let quandoInvio = "";
+  let inInvio = false;
+
+  const STATI_POSTA = {
+    bozza: ["✎", "Bozza"], pronta: ["✓", "Pronta"], in_coda: ["🕒", "In coda"],
+    inviata: ["📤", "Inviata"], fallita: ["⚠️", "Fallita"], annullata: ["✕", "Annullata"]
+  };
+
+  async function caricaPosta2() {
+    const e = await chiama("posta-elenco", filtroPosta, 30000);
+    postaDati = e.ok ? { posta: e.posta || [], conteggi: e.conteggi || {} } : { posta: [], conteggi: {} };
+    if (!e.ok) QF().toast(e.errore || "Posta non leggibile.");
+    QF().render();
+  }
+
+  /* Fra un'ora, arrotondata ai cinque minuti: è il valore che
+     serve nove volte su dieci, e sbagliarlo costa un invio. */
+  function fraUnOra() {
+    const d = new Date(Date.now() + 3600000);
+    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  }
+
+  /* --- Campaigns --- */
+
+  function campagneView() {
+    const cc = D().campagne;
+    const caselle = smtpDelMittente().filter(s => s.stato === "attivo");
+    return `
+    <div class="mm-testata mm-testata-sezione">
+      <p class="muted" style="margin:0;max-width:44rem">
+        Una campagna prende una lista e un modello e prepara un messaggio per ognuno, lasciandolo
+        in bozza. Non parte niente finché non lo si approva in <a href="#/admin/crm/mail/pronte">Email Ready</a>.
+      </p>
+      <div class="mm-azioni">
+        <button class="btn btn-primary btn-sm" id="mm-campagna-nuova">＋ Nuova campagna</button>
+      </div>
+    </div>
+
+    ${caselle.length === 0 ? `
+      <div class="legal-warning" role="status">
+        Nessuna casella attiva: le campagne si possono preparare, ma per farle partire serve
+        <a href="#/admin/crm/mail/smtp">una casella di invio</a>.
+      </div>` : ""}
+
+    ${cc.length === 0 ? `
+      <div class="card"><p class="muted mm-vuoto" style="border:0;padding:2.4rem 1rem">
+        Nessuna campagna.</p></div>`
+    : `<div class="mm-caselle">${cc.map(c => {
+        const lista = D().liste.find(l => l.id === c.lista_id);
+        return `
+        <div class="card mm-modello">
+          <div class="mm-testata">
+            <div style="min-width:0">
+              <h3 style="margin:0">${esc(c.nome)}</h3>
+              <p class="muted" style="margin:.15rem 0 0;font-size:.78rem">
+                ${plurale(c.quanti ?? 0, "messaggio", "messaggi")}${lista ? ` · lista ${esc(lista.nome)}` : ""} ·
+                una ogni ${c.pausa_secondi}s
+              </p>
+            </div>
+            <span class="pill ${c.stato === "completata" ? "" : "pill-on"}">${esc(c.stato.replace("_", " "))}</span>
+          </div>
+          ${c.note ? `<p class="muted" style="font-size:.8rem;margin:0">${esc(c.note)}</p>` : ""}
+          <div class="mm-azioni">
+            <a class="btn btn-outline btn-sm" href="#/admin/crm/mail/pronte?c=${esc(c.id)}">Rivedi i messaggi</a>
+            <button class="btn btn-ghost btn-sm danger" data-campagna-elimina="${esc(c.id)}">🗑</button>
+          </div>
+        </div>`;
+      }).join("")}</div>`}
+
+    ${campagnaModulo ? campagnaModuloView() : ""}`;
+  }
+
+  function campagnaModuloView() {
+    const caselle = smtpDelMittente().filter(s => s.stato === "attivo");
+    const modelli = (posta?.modelli || []).filter(m => m.attivo);
+    return `
+    <div class="mm-velo" data-chiudi-campagna>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Nuova campagna</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-campagna>Chiudi</button>
+        </div>
+        <form id="mm-campagna-form">
+          <div class="mm-campi">
+            <label class="field mm-campo-largo"><span>Nome *</span>
+              <input id="k-nome" required placeholder="Ristoranti Milano · settembre"></label>
+            <label class="field"><span>Lista *</span>
+              <select id="k-lista" required>
+                <option value="">— scegli —</option>
+                ${D().liste.map(l => `<option value="${esc(l.id)}">${esc(l.nome)} (${l.quanti ?? 0})</option>`).join("")}
+              </select></label>
+            <label class="field"><span>Modello *</span>
+              <select id="k-modello" required>
+                <option value="">— scegli —</option>
+                ${modelli.map(m => `<option value="${esc(m.id)}">${esc(m.nome)}</option>`).join("")}
+              </select></label>
+            <label class="field"><span>Casella</span>
+              <select id="k-smtp">
+                ${caselle.length === 0 ? `<option value="">nessuna attiva</option>`
+                  : caselle.map(s => `<option value="${esc(s.id)}">${esc(s.nome)}</option>`).join("")}
+              </select></label>
+            <label class="field"><span>Pausa fra un invio e l'altro</span>
+              <input id="k-pausa" type="number" min="15" max="3600" value="60"></label>
+            <label class="field mm-campo-largo"><span>Note</span>
+              <input id="k-note" placeholder="facoltativo"></label>
+          </div>
+          <p class="privacy-hint">
+            Vengono saltati automaticamente chi non ha un indirizzo, chi si è opposto, chi è in
+            blacklist e chi abbiamo già contattato: alla fine ti dico quanti e perché.
+            Sotto i 15 secondi di pausa una casella condivisa come Aruba rischia la sospensione.
+          </p>
+          <div class="mm-azioni" style="justify-content:flex-end">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-campagna>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm">Prepara i messaggi</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  }
+
+  /* --- Email Ready --- */
+
+  function pronteView() {
+    if (!postaDati) return `<div class="card"><p class="muted">Carico la posta in uscita…</p></div>`;
+    const c = postaDati.conteggi;
+    const pp = postaDati.posta;
+    const caselle = smtpDelMittente().filter(s => s.stato === "attivo");
+    const selezionabili = pp.filter(m => m.stato !== "inviata");
+
+    return `
+    <div class="mm-riquadri mm-riquadri-cinque">
+      ${[["bozza", "✎", "Bozze"], ["pronta", "✓", "Pronte"], ["in_coda", "🕒", "In coda"],
+         ["inviata", "📤", "Inviate"], ["fallita", "⚠️", "Fallite"]].map(([k, ico, et]) => `
+        <button class="mm-riq ${filtroPosta.stato === k ? "scelto" : ""}" data-filtro="${k}">
+          <span class="mm-riq-ico">${ico}</span>
+          <span class="mm-riq-num">${c[k] ?? 0}</span>
+          <span class="mm-riq-eti">${et}</span>
+        </button>`).join("")}
+    </div>
+
+    <div class="card">
+      <div class="mm-testata mm-testata-sezione">
+        <div class="mm-azioni">
+          <input id="mm-cerca-posta" class="mm-cerca" value="${esc(filtroPosta.cerca)}" placeholder="Cerca destinatario o oggetto">
+          ${filtroPosta.stato !== "tutti" || filtroPosta.campagna_id ? `
+            <button class="btn btn-ghost btn-sm" id="mm-filtro-via">✕ Togli i filtri</button>` : ""}
+        </div>
+        <div class="mm-azioni">
+          <button class="btn btn-outline btn-sm" id="mm-posta-csv" ${pp.length ? "" : "disabled"}>⬇ CSV</button>
+        </div>
+      </div>
+
+      ${scelte.size ? `
+        <div class="mm-barra-scelta">
+          <span>${plurale(scelte.size, "selezionato", "selezionati")}</span>
+          <div class="mm-azioni">
+            <button class="btn btn-outline btn-sm" data-massa="pronta">✓ Approva</button>
+            <button class="btn btn-outline btn-sm" data-massa="bozza">↩ Rimetti in bozza</button>
+            <button class="btn btn-outline btn-sm" data-massa="annullata">✕ Annulla</button>
+            <button class="btn btn-ghost btn-sm danger" id="mm-posta-elimina">🗑 Elimina</button>
+            <button class="btn btn-outline btn-sm" id="mm-programma" ${caselle.length ? "" : "disabled"}>🕒 Programma</button>
+            <button class="btn btn-primary btn-sm" id="mm-invia-ora" ${caselle.length ? "" : "disabled"}>📤 Invia ora</button>
+          </div>
+        </div>` : ""}
+
+      ${pp.length === 0 ? `
+        <p class="muted mm-vuoto" style="border:0">
+          ${filtroPosta.stato === "tutti" && !filtroPosta.cerca
+            ? `Nessun messaggio. Preparane con una <a href="#/admin/crm/mail/campagne">campagna</a>.`
+            : "Nessun messaggio con questi filtri."}</p>`
+      : `
+        <div class="mm-tabella">
+          <table>
+            <thead><tr>
+              <th style="width:2.2rem"><input type="checkbox" id="mm-posta-tutti"
+                ${selezionabili.length && selezionabili.every(m => scelte.has(m.id)) ? "checked" : ""}></th>
+              <th>Destinatario</th><th>Oggetto</th><th>Stato</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${pp.map(m => `
+                <tr class="${m.stato === "inviata" ? "gia-presente" : ""}">
+                  <td>${m.stato === "inviata" ? "" : `
+                    <input type="checkbox" data-posta="${esc(m.id)}" ${scelte.has(m.id) ? "checked" : ""}>`}</td>
+                  <td><strong>${esc(m.destinatario)}</strong></td>
+                  <td>
+                    <a href="#" data-apri="${esc(m.id)}">${esc(m.oggetto || "(senza oggetto)")}</a>
+                    <span class="muted" style="display:block;font-size:.74rem">${esc(m.corpo.replace(/\s+/g, " ").slice(0, 90))}…</span>
+                  </td>
+                  <td>
+                    ${STATI_POSTA[m.stato]?.[0] ?? ""} ${esc(STATI_POSTA[m.stato]?.[1] ?? m.stato)}
+                    ${m.programmata_per ? `<span class="muted" style="display:block;font-size:.7rem">${dataOra(m.programmata_per)}</span>` : ""}
+                    ${m.inviata_il ? `<span class="muted" style="display:block;font-size:.7rem">${dataOra(m.inviata_il)}</span>` : ""}
+                    ${m.modificata ? `<span class="muted" style="display:block;font-size:.7rem">corretta a mano</span>` : ""}
+                    ${m.errore ? `<span class="mm-errore" style="display:block;font-size:.7rem">${esc(m.errore.slice(0, 70))}</span>` : ""}
+                  </td>
+                  <td><button class="btn btn-ghost btn-sm" data-apri="${esc(m.id)}">Apri</button></td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`}
+    </div>
+
+    ${postaAperta ? postaApertaView() : ""}
+    ${invioAperto ? invioView() : ""}`;
+  }
+
+  function postaApertaView() {
+    const m = postaAperta;
+    const partita = m.stato === "inviata";
+    return `
+    <div class="mm-velo" data-chiudi-posta>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>${esc(m.destinatario)}</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-posta>Chiudi</button>
+        </div>
+        ${partita ? `
+          <p class="privacy-hint">
+            Questo messaggio è partito il ${dataOra(m.inviata_il)}. Il testo che è uscito non si
+            riscrive: resta com'era, perché è quello che una persona ha ricevuto.
+          </p>` : ""}
+        <form id="mm-posta-form">
+          <label class="field"><span>Oggetto</span>
+            <input id="p-oggetto" value="${esc(m.oggetto)}" ${partita ? "readonly" : ""}></label>
+          <label class="field" style="margin-top:.6rem"><span>Testo</span>
+            <textarea id="p-corpo" rows="14" class="mail-corpo" ${partita ? "readonly" : ""}>${esc(m.corpo)}</textarea></label>
+          ${partita ? "" : `
+            <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+              <button type="button" class="btn btn-ghost btn-sm" data-chiudi-posta>Annulla</button>
+              <button type="submit" class="btn btn-primary btn-sm">Salva e approva</button>
+            </div>`}
+        </form>
+      </div>
+    </div>`;
+  }
+
+  function invioView() {
+    const caselle = smtpDelMittente().filter(s => s.stato === "attivo");
+    const adesso = invioAperto === "adesso";
+    return `
+    <div class="mm-velo" data-chiudi-invio>
+      <div class="card mm-dialogo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>${adesso ? `Invia ${plurale(scelte.size, "messaggio", "messaggi")}` : `Programma ${plurale(scelte.size, "messaggio", "messaggi")}`}</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-invio>Chiudi</button>
+        </div>
+        <form id="mm-invio-form">
+          <label class="field"><span>Da quale casella</span>
+            <select id="i-smtp" required>
+              ${caselle.map(s => `<option value="${esc(s.id)}">${esc(s.nome)} · ${esc(s.from_email)} (${s.inviate_oggi}/${s.limite_giornaliero} oggi)</option>`).join("")}
+            </select></label>
+          ${adesso ? `
+            <label class="field" style="margin-top:.6rem"><span>Pausa fra un invio e l'altro (secondi)</span>
+              <input id="i-pausa" type="number" min="0" max="300" value="15"></label>
+            <p class="privacy-hint">
+              Parte un blocco alla volta, al massimo venti messaggi: una richiesta al server ha un
+              tempo massimo, e una casella condivisa ha una soglia oltre la quale viene sospesa.
+              Quanti ne restano te lo dico alla fine.
+            </p>`
+          : `
+            <label class="field" style="margin-top:.6rem"><span>Quando</span>
+              <input id="i-quando" type="datetime-local" required value="${esc(quandoInvio)}"></label>
+            <p class="privacy-hint">
+              I messaggi restano in coda con questa data. La partenza automatica all'orario indicato
+              arriva col prossimo passo: per ora la coda si svuota premendo «Invia ora».
+            </p>`}
+          <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-invio>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm" ${inInvio ? "disabled" : ""}>
+              ${inInvio ? "Invio…" : adesso ? "Invia ora" : "Metti in coda"}</button>
           </div>
         </form>
       </div>
@@ -1389,6 +1661,8 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
             : attiva === "smtp" ? smtpView()
             : attiva === "lead-finder" ? finderView()
             : attiva === "liste" ? listeView()
+            : attiva === "campagne" ? campagneView()
+            : attiva === "pronte" ? pronteView()
             : attiva === "modelli" ? modelliView()
             : attiva === "ai-writer" ? scrittoreView()
             : inArrivoView(attiva)}
@@ -1429,6 +1703,8 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     bindListe();
     bindModelli();
     bindScrittore();
+    bindCampagne();
+    bindPronte();
   }
 
   /* Quale lista è aperta lo dice l'indirizzo, non una variabile:
@@ -1770,6 +2046,211 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
   }
 
   /* ---------------- EVENTI · TEMPLATES ---------------- */
+  /* ---------------- EVENTI · CAMPAIGNS ---------------- */
+  function bindCampagne() {
+    const $ = s => document.querySelector(s);
+    if (rottaCorrente !== "campagne") return;
+    /* Il modulo ha bisogno dei modelli, che stanno nell'altra
+       funzione: senza, la tendina sarebbe vuota senza spiegazione. */
+    if (!posta) { caricaPosta(); return; }
+
+    $("#mm-campagna-nuova")?.addEventListener("click", () => { campagnaModulo = {}; QF().render(); });
+    document.querySelectorAll("[data-chiudi-campagna]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        campagnaModulo = null; QF().render();
+      }));
+    if (campagnaModulo) chiudiConEsc(() => { campagnaModulo = null; });
+
+    $("#mm-campagna-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const esito = await chiama("campagna-salva", {
+        nome: $("#k-nome").value, lista_id: $("#k-lista").value,
+        modello_id: $("#k-modello").value, smtp_id: $("#k-smtp").value || undefined,
+        pausa_secondi: Number($("#k-pausa").value), note: $("#k-note").value,
+        mittente_id: mittente()?.id
+      }, 60000);
+      if (!esito.ok) { QF().toast(esito.errore || "Campagna non creata."); return; }
+      const s = esito.saltati;
+      const note = [
+        s.senzaEmail ? `${s.senzaEmail} senza indirizzo` : null,
+        s.opposti ? plurale(s.opposti, "opposto", "opposti") : null,
+        s.inBlacklist ? `${s.inBlacklist} in blacklist` : null,
+        s.giaContattati ? plurale(s.giaContattati, "già contattato", "già contattati") : null
+      ].filter(Boolean);
+      campagnaModulo = null;
+      QF().toast(`${plurale(esito.creati, "messaggio preparato", "messaggi preparati")}${note.length ? `; saltati ${note.join(", ")}` : ""}.`);
+      await carica();
+      location.hash = `#/admin/crm/mail/pronte?c=${esito.id}`;
+    });
+
+    document.querySelectorAll("[data-campagna-elimina]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const c = D().campagne.find(x => x.id === b.dataset.campagnaElimina);
+        if (!confirm(`Eliminare «${c?.nome}»? I messaggi mai partiti spariscono; quelli già inviati restano nel registro.`)) return;
+        const e = await chiama("campagna-elimina", { id: b.dataset.campagnaElimina });
+        if (!e.ok) { QF().toast(e.errore || "Non riuscito."); return; }
+        QF().toast("Campagna eliminata. Gli invii già fatti restano.");
+        await carica();
+      }));
+  }
+
+  /* ---------------- EVENTI · EMAIL READY ---------------- */
+  function bindPronte() {
+    const $ = s => document.querySelector(s);
+    if (rottaCorrente !== "pronte") return;
+
+    /* La campagna da guardare la dice l'indirizzo. */
+    const q = (location.hash || "").split("?")[1];
+    const voluta = q ? new URLSearchParams(q).get("c") || "" : "";
+    if (voluta !== filtroPosta.campagna_id) {
+      filtroPosta = { ...filtroPosta, campagna_id: voluta };
+      postaDati = null; scelte = new Set();
+      caricaPosta2();
+      return;
+    }
+    if (!postaDati) { caricaPosta2(); return; }
+
+    document.querySelectorAll("[data-filtro]").forEach(b =>
+      b.addEventListener("click", () => {
+        filtroPosta.stato = filtroPosta.stato === b.dataset.filtro ? "tutti" : b.dataset.filtro;
+        scelte = new Set();
+        caricaPosta2();
+      }));
+
+    $("#mm-filtro-via")?.addEventListener("click", () => {
+      filtroPosta = { stato: "tutti", cerca: "", campagna_id: "" };
+      scelte = new Set();
+      location.hash = "#/admin/crm/mail/pronte";
+    });
+
+    /* La ricerca parte quando si smette di scrivere: una chiamata
+       per ogni lettera è una chiamata che non serve a nessuno. */
+    const campo = $("#mm-cerca-posta");
+    if (campo) {
+      let attesa;
+      campo.addEventListener("input", () => {
+        clearTimeout(attesa);
+        attesa = setTimeout(() => {
+          filtroPosta.cerca = campo.value.trim();
+          scelte = new Set();
+          caricaPosta2();
+        }, 400);
+      });
+    }
+
+    $("#mm-posta-tutti")?.addEventListener("change", e => {
+      const sel = postaDati.posta.filter(m => m.stato !== "inviata");
+      scelte = e.target.checked ? new Set(sel.map(m => m.id)) : new Set();
+      QF().render();
+    });
+
+    document.querySelectorAll("[data-posta]").forEach(c =>
+      c.addEventListener("change", () => {
+        if (c.checked) scelte.add(c.dataset.posta); else scelte.delete(c.dataset.posta);
+        QF().render();
+      }));
+
+    document.querySelectorAll("[data-apri]").forEach(b =>
+      b.addEventListener("click", e => {
+        e.preventDefault();
+        postaAperta = postaDati.posta.find(m => m.id === b.dataset.apri) || null;
+        QF().render();
+      }));
+
+    document.querySelectorAll("[data-chiudi-posta]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        postaAperta = null; QF().render();
+      }));
+    if (postaAperta) chiudiConEsc(() => { postaAperta = null; });
+
+    $("#mm-posta-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const id = postaAperta.id;
+      const esito = await chiama("posta-salva", {
+        id, oggetto: $("#p-oggetto").value, corpo: $("#p-corpo").value
+      });
+      if (!esito.ok) { QF().toast(esito.errore || "Non salvato."); return; }
+      await chiama("posta-stato", { ids: [id], stato: "pronta" });
+      postaAperta = null;
+      QF().toast("Salvato e approvato.");
+      await caricaPosta2();
+    });
+
+    document.querySelectorAll("[data-massa]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const e = await chiama("posta-stato", { ids: [...scelte], stato: b.dataset.massa });
+        if (!e.ok) { QF().toast(e.errore || "Non riuscito."); return; }
+        const persi = e.richiesti - e.aggiornati;
+        QF().toast(`${plurale(e.aggiornati, "messaggio aggiornato", "messaggi aggiornati")}${persi ? `; ${persi} già partiti, lasciati com'erano` : ""}.`);
+        scelte = new Set();
+        await caricaPosta2();
+      }));
+
+    $("#mm-posta-elimina")?.addEventListener("click", async () => {
+      if (!confirm(`Eliminare ${plurale(scelte.size, "messaggio", "messaggi")}? Quelli già partiti restano.`)) return;
+      const e = await chiama("posta-elimina", { ids: [...scelte] });
+      if (!e.ok) { QF().toast(e.errore || "Non riuscito."); return; }
+      QF().toast(`${plurale(e.eliminati, "messaggio eliminato", "messaggi eliminati")}.`);
+      scelte = new Set();
+      await caricaPosta2();
+    });
+
+    $("#mm-invia-ora")?.addEventListener("click", () => { invioAperto = "adesso"; QF().render(); });
+    $("#mm-programma")?.addEventListener("click", () => {
+      invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
+    });
+
+    document.querySelectorAll("[data-chiudi-invio]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        invioAperto = null; QF().render();
+      }));
+    if (invioAperto) chiudiConEsc(() => { invioAperto = null; });
+
+    $("#mm-invio-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const smtp = $("#i-smtp").value;
+      if (invioAperto === "programma") {
+        quandoInvio = $("#i-quando").value;
+        const esito = await chiama("posta-programma", { ids: [...scelte], smtp_id: smtp, quando: quandoInvio });
+        if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+        invioAperto = null; scelte = new Set();
+        QF().toast(`${plurale(esito.programmati, "messaggio in coda", "messaggi in coda")} per il ${dataOra(esito.quando)}.`);
+        await caricaPosta2();
+        return;
+      }
+
+      const pausa = Number($("#i-pausa").value);
+      if (!confirm(`Mandare ${plurale(scelte.size, "messaggio", "messaggi")} adesso? Una volta partiti non si richiamano.`)) return;
+      inInvio = true; QF().render();
+      const esito = await chiama("posta-invia", { ids: [...scelte], smtp_id: smtp, pausa_secondi: pausa }, 150000);
+      inInvio = false;
+      if (!esito.ok) { QF().toast(esito.errore || "Invio non riuscito."); QF().render(); return; }
+
+      const note = [
+        esito.fallite ? `${esito.fallite} fallite` : null,
+        esito.bloccati ? `${esito.bloccati} rifiutate perché opposte o in blacklist` : null,
+        esito.rimasti ? `${esito.rimasti} ancora da mandare: premi di nuovo` : null,
+        esito.limite ? `limite giornaliero della casella: ne restavano ${esito.limite}` : null
+      ].filter(Boolean);
+      invioAperto = null;
+      if (!esito.rimasti) scelte = new Set();
+      QF().toast(`${plurale(esito.partite, "messaggio partito", "messaggi partiti")}${note.length ? `; ${note.join("; ")}` : ""}.`);
+      await carica();
+      await caricaPosta2();
+    });
+
+    $("#mm-posta-csv")?.addEventListener("click", () => {
+      scaricaCsv(postaDati.posta.map(m => ({
+        destinatario: m.destinatario, oggetto: m.oggetto, stato: m.stato,
+        programmata_per: m.programmata_per || "", inviata_il: m.inviata_il || "",
+        errore: m.errore || "", corpo: m.corpo
+      })), "posta-in-uscita");
+    });
+  }
+
   function bindModelli() {
     const $ = s => document.querySelector(s);
     if (rottaCorrente !== "modelli" && rottaCorrente !== "ai-writer") return;
