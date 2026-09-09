@@ -957,3 +957,70 @@ a.chip { display: inline-block; text-decoration: none; }
   .mm-griglia { grid-template-columns: 1fr; }
   .mm-barra-eti { display: none; }
 }
+
+/* ---------- Mail Marketing · caselle di invio ---------- */
+.mm-testata-sezione { align-items: flex-start; margin-bottom: 1.1rem; flex-wrap: wrap; }
+.mm-testata-sezione > p { flex: 1 1 20rem; }
+.mm-testata-sezione > .mm-azioni { flex: 0 0 auto; flex-wrap: nowrap; }
+.mm-azioni { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+/* Il cestino sta da solo all'altro capo: cancellare non è
+   un'azione da mettere accanto a quelle che si usano ogni giorno. */
+.mm-azioni .danger { margin-left: auto; }
+
+.mm-caselle { display: grid; grid-template-columns: repeat(auto-fill, minmax(24rem, 1fr)); gap: 1rem; }
+.mm-casella-grande { margin: 0; display: flex; flex-direction: column; gap: .7rem; }
+.mm-casella-grande.in-errore { border-left: 3px solid var(--danger); }
+
+.mm-errore-box { background: #FDF0F0; border-radius: 8px; padding: .45rem .6rem; }
+.mm-ok-box { color: var(--green-600); font-size: .78rem; margin: 0; }
+
+.mm-quota-riga { display: flex; justify-content: space-between; font-size: .72rem;
+  color: var(--ink-soft); margin-bottom: .2rem; }
+.mm-quota-riemp.quasi { background: var(--gold-500); }
+.mm-quota-riemp.piena { background: var(--danger); }
+
+.mm-dns-sunto { border: 1px solid var(--line); border-radius: 10px; padding: .55rem .7rem; }
+.mm-dns-eti { font-size: .72rem; font-weight: 700; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--ink-soft); }
+.mm-semafori { display: flex; gap: .9rem; font-size: .76rem; margin: .4rem 0 0; color: var(--ink-soft); }
+
+.mm-firma > summary { cursor: pointer; font-size: .82rem; font-weight: 600; color: var(--ink-soft); }
+.mm-firma > summary:hover { color: var(--green-800); }
+.mm-firma textarea { width: 100%; margin-top: .5rem; font-family: var(--font-body);
+  font-size: .8rem; padding: .5rem .6rem; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); color: var(--ink); resize: vertical; }
+.mm-firma-piede { display: flex; justify-content: space-between; align-items: center;
+  gap: .6rem; flex-wrap: wrap; margin-top: .4rem; font-size: .78rem; color: var(--ink-soft); }
+.mm-firma-piede label { display: flex; align-items: center; gap: .35rem; }
+
+/* Il modulo della casella */
+.mm-dialogo-largo { max-width: 46rem; max-height: 88vh; overflow-y: auto; }
+.mm-campi { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+.mm-campo-largo { grid-column: 1 / -1; }
+.mm-campi .field { margin: 0; }
+.mm-campi .field > span { display: block; font-size: .74rem; font-weight: 700;
+  letter-spacing: .03em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: .2rem; }
+.mm-campi input, .mm-campi select { width: 100%; }
+.mm-interruttore { display: flex; align-items: flex-start; gap: .55rem;
+  border: 1px solid var(--line); border-radius: 10px; padding: .55rem .7rem; }
+.mm-interruttore input { width: auto; margin-top: .15rem; }
+.mm-interruttore span { font-size: .84rem; font-weight: 600; text-transform: none;
+  letter-spacing: 0; color: var(--ink); }
+.mm-interruttore em { display: block; font-style: normal; font-weight: 400;
+  font-size: .76rem; color: var(--ink-soft); margin-top: .1rem; }
+
+/* I record del dominio */
+.mm-punteggio { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .75rem; margin-bottom: .8rem; }
+.mm-dns-blocco { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .75rem; margin-bottom: .6rem; }
+.mm-record { display: block; font-size: .72rem; background: var(--green-50);
+  border-radius: 6px; padding: .4rem .5rem; word-break: break-all; margin-bottom: .25rem; }
+.mm-consiglio { display: flex; gap: .4rem; align-items: flex-start; margin-top: .4rem; }
+.mm-consiglio .mm-record { flex: 1; margin: 0; }
+.mm-consiglio-testo { font-size: .76rem; color: var(--ink-soft); background: var(--green-50);
+  border-radius: 6px; padding: .4rem .5rem; margin: .35rem 0 0; }
+
+@media (max-width: 700px) {
+  .mm-caselle { grid-template-columns: 1fr; }
+  .mm-campi { grid-template-columns: 1fr; }
+  .mm-consiglio { flex-direction: column; }
+}
