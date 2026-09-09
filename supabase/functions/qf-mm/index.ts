@@ -6,8 +6,8 @@
 // tutte, una azione per volta.
 //
 // Costruite finora: la Dashboard, le caselle di invio, le liste
-// di lead, la scrittura assistita, le campagne e la posta in
-// uscita.
+// di lead, la scrittura assistita, le campagne, la posta in
+// uscita, la coda automatica e il registro.
 //
 // I LEAD NON SI DUPLICANO
 // Su Lovable ogni lista aveva le proprie righe: la stessa azienda
@@ -75,6 +75,19 @@ function uguali(a: string, b: string): boolean {
 }
 
 let improntaDb: string | null | undefined;
+let improntaCoda: string | null | undefined;
+
+/* Il token del cron apre una porta sola. Tenerlo separato dalla
+   chiave di amministrazione vuol dire che un cron compromesso fa
+   partire posta gia approvata, non legge il CRM. */
+async function improntaCodaAttesa(): Promise<string | null> {
+  if (improntaCoda === undefined) {
+    const { data } = await db.from("impostazioni_admin")
+      .select("coda_hash").eq("id", 1).maybeSingle();
+    improntaCoda = data?.coda_hash ?? null;
+  }
+  return improntaCoda;
+}
 
 async function improntaAttesa(): Promise<string | null> {
   const segreto = Deno.env.get("QF_ADMIN_TOKEN");
@@ -1199,6 +1212,215 @@ async function postaInvia(d: Record<string, unknown>) {
   };
 }
 
+// ---------------- La coda che parte da sola ----------------
+
+/* pg_cron chiama questa azione a intervalli regolari. Manda
+   pochi messaggi per giro, non tutti: cinque al minuto sono un
+   ritmo che somiglia a una persona che scrive, mentre duecento
+   in tre minuti sono un ritmo che somiglia a uno spam — e i
+   fornitori li distinguono esattamente così.
+
+   Ogni giro registra cosa ha fatto in mm_coda_giri, perché «il
+   cron gira?» deve avere una risposta guardando il database, non
+   una supposizione. */
+
+const PER_GIRO = 5;
+const PAUSA_CODA = 3;
+
+async function codaScarica() {
+  const adesso = new Date().toISOString();
+
+  const { data: dovute, error } = await db.from("mm_email")
+    .select("id,destinatario,oggetto,corpo,smtp_id")
+    .eq("stato", "in_coda")
+    .not("smtp_id", "is", null)
+    .lte("programmata_per", adesso)
+    .order("programmata_per")
+    .limit(PER_GIRO);
+  if (error) throw new Error(error.message);
+
+  const { count: inAttesa } = await db.from("mm_email")
+    .select("id", { count: "exact", head: true })
+    .eq("stato", "in_coda").lte("programmata_per", adesso);
+
+  if (!dovute?.length) {
+    await db.from("mm_coda_giri").insert({ trovati: 0, partite: 0, fallite: 0, in_attesa: inAttesa ?? 0 });
+    return { trovati: 0, partite: 0, fallite: 0, inAttesa: inAttesa ?? 0 };
+  }
+
+  /* Le stesse due liste di sempre, controllate adesso: una
+     programmazione fatta ieri non sa di un'opposizione arrivata
+     stanotte. */
+  const [{ data: vietati }, { data: opposti }] = await Promise.all([
+    db.from("mm_blacklist").select("email"),
+    db.from("crm_lead").select("email").eq("no_contatto", true).not("email", "is", null),
+  ]);
+  const nero = new Set([
+    ...(vietati ?? []).map((r: { email: string }) => r.email.toLowerCase()),
+    ...(opposti ?? []).map((r: { email: string }) => r.email.toLowerCase()),
+  ]);
+
+  const bloccati = dovute.filter((m) => nero.has(m.destinatario.toLowerCase()));
+  if (bloccati.length) {
+    await db.from("mm_email").update({
+      stato: "annullata",
+      errore: "Il destinatario si è opposto o è in blacklist: l'invio è stato rifiutato.",
+    }).in("id", bloccati.map((m) => m.id));
+  }
+  const ammessi = dovute.filter((m) => !nero.has(m.destinatario.toLowerCase()));
+
+  /* Raggruppate per casella: aprire e chiudere la connessione una
+     volta per messaggio è il modo più veloce per farsi prendere
+     per un attacco. */
+  const perCasella = new Map<string, typeof ammessi>();
+  for (const m of ammessi) {
+    const k = String(m.smtp_id);
+    if (!perCasella.has(k)) perCasella.set(k, []);
+    perCasella.get(k)!.push(m);
+  }
+
+  let partite = 0, fallite = 0;
+  const problemi: string[] = [];
+
+  for (const [smtpId, gruppo] of perCasella) {
+    let casella, password;
+    try {
+      ({ casella, password } = await casellaConPassword(smtpId));
+    } catch (e) {
+      /* Una casella che non si apre non deve far fallire il giro
+         intero: gli altri messaggi hanno altre caselle.
+
+         E soprattutto non deve bruciare i messaggi. Se manca la
+         password, la casella è da configurare, non rotta: segnare
+         "fallita" vorrebbe dire che quando la password arriva le
+         email non partono più comunque, perché nessuno le
+         rimetterà in coda a mano. Restano dove sono, come per una
+         casella in pausa. L'unico caso senza ritorno è la casella
+         cancellata: lì il messaggio non ha più da dove partire. */
+      const m = e instanceof Error ? e.message : String(e);
+      problemi.push(m);
+      if (e instanceof ErroreCliente && e.status === 404) {
+        await db.from("mm_email").update({ stato: "fallita", errore: m })
+          .in("id", gruppo.map((x) => x.id));
+        fallite += gruppo.length;
+      }
+      continue;
+    }
+
+    if (casella.stato === "sospeso") {
+      problemi.push(`La casella «${casella.nome}» è in pausa: i suoi messaggi restano in coda.`);
+      continue;
+    }
+    const residua = quotaResidua(casella);
+    if (residua <= 0) {
+      problemi.push(`La casella «${casella.nome}» ha esaurito il limite di oggi: i suoi messaggi restano in coda.`);
+      continue;
+    }
+
+    const daMandare = gruppo.slice(0, residua);
+    const client = await apriClient(casella, password);
+    let dallaCasella = 0;
+
+    for (const [i, m] of daMandare.entries()) {
+      const testoFinale = casella.firma_attiva && casella.firma
+        ? `${m.corpo}\n\n${casella.firma}`
+        : m.corpo;
+      try {
+        await client.send({
+          from: intestazioneDa(casella),
+          to: m.destinatario,
+          replyTo: (casella.rispondi_a as string) || undefined,
+          subject: m.oggetto,
+          content: testoFinale,
+        });
+        await db.from("mm_email").update({
+          stato: "inviata", inviata_il: new Date().toISOString(), errore: null,
+        }).eq("id", m.id);
+        partite++; dallaCasella++;
+      } catch (e) {
+        await db.from("mm_email").update({ stato: "fallita", errore: leggibile(e) }).eq("id", m.id);
+        fallite++;
+      }
+      if (i < daMandare.length - 1) await attendi(PAUSA_CODA * 1000);
+    }
+
+    try { await client.close(); } catch { /* connessione già chiusa */ }
+    if (dallaCasella) await registraInvio(casella, dallaCasella);
+  }
+
+  const restano = Math.max(0, (inAttesa ?? 0) - partite - fallite - bloccati.length);
+  await db.from("mm_coda_giri").insert({
+    trovati: dovute.length, partite, fallite, in_attesa: restano,
+    note: problemi.length ? problemi.join(" · ").slice(0, 500) : null,
+  });
+
+  return { trovati: dovute.length, partite, fallite, bloccati: bloccati.length, inAttesa: restano, problemi };
+}
+
+// ---------------- Send Log ----------------
+
+/* Il registro di cosa è partito e cosa no. Legge due elenchi
+   perché ce ne sono due: le email del mail marketing e quelle
+   che il CRM mandava dalla sezione Posta prima che questo modulo
+   esistesse. Fonderle in una tabella sola avrebbe voluto dire
+   riscrivere righe che raccontano invii già avvenuti; qui si
+   leggono insieme e si vede da dove viene ognuna. */
+
+async function registro(d: Record<string, unknown>) {
+  const cerca = testo(d.cerca, 120);
+  const giorni = Math.max(1, Math.min(365, Number(d.giorni) || 30));
+  const da = new Date(Date.now() - giorni * 86400000).toISOString();
+
+  let q = db.from("mm_email")
+    .select("id,destinatario,oggetto,corpo,stato,inviata_il,creata_il,errore,campagna_id,smtp_id")
+    .in("stato", ["inviata", "fallita"])
+    .gte("creata_il", da)
+    .order("creata_il", { ascending: false }).limit(500);
+  if (cerca) q = q.or(`destinatario.ilike.%${cerca}%,oggetto.ilike.%${cerca}%`);
+
+  let q2 = db.from("crm_email_inviate")
+    .select("id,destinatario,oggetto,corpo,esito,errore,inviata_il")
+    .gte("inviata_il", da)
+    .order("inviata_il", { ascending: false }).limit(200);
+  if (cerca) q2 = q2.or(`destinatario.ilike.%${cerca}%,oggetto.ilike.%${cerca}%`);
+
+  const [nuove, vecchie, giri] = await Promise.all([
+    q, q2,
+    db.from("mm_coda_giri").select("*").order("quando", { ascending: false }).limit(20),
+  ]);
+  if (nuove.error) throw new Error(nuove.error.message);
+
+  const righe = [
+    ...(nuove.data ?? []).map((r: Record<string, unknown>) => ({
+      id: r.id, destinatario: r.destinatario, oggetto: r.oggetto, corpo: r.corpo,
+      esito: r.stato === "inviata" ? "inviata" : "fallita",
+      quando: r.inviata_il ?? r.creata_il, errore: r.errore,
+      origine: "mail_marketing", campagna_id: r.campagna_id,
+    })),
+    ...(vecchie.data ?? []).map((r: Record<string, unknown>) => ({
+      id: r.id, destinatario: r.destinatario, oggetto: r.oggetto, corpo: r.corpo,
+      esito: r.esito, quando: r.inviata_il, errore: r.errore,
+      origine: "crm", campagna_id: null,
+    })),
+  ].sort((a, b) => String(b.quando).localeCompare(String(a.quando)));
+
+  const inviate = righe.filter((r) => r.esito === "inviata").length;
+  const fallite = righe.length - inviate;
+
+  /* L'ultimo giro del cron e quando è stato: «la coda parte?» si
+     risponde guardando qui, non tirando a indovinare. */
+  const ultimo = (giri.data ?? [])[0] ?? null;
+
+  return {
+    righe, giorni,
+    numeri: { inviate, fallite, totale: righe.length },
+    giri: giri.data ?? [],
+    coda: ultimo
+      ? { ultimoGiro: ultimo.quando, inAttesa: ultimo.in_attesa, nota: ultimo.note }
+      : null,
+  };
+}
+
 // ---------------- Email AI Writer ----------------
 
 /* Scrive la bozza di un messaggio a partire da quello che si sa
@@ -1396,6 +1618,8 @@ const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> =
   "posta-elimina": postaElimina,
   "posta-programma": postaProgramma,
   "posta-invia": postaInvia,
+  "coda-scarica": () => codaScarica(),
+  registro,
   "smtp-salva": smtpSalva,
   "smtp-elimina": smtpElimina,
   "smtp-stato": smtpStato,
@@ -1417,13 +1641,31 @@ Deno.serve(async (req: Request) => {
     }, 503);
   }
   const fornita = req.headers.get("x-qf-admin");
-  if (!fornita || !uguali(await impronta(fornita), atteso)) {
-    return rispondi({ ok: false, errore: "Chiave di amministrazione errata" }, 401);
+  const ammesso = !!fornita && uguali(await impronta(fornita), atteso);
+
+  /* Il cron non ha la chiave di amministrazione: ha la sua, che
+     vale solo per svuotare la coda. Il corpo si legge una volta
+     sola, quindi l'azione va decisa prima di rifiutare. */
+  let body: Record<string, unknown>;
+  try {
+    body = await req.json();
+  } catch {
+    return rispondi({ ok: false, errore: "Richiesta illeggibile" }, 400);
+  }
+  const nome = String(body?.azione ?? "");
+
+  if (!ammesso) {
+    const perCoda = req.headers.get("x-qf-coda");
+    const attesaCoda = await improntaCodaAttesa();
+    const codaOk = nome === "coda-scarica" && !!perCoda && !!attesaCoda &&
+      uguali(await impronta(perCoda), attesaCoda);
+    if (!codaOk) {
+      return rispondi({ ok: false, errore: "Chiave di amministrazione errata" }, 401);
+    }
   }
 
   try {
-    const body = await req.json();
-    const azione = AZIONI[String(body?.azione ?? "")];
+    const azione = AZIONI[nome];
     if (!azione) return rispondi({ ok: false, errore: "Azione non riconosciuta" }, 400);
     return rispondi({ ok: true, ...(await azione(body.dati ?? {}) as object) });
   } catch (e) {

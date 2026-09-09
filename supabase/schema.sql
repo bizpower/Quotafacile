@@ -1097,3 +1097,85 @@ revoke execute on function public.mm_segreto_elimina(uuid)             from publ
 grant  execute on function public.mm_segreto_scrivi(uuid, text, text)  to service_role;
 grant  execute on function public.mm_segreto_leggi(uuid)               to service_role;
 grant  execute on function public.mm_segreto_elimina(uuid)             to service_role;
+
+-- ---- 9i. La coda che parte da sola ----
+-- I messaggi programmati non partono da soli finche qualcuno non
+-- va a premere un tasto: pg_cron chiama la Edge Function a
+-- intervalli regolari e le fa svuotare la coda un pezzo per
+-- volta.
+--
+-- IL CRON NON HA LA CHIAVE DI AMMINISTRAZIONE.
+-- Ne ha una sua, che apre una porta sola: coda-scarica. Dare al
+-- cron la chiave dell'area riservata avrebbe voluto dire tenerla
+-- in chiaro in una definizione di job, e un job compromesso
+-- avrebbe letto tutto il CRM. Cosi al massimo fa partire posta
+-- che qualcuno aveva gia approvato.
+-- In tabella c'e solo l'impronta; il valore in chiaro sta nel
+-- Vault, dove il job va a prenderlo al momento della chiamata.
+
+-- pg_cron per la sveglia, pg_net perche il cron possa fare una
+-- richiesta HTTP: su Supabase vanno in extensions, non in public.
+create extension if not exists pg_cron;
+create extension if not exists pg_net with schema extensions;
+
+alter table public.impostazioni_admin add column if not exists coda_hash text;
+
+comment on column public.impostazioni_admin.coda_hash is
+  'SHA-256 del token che autorizza il solo svuotamento della coda. Il valore in chiaro sta nel Vault, alla voce mm_coda_token.';
+
+-- Ogni giro lascia una riga. Serve a rispondere a una domanda
+-- sola, ma quella conta: "il cron gira?". Senza, una coda ferma e
+-- una coda vuota si assomigliano troppo.
+create table if not exists public.mm_coda_giri (
+  id         bigserial primary key,
+  quando     timestamptz not null default now(),
+  trovati    integer not null default 0,
+  partite    integer not null default 0,
+  fallite    integer not null default 0,
+  in_attesa  integer not null default 0,
+  note       text
+);
+
+create index if not exists mm_coda_giri_quando on public.mm_coda_giri (quando desc);
+
+alter table public.mm_coda_giri enable row level security;
+drop policy if exists "solo chi vede tutto" on public.mm_coda_giri;
+create policy "solo chi vede tutto" on public.mm_coda_giri
+  for select to authenticated using (crm_interno.vede_tutto());
+
+-- Trenta giorni: questi giri servono a capire se la coda gira
+-- adesso, non a tenere uno storico. Uno al minuto vuol dire
+-- mezzo milione di righe l'anno per niente.
+create or replace function public.mm_coda_pota()
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  delete from public.mm_coda_giri where quando < now() - interval '30 days';
+$$;
+
+revoke execute on function public.mm_coda_pota() from public, anon, authenticated;
+grant  execute on function public.mm_coda_pota() to service_role;
+
+-- I due job. Il token viene letto dal Vault a ogni chiamata: non
+-- compare nella definizione, quindi chi legge cron.job non lo
+-- vede.
+--
+--   select cron.schedule('mm-coda', '* * * * *', $giro$
+--     select net.http_post(
+--       url := 'https://<progetto>.supabase.co/functions/v1/qf-mm',
+--       headers := jsonb_build_object(
+--         'Content-Type', 'application/json',
+--         'x-qf-coda', (select decrypted_secret from vault.decrypted_secrets
+--                        where name = 'mm_coda_token')),
+--       body := '{"azione":"coda-scarica"}'::jsonb,
+--       timeout_milliseconds := 120000);
+--   $giro$);
+--
+--   select cron.schedule('mm-coda-pota', '17 4 * * *',
+--                        $pota$ select public.mm_coda_pota(); $pota$);
+--
+-- Restano commentati perche dipendono dall'indirizzo del
+-- progetto e dal token nel Vault: si eseguono a mano una volta,
+-- non a ogni applicazione dello schema.

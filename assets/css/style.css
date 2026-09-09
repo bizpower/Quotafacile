@@ -1086,3 +1086,31 @@ a.chip { display: inline-block; text-decoration: none; }
 .mm-tabella td a:hover { text-decoration: underline; }
 /* Cinque riquadri: su una riga sola, non quattro più uno. */
 .mm-riquadri-cinque { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+
+/* --- Send Log: lo stato della coda automatica ---
+   Una riga sola in cima alla sezione. La spia è verde quando il
+   cron ha appena girato e ambra quando tace da troppo: il colore
+   dice in un colpo d'occhio quello che la data dice per esteso. */
+.mm-coda-stato { border-left: 3px solid var(--green-600); }
+.mm-coda-stato.ferma { border-left-color: #b45309; background: #fffbeb; }
+.mm-coda-riga { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+.mm-coda-riga > div:first-of-type { min-width: 0; flex: 1 1 12rem; }
+.mm-coda-spia { width: .6rem; height: .6rem; border-radius: 50%;
+  background: var(--green-600); flex: 0 0 auto; }
+.mm-coda-stato.ferma .mm-coda-spia { background: #b45309; }
+.mm-coda-attesa { display: flex; align-items: baseline; gap: .35rem; margin-left: auto; }
+.mm-coda-num { font-family: var(--font-display); font-size: 1.3rem; font-weight: 800; color: var(--ink); }
+
+/* Tre controlli di filtro non stanno su una riga sola di
+   telefono. Il gruppo delle azioni normalmente non va a capo —
+   lì dentro sono un campo e un pulsante — ma questo sì, e i
+   controlli si stringono invece di sfondare la pagina. */
+.mm-testata-sezione > .mm-azioni.mm-filtri { flex: 1 1 16rem; flex-wrap: wrap; min-width: 0; }
+.mm-filtri > .mm-cerca { min-width: 0; flex: 1 1 9rem; }
+/* «Partita» spezzato in due righe sembra un errore di stampa. */
+.mm-esito { white-space: nowrap; }
+
+/* I giri della coda stanno chiusi: servono quando qualcosa non
+   torna, e il resto del tempo sono rumore. */
+.mm-giri > summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+.mm-giri > summary::marker { color: var(--green-600); }
