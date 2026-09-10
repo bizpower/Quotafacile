@@ -61,8 +61,8 @@
     hosting: "GitHub Pages — GitHub Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA (USA), gruppo Microsoft",
     hostingNota: "Fornitore aderente al EU-U.S. Data Privacy Framework",
 
-    ultimoAggiornamento: "27 luglio 2026",
-    versione: "1.0"
+    ultimoAggiornamento: "10 settembre 2026",
+    versione: "1.1"
   };
 
   /* Locale, per non dipendere da un binding globale definito altrove:
@@ -158,6 +158,10 @@
     <p>La presente informativa è resa ai sensi degli articoli 13 e 14 del Regolamento (UE) 2016/679
     (“GDPR”) e del d.lgs. 196/2003 come modificato dal d.lgs. 101/2018, a chi consulta il sito
     <strong>${C.dominio}</strong> e utilizza i servizi della piattaforma ${C.brand}.</p>
+    <p class="privacy-hint">Se sei arrivato qui da una nostra email commerciale, l'informativa che ti
+    riguarda è un'altra e più breve: <a href="#/privacy-imprese">quella per le aziende che ricevono
+    nostre comunicazioni</a>, resa ai sensi dell'art. 14 GDPR. Risponde a «da dove avete il mio
+    indirizzo» e spiega in una riga come dirci di smettere.</p>
 
     <h2>1. Titolare del trattamento</h2>
     <p>Titolare del trattamento è ${todo(C.ragioneSociale)}, con sede legale in ${todo(C.sedeLegale)},
@@ -234,6 +238,16 @@
           <td>Vedi <a href="#/cookie-policy">Cookie Policy</a></td>
         </tr>
         <tr>
+          <td>Contatto di attività economiche per proporre il servizio (email commerciali verso aziende)</td>
+          <td>Art. 6.1.f — legittimo interesse, e art. 130 d.lgs. 196/2003</td>
+          <td>24 mesi dalla raccolta o dall'ultimo contatto — <a href="#/privacy-imprese">informativa dedicata</a></td>
+        </tr>
+        <tr>
+          <td>Elenco degli indirizzi che si sono opposti, per non contattarli più</td>
+          <td>Art. 6.1.c e art. 21 — dare seguito all'opposizione ricevuta</td>
+          <td>A tempo indeterminato: è il solo modo di onorare un «no» per sempre</td>
+        </tr>
+        <tr>
           <td>Sicurezza della piattaforma, prevenzione abusi e difesa in giudizio</td>
           <td>Art. 6.1.f — legittimo interesse</td>
           <td>12 mesi, salvo contenzioso in corso</td>
@@ -271,6 +285,14 @@
       a quest'ultimo. L'avviso è recapitato tramite un fornitore di posta elettronica o di
       messaggistica, anch'esso responsabile del trattamento. Il nome del fornitore in uso è
       comunicato su richiesta a <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>.</li>
+      <li><strong>A un fornitore di intelligenza artificiale, per la sola scrittura di bozze
+      commerciali.</strong> Quando prepariamo una email verso un'azienda con l'aiuto di un modello
+      linguistico, i dati dell'<em>azienda destinataria</em> (denominazione, settore, città, sito,
+      valutazione pubblica su Google) sono inviati ad <strong>Anthropic PBC</strong>, Stati Uniti,
+      nominata responsabile del trattamento. Il testo prodotto è una bozza che una persona legge e
+      approva prima dell'invio. <strong>Questo trattamento non riguarda i dati di chi usa il sito:</strong>
+      nulla di ciò che scrivi nei moduli viene inviato a un modello linguistico. I dettagli sono
+      nell'<a href="#/privacy-imprese">informativa per le aziende contattate</a>.</li>
       <li><strong>Ad altri fornitori tecnici</strong> (hosting, posta elettronica), anch'essi nominati
       responsabili del trattamento ai sensi dell'art. 28 GDPR.</li>
       <li><strong>All'Autorità giudiziaria o alle autorità di vigilanza</strong>, quando previsto per legge.</li>
@@ -284,7 +306,10 @@
     <strong>I dati dei moduli sono invece conservati su server situati nell'Unione Europea</strong>
     (Francoforte): per le richieste degli utenti non avviene alcun trasferimento verso paesi terzi.
     Un trasferimento può interessare il solo servizio di notifica, se configurato con un fornitore
-    extra-UE. Eventuali trasferimenti verso paesi terzi
+    extra-UE, e la scrittura assistita delle email commerciali verso le aziende, che invia i dati
+    dell'<em>azienda destinataria</em> ad <strong>Anthropic PBC (Stati Uniti)</strong> sulla base
+    delle Clausole Contrattuali Standard: nessun dato di chi usa il sito segue quella strada.
+    Eventuali trasferimenti verso paesi terzi
     avvengono sulla base di una decisione di adeguatezza della Commissione europea o delle Clausole
     Contrattuali Standard (art. 46 GDPR). L'elenco aggiornato dei fornitori è disponibile su richiesta
     a <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>.</p>
@@ -312,6 +337,9 @@
     profilazione che producano effetti giuridici sull'interessato ai sensi dell'art. 22 GDPR.
     L'ordinamento dei profili in bacheca si basa esclusivamente su parametri pubblici e verificabili
     (numero di risposte pubblicate, voti ricevuti dagli utenti).</p>
+    <p>L'uso di un modello linguistico per scrivere bozze di email commerciali, descritto al punto 5,
+    <strong>non è un processo decisionale</strong>: il modello scrive un testo, non stabilisce chi
+    riceve cosa. Quella scelta la fa una persona, e la bozza passa dalle sue mani prima di partire.</p>
 
     <h2>9. Sicurezza</h2>
     <p>Adottiamo misure tecniche e organizzative adeguate al rischio (art. 32 GDPR): trasmissione
@@ -540,6 +568,143 @@
     dell'impresa, non del Gestore.</p>
   `);
 
+  /* ---------------- 5-bis. INFORMATIVA PER LE AZIENDE CONTATTATE ----------------
+
+     Questa pagina esiste per una ragione precisa. La Privacy
+     Policy sopra è scritta per chi arriva sul sito e compila un
+     modulo: sa chi siamo, ha scelto di scriverci, e l'art. 13
+     GDPR basta. Chi riceve una nostra email commerciale è in una
+     posizione opposta — non ci ha cercati, non sa da dove
+     abbiamo il suo indirizzo, e l'informativa che gli spetta è
+     quella dell'art. 14, quella per i dati raccolti altrove.
+
+     Mandargli il link a un documento di nove sezioni su un
+     marketplace che non ha mai usato è un modo elegante di non
+     informarlo. Questa pagina risponde alle tre domande che si
+     fa davvero: da dove avete il mio indirizzo, perché mi
+     scrivete, come vi dico di smettere. */
+
+  const privacyImprese = () => page(
+    "Informativa per le aziende che ricevono le nostre email",
+    "Da dove abbiamo il tuo indirizzo",
+    `
+    <p class="lead">Se sei arrivato qui da una nostra email, questa pagina risponde alle tre domande
+    che ha senso farsi: <strong>da dove abbiamo il tuo recapito</strong>, <strong>perché ti
+    scriviamo</strong> e <strong>come ci dici di smettere</strong>. La risposta alla terza è una riga
+    sola, ed è più in basso.</p>
+
+    <p>Informativa resa ai sensi dell'<strong>art. 14 del Regolamento (UE) 2016/679</strong> — quello
+    che si applica quando i dati non li abbiamo raccolti da te.</p>
+
+    <h2>1. Chi ti sta scrivendo</h2>
+    <p>${todo(C.ragioneSociale)}, ${todo(C.sedeLegale)}, P. IVA ${todo(C.piva)}, che gestisce
+    ${C.brand} (${C.dominio}). Per qualunque cosa riguardi i tuoi dati:
+    <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>.</p>
+
+    <h2>2. Da dove abbiamo il tuo indirizzo</h2>
+    <p>Da una di queste tre strade, e sulla tua scheda è scritto quale:</p>
+    <ul>
+      <li><strong>Dalle API ufficiali di Google (Google Places).</strong> Sono i dati che la tua
+      attività pubblica per essere trovata: denominazione, indirizzo, telefono, sito, categoria
+      merceologica, valutazione pubblica. Li leggiamo dall'interfaccia ufficiale di Google, non
+      raschiando pagine web.</li>
+      <li><strong>Dal tuo sito o da un registro pubblico</strong>, quando l'indirizzo email è
+      pubblicato per essere contattati.</li>
+      <li><strong>Da te</strong>, se ce l'hai lasciato tu — a un evento, per telefono, scrivendoci.</li>
+    </ul>
+    <p>Di ogni contatto in archivio resta scritto <strong>da dove viene e con quale ricerca è stato
+    trovato</strong>. Non è un dettaglio tecnico: è quello che ci permette di rispondere alla domanda
+    «da dove avete preso il mio recapito» con un fatto invece che con una supposizione. Se ce lo
+    chiedi, te lo diciamo.</p>
+
+    <h2>3. Quali dati trattiamo</h2>
+    <p>Solo <strong>dati dell'attività</strong>: denominazione, indirizzo della sede, telefono, email,
+    sito, categoria, città e provincia, e la valutazione pubblica su Google. Nessun dato personale
+    che vada oltre il ruolo professionale, nessuna categoria particolare dell'art. 9 GDPR.</p>
+    <p>Se sei un professionista o una ditta individuale, la denominazione può coincidere con il tuo
+    nome: in quel caso questi sono dati personali a tutti gli effetti, ed è esattamente per questo
+    che stai leggendo questa pagina.</p>
+
+    <h2>4. Perché ti scriviamo, e con quale base giuridica</h2>
+    <p>Per proporti un confronto sulle coperture assicurative della tua attività, o per segnalarti
+    una novità che la riguarda. La base giuridica è il <strong>legittimo interesse</strong>
+    (art. 6.1.f GDPR) a promuovere un servizio verso attività economiche, unito all'art. 130 del
+    d.lgs. 196/2003 per la posta elettronica fra operatori professionali.</p>
+    <p>Il bilanciamento che abbiamo fatto, detto per intero: usiamo <strong>recapiti che la tua
+    attività pubblica proprio per essere contattata</strong>, ti scriviamo <strong>di lavoro e non
+    di altro</strong>, la nostra email dice <strong>sempre</strong> da dove viene il tuo indirizzo e
+    come fermarci, e <strong>un no vale per sempre</strong>. Se questo bilanciamento non ti convince,
+    il punto 6 è fatto apposta: <strong>non devi motivare nulla</strong>.</p>
+
+    <h2>5. A chi arrivano questi dati</h2>
+    <ul>
+      <li><strong>Al database.</strong> I contatti sono conservati su <strong>Supabase</strong>,
+      server a <strong>Francoforte, Unione Europea</strong>, responsabile del trattamento ex art. 28
+      GDPR.</li>
+      <li><strong>Al servizio di posta</strong> che consegna materialmente il messaggio, anch'esso
+      responsabile del trattamento.</li>
+      <li><strong>A un fornitore di intelligenza artificiale, ma solo se usiamo la scrittura
+      assistita.</strong> Quando prepariamo una bozza con l'aiuto di un modello linguistico
+      (<strong>Anthropic PBC</strong>, Stati Uniti), gli inviamo i dati dell'attività destinataria:
+      denominazione, settore, città, sito e valutazione pubblica. <strong>Non gli inviamo il tuo
+      indirizzo email.</strong> Il fornitore è nominato responsabile del trattamento e il
+      trasferimento è coperto dalle Clausole Contrattuali Standard (art. 46 GDPR).
+      Il testo prodotto è una <strong>bozza che una persona legge e approva</strong> prima che
+      parta: non c'è nessun automatismo che spedisca quello che il modello ha appena scritto.</li>
+    </ul>
+    <p>I dati <strong>non sono venduti, ceduti né diffusi</strong>.</p>
+
+    <h2 id="opposizione">6. Come ci dici di smettere</h2>
+    <p class="lead"><strong>Rispondi alla nostra email con la sola parola NO</strong>, oppure scrivi a
+    <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>. Non devi spiegare perché
+    (art. 21 GDPR: l'opposizione al marketing diretto non si motiva).</p>
+    <p>Cosa succede da quel momento, in concreto:</p>
+    <ul>
+      <li>il tuo indirizzo entra in un elenco di esclusione che il sistema
+      <strong>controlla prima di ogni invio</strong> — non è un promemoria per qualcuno, è un
+      controllo che il server fa da sé;</li>
+      <li>i messaggi già preparati o già in coda per te vengono <strong>annullati subito</strong>,
+      non alla prossima occasione;</li>
+      <li>l'esclusione vale <strong>per sempre</strong> e non decade.</li>
+    </ul>
+    <div class="legal-warning" role="note">
+      <strong>Perché teniamo il tuo indirizzo anche dopo che ci hai detto di no.</strong>
+      Cancellarlo del tutto sarebbe il modo più sicuro per riscriverti fra sei mesi, quando lo
+      ritrovassimo da un'altra parte. L'unico dato che conserviamo è
+      <strong>l'indirizzo e la data in cui ti sei opposto</strong>, e serve soltanto a non
+      contattarti più: è un trattamento fondato sull'obbligo di dare seguito alla tua opposizione
+      (artt. 21 e 5.1.a GDPR). Se preferisci comunque la cancellazione totale, scrivicelo e la
+      facciamo — dicendoti chiaramente che a quel punto non avremo più modo di ricordarci del tuo no.
+    </div>
+
+    <h2>7. Per quanto tempo</h2>
+    <ul>
+      <li><strong>Contatti mai lavorati:</strong> 24 mesi dalla raccolta, poi si cancellano.</li>
+      <li><strong>Contatti con cui c'è stato uno scambio:</strong> 24 mesi dall'ultimo contatto.</li>
+      <li><strong>Indirizzi che si sono opposti:</strong> a tempo indeterminato, per il solo motivo
+      spiegato qui sopra.</li>
+      <li><strong>Registro degli invii:</strong> 24 mesi, per poter dimostrare cosa è stato scritto
+      a chi e quando.</li>
+    </ul>
+
+    <h2>8. I tuoi diritti</h2>
+    <p>Puoi chiederci <strong>accesso</strong> ai dati che ti riguardano, <strong>rettifica</strong> di
+    quelli sbagliati, <strong>cancellazione</strong>, <strong>limitazione</strong> e
+    <strong>portabilità</strong>, oltre all'opposizione del punto 6. Scrivi a
+    <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>: rispondiamo entro 30 giorni.</p>
+    <p>Puoi anche proporre reclamo al <strong>Garante per la protezione dei dati personali</strong>
+    (Piazza Venezia 11, 00187 Roma —
+    <a href="https://www.garanteprivacy.it" target="_blank" rel="noopener">garanteprivacy.it</a>).</p>
+
+    <h2>9. Nessuna decisione automatizzata</h2>
+    <p>Non profiliamo e non prendiamo decisioni automatizzate che ti riguardino (art. 22 GDPR).
+    La scrittura assistita del punto 5 <strong>scrive testi, non decide nulla</strong>: chi riceve
+    cosa lo stabilisce una persona.</p>
+
+    <p class="muted" style="font-size:.85rem">Per il trattamento dei dati di chi visita il sito e usa
+    i moduli vale invece la <a href="#/privacy">Privacy Policy</a> generale.</p>
+  `);
+
   /* ---------------- 6. NOTE LEGALI / DISCLAIMER ---------------- */
   const noteLegali = () => page("Note legali e informazioni sull'attività", "Trasparenza", `
     <h2>1. Informazioni sul gestore del sito</h2>
@@ -670,6 +835,6 @@
   window.QF_LEGAL = {
     CONFIG: LEGAL_CONFIG,
     mancanti,
-    views: { privacy, cookie, termini, noteLegali, contatti }
+    views: { privacy, privacyImprese, cookie, termini, noteLegali, contatti }
   };
 })();

@@ -387,6 +387,34 @@ async function apriClient(casella: Record<string, unknown>, password: string) {
 const intestazioneDa = (c: Record<string, unknown>) =>
   c.from_nome ? `${c.from_nome} <${c.from_email}>` : String(c.from_email);
 
+/* Il piede che ogni email commerciale deve portare.
+ *
+ * Dice tre cose, e le deve dire sempre: da dove viene
+ * l'indirizzo, come si fa a non ricevere più niente, e chi
+ * scrive. L'art. 21 GDPR vuole che opporsi sia facile e non
+ * richieda una motivazione; l'art. 14 vuole che chi non ci ha
+ * dato i suoi dati sappia da dove li abbiamo presi.
+ *
+ * Non è la firma della casella e non è configurabile. La firma
+ * si può svuotare, dimenticare, o scrivere male una volta sola:
+ * basterebbe quella volta perché parta un invio senza via
+ * d'uscita. Questo si aggiunge dopo, sempre, a ogni messaggio
+ * che esce da una campagna o da una sequenza.
+ */
+const PIE_MARKETING =
+  "\n\n—\n" +
+  "Ricevi questa email perché il recapito della tua attività è pubblicato fra i suoi dati di contatto.\n" +
+  "Se non vuoi più ricevere nostre comunicazioni rispondi con la sola parola NO, oppure scrivi a " +
+  "privacy@quotafacile.net: l'indirizzo viene bloccato e non ti scriveremo più. Non devi motivare nulla.\n" +
+  "Da dove abbiamo il tuo indirizzo e quali dati trattiamo: https://www.quotafacile.net/#/privacy-imprese\n" +
+  "QuotaFacile — Riccardo Di Falco, Via Gramsci 16, 20073 Opera (MI) — P. IVA 11784600964";
+
+/* La firma della casella resta facoltativa e personale; il piede
+   no. In quest'ordine: prima quello che hai scritto tu, poi la
+   tua firma, poi la via d'uscita. */
+const conPiede = (corpo: string, c: Record<string, unknown>) =>
+  `${corpo}${c.firma_attiva && c.firma ? `\n\n${c.firma}` : ""}${PIE_MARKETING}`;
+
 /* Il consumo si registra sul tentativo, non sulla riuscita: se
    il fornitore ha contato la connessione, averla contata anche
    qui è l'unico modo perché il limite serva a qualcosa. */
@@ -1176,9 +1204,7 @@ async function postaInvia(d: Record<string, unknown>) {
 
   for (const [i, m] of blocco.entries()) {
     if (Date.now() - inizio > TEMPO_MASSIMO) { fermato = true; break; }
-    const testoFinale = casella.firma_attiva && casella.firma
-      ? `${m.corpo}\n\n${casella.firma}`
-      : m.corpo;
+    const testoFinale = conPiede(m.corpo, casella);
     try {
       await client.send({
         from: intestazioneDa(casella),
@@ -1349,9 +1375,7 @@ async function codaScarica() {
     let dallaCasella = 0;
 
     for (const [i, m] of daMandare.entries()) {
-      const testoFinale = casella.firma_attiva && casella.firma
-        ? `${m.corpo}\n\n${casella.firma}`
-        : m.corpo;
+      const testoFinale = conPiede(m.corpo, casella);
       try {
         await client.send({
           from: intestazioneDa(casella),
@@ -1942,7 +1966,8 @@ async function sequenzeAvanza() {
       quello che il modello ha appena scritto;
    2. i dati dell'azienda destinataria (nome, categoria, città,
       sito) escono dal database e arrivano al fornitore del
-      modello: è un trattamento in più, e va dichiarato;
+      modello: è un trattamento in più, ed è dichiarato
+      nell'informativa per le aziende contattate;
    3. ogni generazione costa. Il costo esatto della chiamata
       torna indietro con la risposta, così non è una voce che si
       scopre a fine mese. */
@@ -2008,6 +2033,10 @@ async function aiScrivi(d: Record<string, unknown>) {
     if (data) firma = String(data.from_nome || data.etichetta);
   }
 
+  /* Quello che esce dal database e arriva al fornitore del
+     modello è solo questo, ed è la stessa lista scritta
+     nell'informativa: nome, settore, città, sito, valutazione
+     pubblica. L'indirizzo email del destinatario non c'è. */
   const scheda = lead
     ? [
       `Nome: ${lead.nome}`,
@@ -2029,6 +2058,7 @@ async function aiScrivi(d: Record<string, unknown>) {
     `o le polizze che hanno, non nominarli.\n` +
     `- Non promettere sconti, percentuali o cifre.\n` +
     `- Niente oggetto sensazionalistico e niente punti esclamativi nell'oggetto.\n` +
+    `- Non scrivere una formula di disiscrizione: la aggiunge il sistema, sempre, in fondo a ogni messaggio.\n` +
     `- Se ti servono dati che non hai, usa i segnaposto {azienda}, {citta}, {telefono}, {mittente}: ` +
     `verranno sostituiti al momento dell'invio.\n\n` +
     `Rispondi esattamente in questo formato, senza aggiungere altro:\n` +
