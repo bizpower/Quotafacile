@@ -1179,3 +1179,95 @@ grant  execute on function public.mm_coda_pota() to service_role;
 -- Restano commentati perche dipendono dall'indirizzo del
 -- progetto e dal token nel Vault: si eseguono a mano una volta,
 -- non a ogni applicazione dello schema.
+
+-- ---- 9l. Automazioni: le sequenze ----
+-- Una sequenza e' un seguito programmato: il primo messaggio,
+-- poi un secondo dopo N giorni a chi non ha dato segno, poi
+-- basta. La parte che conta non e' mandare il secondo: e' non
+-- mandarlo.
+--
+-- COME SI CAPISCE CHE HANNO RISPOSTO
+-- Non leggendo la posta in arrivo. Per farlo servirebbe tenere
+-- una connessione IMAP aperta sulla casella e interpretare i
+-- messaggi che arrivano, e un errore li' vorrebbe dire o seguiti
+-- mandati a chi aveva gia' risposto, o seguiti mai mandati. Il
+-- segnale che questo modulo usa e' quello che una persona
+-- registra davvero: crm_lead.stato. Appena esce da 'contattato'
+-- la sequenza si ferma, insieme alle opposizioni, alla blacklist
+-- e agli indirizzi non piu' validi.
+
+create table if not exists public.mm_sequenze (
+  id          uuid primary key default gen_random_uuid(),
+  creata_il   timestamptz not null default now(),
+  nome        text not null,
+  attiva      boolean not null default false,
+  mittente_id uuid references public.mm_mittenti(id) on delete set null,
+  smtp_id     uuid references public.mm_smtp(id) on delete set null,
+  note        text
+);
+
+comment on table public.mm_sequenze is
+  'Sequenze di messaggi con attesa fra un passo e l''altro. Una sequenza spenta non fa niente: i suoi iscritti restano fermi dove sono.';
+
+-- I passi. Il primo ha dopo_giorni = 0: parte appena qualcuno
+-- entra. Gli altri contano i giorni dal passo precedente, non
+-- dall'iscrizione, perche' e' cosi' che si ragiona scrivendo.
+create table if not exists public.mm_sequenze_passi (
+  id           uuid primary key default gen_random_uuid(),
+  sequenza_id  uuid not null references public.mm_sequenze(id) on delete cascade,
+  ordine       integer not null,
+  dopo_giorni  integer not null default 0 check (dopo_giorni between 0 and 365),
+  modello_id   uuid references public.crm_email_modelli(id) on delete set null,
+  oggetto      text,
+  corpo        text,
+  unique (sequenza_id, ordine)
+);
+
+comment on column public.mm_sequenze_passi.dopo_giorni is
+  'Giorni di attesa dal passo precedente. Sul primo passo vale zero.';
+
+-- Chi e' dentro, a che punto e', e quando tocca al prossimo
+-- messaggio. Un lead sta in una sequenza una volta sola: due
+-- iscrizioni vorrebbero dire due seguiti alla stessa persona,
+-- che e' esattamente la cosa da non fare.
+create table if not exists public.mm_sequenze_iscritti (
+  id              uuid primary key default gen_random_uuid(),
+  sequenza_id     uuid not null references public.mm_sequenze(id) on delete cascade,
+  lead_id         uuid not null references public.crm_lead(id) on delete cascade,
+  entrato_il      timestamptz not null default now(),
+  passo_fatto     integer not null default 0,
+  prossimo_il     timestamptz not null default now(),
+  stato           text not null default 'attivo'
+                    check (stato in ('attivo','fermato','finito')),
+  fermato_motivo  text,
+  fermato_il      timestamptz,
+  unique (sequenza_id, lead_id)
+);
+
+-- L'indice che serve al giro del cron: chi e' dovuto adesso.
+create index if not exists mm_sequenze_iscritti_dovuti_idx
+  on public.mm_sequenze_iscritti (prossimo_il)
+  where stato = 'attivo';
+
+create index if not exists mm_sequenze_iscritti_lead_idx
+  on public.mm_sequenze_iscritti (lead_id);
+
+-- Da quale sequenza viene un messaggio: senza questo il Send Log
+-- mostra email che sembrano nate dal nulla.
+alter table public.mm_email add column if not exists sequenza_id uuid
+  references public.mm_sequenze(id) on delete set null;
+
+alter table public.mm_sequenze          enable row level security;
+alter table public.mm_sequenze_passi    enable row level security;
+alter table public.mm_sequenze_iscritti enable row level security;
+
+do $$
+declare t text;
+begin
+  foreach t in array array['mm_sequenze','mm_sequenze_passi','mm_sequenze_iscritti']
+  loop
+    execute format('drop policy if exists "solo chi vede tutto" on public.%I', t);
+    execute format(
+      'create policy "solo chi vede tutto" on public.%I for select to authenticated using (crm_interno.vede_tutto())', t);
+  end loop;
+end $$;
