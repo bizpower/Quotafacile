@@ -23,6 +23,10 @@
   <url><loc>https://www.quotafacile.net/#/chi-siamo</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://www.quotafacile.net/#/contatti</loc><changefreq>monthly</changefreq><priority>0.5</priority></url>
   <url><loc>https://www.quotafacile.net/#/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <!-- L'informativa per le aziende contattate: è il link che portano
+       in fondo le email commerciali, e deve restare raggiungibile
+       anche a chi ci arriva da un motore di ricerca. -->
+  <url><loc>https://www.quotafacile.net/#/privacy-imprese</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://www.quotafacile.net/#/cookie-policy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://www.quotafacile.net/#/termini</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
   <url><loc>https://www.quotafacile.net/#/note-legali</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>

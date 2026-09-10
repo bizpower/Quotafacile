@@ -1197,6 +1197,11 @@ views.areaPro = () => {
 /* Pagine legali servite da assets/js/legal.js */
 const LEGAL_ROUTES = {
   "privacy": () => window.QF_LEGAL.views.privacy(),
+  /* L'informativa per le aziende che ricevono le nostre email. Ha
+     una rotta sua perché è il link che portano in fondo: chi ci
+     arriva deve trovare la risposta, non un documento in cui
+     cercarla. */
+  "privacy-imprese": () => window.QF_LEGAL.views.privacyImprese(),
   "cookie-policy": () => window.QF_LEGAL.views.cookie(),
   "termini": () => window.QF_LEGAL.views.termini(),
   "note-legali": () => window.QF_LEGAL.views.noteLegali(),

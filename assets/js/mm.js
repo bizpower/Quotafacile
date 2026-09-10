@@ -1377,6 +1377,12 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
         <p class="privacy-hint" style="margin:.4rem 0 0">
           Aruba non aggiunge la firma della webmail agli invii che passano da qui: se la vuoi, va scritta in questo riquadro.
         </p>
+        <p class="privacy-hint" style="margin:.4rem 0 0">
+          <strong>Sotto alla firma il sistema aggiunge da sé</strong> da dove viene l'indirizzo, come
+          opporsi e i tuoi dati identificativi. Non è configurabile e non va riscritto qui: una firma
+          si può svuotare o dimenticare, e basterebbe una volta perché parta un messaggio senza via
+          d'uscita. <a href="#/privacy-imprese">Vedi cosa dice</a>.
+        </p>
       </details>
 
       <div class="mm-azioni">
