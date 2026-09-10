@@ -84,10 +84,36 @@ jobs:
           sed -i "s#${DEFINITIVO}#${ATTUALE}#g" sitemap.xml robots.txt
           grep -c "$ATTUALE" sitemap.xml
 
+      # Si pubblica quello che è un sito, non tutto il repository.
+      #
+      # Con "path: ." finivano online anche supabase/: il sorgente
+      # della Edge Function e schema.sql, cioè la struttura completa
+      # del database, scaricabili da chiunque conoscesse il percorso.
+      # Non sono credenziali — quelle stanno nelle variabili
+      # d'ambiente e nel Vault — ma sono la mappa di come è fatto
+      # dentro, e non c'è nessun motivo per regalarla.
+      #
+      # L'elenco è per inclusione e non per esclusione: una cartella
+      # nuova non finisce online per dimenticanza, ci finisce solo se
+      # qualcuno la aggiunge qui.
+      - name: Raccogli i file da pubblicare
+        run: |
+          set -euo pipefail
+          mkdir -p _sito
+          cp -r assets _sito/
+          cp index.html robots.txt sitemap.xml llms.txt _sito/
+          # Il dominio definitivo. Serve al percorso di pubblicazione
+          # classico; con le Actions il dominio si imposta comunque
+          # in Settings → Pages, ma tenerlo qui vuol dire che il
+          # repository dichiara da solo dove va servito.
+          cp CNAME _sito/
+          echo "Pubblico:"
+          find _sito -type f | sort
+
       - name: Prepara l'artefatto
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _sito
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
