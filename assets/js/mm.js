@@ -100,6 +100,8 @@
     posta = null; bozza = null; contenuto = null; listaAperta = null;
     postaDati = null; scelte = new Set(); postaAperta = null;
     registroDati = null; regAperta = null; esitoReg = "tutti";
+    nereDati = null; aggiuntaNera = false;
+    seqDati = null; seqAperta = null; seqIscritti = null; seqIscrivi = null;
   }
 
   /* ---------------- DATI ---------------- */
@@ -139,20 +141,11 @@
     ["blacklist",   "🛡", "Blacklist & Compliance"]
   ];
 
-  const INARRIVO = {
-    automazioni: {
-      titolo: "Automazioni",
-      cosa: "Sequenze: un secondo messaggio dopo N giorni a chi non ha risposto, e lo stop automatico appena risponde.",
-      come: "Una coda letta a intervalli regolari dal database. Su Lovable questa voce era un segnaposto vuoto: qui viene costruita davvero.",
-      serve: "La coda di invio del passo precedente."
-    },
-    blacklist: {
-      titolo: "Blacklist & Compliance",
-      cosa: "Gli indirizzi da non contattare mai, da qualunque parte arrivi l'opposizione, e la prova di quando è arrivata.",
-      come: "Un divieto controllato prima di ogni invio, non un promemoria. Anche questa su Lovable era un segnaposto.",
-      serve: "Niente."
-    }
-  };
+  /* Le undici voci sono tutte costruite: non resta niente da
+     annunciare. La scheda «in arrivo» resta perché è il posto
+     giusto in cui dichiarare una voce futura prima di farla,
+     invece di mostrare una schermata vuota che sembra rotta. */
+  const INARRIVO = {};
 
   /* ---------------- DASHBOARD ---------------- */
 
@@ -1799,6 +1792,469 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     </div>`;
   }
 
+  /* ---------------- SEZIONE · BLACKLIST & COMPLIANCE ----------------
+
+     Chi non va contattato, da qualunque parte sia arrivata
+     l'opposizione. Le fonti sono due e restano due: la scheda
+     del lead per chi è già in archivio, questo elenco per tutti
+     gli altri — chi risponde NO da un indirizzo diverso, chi
+     scrive per un collega, chi chiede la cancellazione prima
+     ancora di essere schedato. Unirle vorrebbe dire inventare
+     un lead per ogni opposizione, cioè schedare qualcuno perché
+     ha chiesto di non essere schedato.
+
+     Qui si vedono insieme, perché la domanda è una sola. */
+
+  let nereDati = null;        // { blacklist, opposti, numeri }
+  let filtroNere = "";
+  let aggiuntaNera = false;
+  const nuoveNere = { indirizzi: "", motivo: "", origine: "manuale" };
+
+  const ORIGINI = {
+    manuale: "aggiunto a mano",
+    risposta: "ha risposto di no",
+    bounce: "indirizzo inesistente",
+    reclamo: "reclamo"
+  };
+
+  async function caricaNere() {
+    const e = await chiama("blacklist-elenco", { cerca: filtroNere }, 30000);
+    nereDati = e.ok
+      ? { blacklist: e.blacklist || [], opposti: e.opposti || [], numeri: e.numeri || {} }
+      : { blacklist: [], opposti: [], numeri: {} };
+    if (!e.ok) QF().toast(e.errore || "Elenco non leggibile.");
+    QF().render();
+  }
+
+  function blacklistView() {
+    if (!nereDati) return `<div class="card"><p class="muted">Lettura dell'elenco…</p></div>`;
+    const n = nereDati.numeri;
+    const bl = nereDati.blacklist;
+    const op = nereDati.opposti;
+
+    return `
+    <div class="card mm-compliance">
+      <h3 style="margin:0 0 .4rem">Il divieto è un controllo, non un promemoria</h3>
+      <p class="muted" style="font-size:.86rem;margin:0">
+        Ogni indirizzo che sta qui viene confrontato <strong>prima di ogni invio</strong>, e il
+        confronto lo fa il server: non c'è un percorso dentro questo modulo che spedisca saltandolo —
+        non la campagna, non l'invio rapido, non la coda automatica, non le sequenze. Chi si è
+        opposto viene ricontrollato anche al momento della partenza, perché un'opposizione arrivata
+        stanotte deve fermare un messaggio programmato ieri.
+      </p>
+      <p class="privacy-hint" style="margin:.6rem 0 0">
+        È l'art. 21 del GDPR: l'opposizione si esercita in qualunque momento e senza motivarla.
+        Da qui non si revoca l'opposizione di nessuno — la revoca la fa chi l'ha espressa,
+        e si registra sulla sua scheda nel CRM.
+      </p>
+    </div>
+
+    <div class="mm-riquadri">
+      ${[
+        ["🛡", "Indirizzi bloccati", n.indirizzi ?? 0, "in tutto, senza doppioni"],
+        ["📝", "In questo elenco", n.blacklist ?? 0, "opposizioni senza una scheda"],
+        ["👤", "Opposizioni sui lead", n.opposti ?? 0, "registrate sulla scheda"],
+        ["⛔", "Messaggi fermati", n.fermati ?? 0,
+          (n.fermati ?? 0) ? "mai partiti, in attesa o in bozza" : "niente diretto a chi si è opposto"]
+      ].map(([ico, eti, val, sotto]) => `
+        <div class="mm-riq mm-riq-fermo">
+          <span class="mm-riq-ico">${ico}</span>
+          <span class="mm-riq-num">${val}</span>
+          <span class="mm-riq-eti">${esc(eti)}</span>
+          <span class="mm-riq-sub">${esc(sotto)}</span>
+        </div>`).join("")}
+    </div>
+
+    <div class="card">
+      <div class="mm-testata mm-testata-sezione">
+        <div class="mm-azioni mm-filtri">
+          <input id="mm-cerca-nere" class="mm-cerca" value="${esc(filtroNere)}"
+                 placeholder="Cerca un indirizzo o un nome">
+        </div>
+        <div class="mm-azioni">
+          <button class="btn btn-outline btn-sm" id="mm-nere-csv" ${bl.length || op.length ? "" : "disabled"}>⬇ CSV</button>
+          <button class="btn btn-primary btn-sm" id="mm-nere-aggiungi">+ Aggiungi indirizzi</button>
+        </div>
+      </div>
+
+      <h4 style="margin:.2rem 0 .6rem">Blacklist <span class="pill">${bl.length}</span></h4>
+      ${bl.length === 0 ? `
+        <p class="muted mm-vuoto" style="border:0">
+          ${filtroNere ? "Nessun indirizzo con questa ricerca."
+            : `Nessun indirizzo in blacklist. Ci finisce chi chiede di non essere più contattato
+               da un indirizzo che non corrisponde a un lead in archivio.`}</p>`
+      : `
+        <div class="mm-tabella">
+          <table>
+            <thead><tr><th>Indirizzo</th><th>Da quando</th><th>Perché</th><th></th></tr></thead>
+            <tbody>
+              ${bl.map(r => `
+                <tr>
+                  <td><strong>${esc(r.email)}</strong></td>
+                  <td>${esc(dataOra(r.aggiunta_il))}</td>
+                  <td>
+                    ${esc(ORIGINI[r.origine] || r.origine)}
+                    ${r.motivo ? `<span class="muted" style="display:block;font-size:.72rem">${esc(r.motivo)}</span>` : ""}
+                  </td>
+                  <td><button class="btn btn-ghost btn-sm danger" data-nera-togli="${esc(r.id)}">Togli</button></td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`}
+    </div>
+
+    <div class="card">
+      <h4 style="margin:.2rem 0 .6rem">Opposizioni registrate sui lead <span class="pill">${op.length}</span></h4>
+      <p class="muted" style="font-size:.84rem;margin:0 0 .6rem">
+        Queste stanno sulla scheda del lead e si gestiscono da lì, nel
+        <a href="#/admin/crm/lead">CRM</a>: qui si vedono perché valgono esattamente
+        quanto la blacklist, e chi guarda «a chi non posso scrivere» deve vederle nella stessa pagina.
+      </p>
+      ${op.length === 0 ? `
+        <p class="muted mm-vuoto" style="border:0">
+          ${filtroNere ? "Nessun lead opposto con questa ricerca." : "Nessun lead si è opposto."}</p>`
+      : `
+        <div class="mm-tabella">
+          <table>
+            <thead><tr><th>Chi</th><th>Indirizzo</th><th>Da quando</th><th>Perché</th></tr></thead>
+            <tbody>
+              ${op.map(l => `
+                <tr>
+                  <td>
+                    <strong>${esc(l.nome || "—")}</strong>
+                    ${l.citta ? `<span class="muted" style="display:block;font-size:.72rem">${esc(l.citta)}</span>` : ""}
+                  </td>
+                  <td>${esc(l.email || "—")}</td>
+                  <td>${esc(dataOra(l.no_contatto_il))}</td>
+                  <td>${esc(l.no_contatto_motivo || "non indicato")}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`}
+    </div>
+
+    ${aggiuntaNera ? aggiuntaNeraView() : ""}`;
+  }
+
+  function aggiuntaNeraView() {
+    return `
+    <div class="mm-velo" data-chiudi-nera>
+      <div class="card mm-dialogo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Aggiungi indirizzi alla blacklist</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-nera>Chiudi</button>
+        </div>
+        <form id="mm-nera-form">
+          <label class="field"><span>Indirizzi *</span>
+            <textarea id="n-indirizzi" rows="6" required class="mail-corpo"
+              placeholder="uno per riga, oppure separati da virgola">${esc(nuoveNere.indirizzi)}</textarea></label>
+          <label class="field" style="margin-top:.6rem"><span>Da dove arriva l'opposizione</span>
+            <select id="n-origine">
+              ${Object.entries(ORIGINI).map(([k, v]) =>
+                `<option value="${k}" ${nuoveNere.origine === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
+            </select></label>
+          <label class="field" style="margin-top:.6rem"><span>Nota (facoltativa)</span>
+            <input id="n-motivo" value="${esc(nuoveNere.motivo)}"
+                   placeholder="es. ha risposto il 3 marzo chiedendo la cancellazione"></label>
+          <p class="privacy-hint">
+            Quello che era già pronto o in coda per questi indirizzi viene annullato subito, non al
+            prossimo giro. E se l'indirizzo corrisponde a un lead, l'opposizione viene scritta anche
+            sulla sua scheda: le due fonti devono raccontare la stessa cosa.
+          </p>
+          <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-nera>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm">Aggiungi</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  }
+
+  /* ---------------- SEZIONE · AUTOMAZIONI ----------------
+
+     Una sequenza è un seguito programmato: il primo messaggio,
+     poi un secondo dopo N giorni a chi non ha dato segno, poi
+     basta. La parte che conta non è mandare il secondo: è non
+     mandarlo.
+
+     Come si capisce che hanno risposto: non leggendo la posta in
+     arrivo. Servirebbe una connessione aperta sulla casella e
+     l'interpretazione di quello che arriva, e un errore lì
+     vorrebbe dire o seguiti mandati a chi aveva già risposto, o
+     seguiti mai mandati. Il segnale che questo modulo usa è
+     quello che una persona registra davvero: lo stato del lead
+     nel CRM. Appena esce da «contattato», la sequenza si ferma. */
+
+  let seqDati = null;        // { sequenze, iscritti }
+  let seqAperta = null;      // sequenza in modifica, o "nuova"
+  let seqPassi = [];         // i passi mentre si modificano
+  let seqIscritti = null;    // id della sequenza di cui si guardano gli iscritti
+  let seqIscrivi = null;     // id della sequenza a cui si sta iscrivendo una lista
+
+  const STATI_ISCRITTO = {
+    attivo: ["🟢", "in corso"],
+    fermato: ["⏹", "fermato"],
+    finito: ["🏁", "arrivato in fondo"]
+  };
+
+  async function caricaSeq() {
+    const e = await chiama("sequenza-elenco", {}, 30000);
+    seqDati = e.ok ? { sequenze: e.sequenze || [], iscritti: e.iscritti || [] } : { sequenze: [], iscritti: [] };
+    if (!e.ok) QF().toast(e.errore || "Sequenze non leggibili.");
+    QF().render();
+  }
+
+  function automazioniView() {
+    if (!seqDati) return `<div class="card"><p class="muted">Lettura delle sequenze…</p></div>`;
+    const ss = seqDati.sequenze;
+    const caselle = smtpDelMittente().filter(s => s.stato === "attivo");
+
+    return `
+    <div class="card mm-compliance">
+      <h3 style="margin:0 0 .4rem">Quello che conta è quando si ferma</h3>
+      <p class="muted" style="font-size:.86rem;margin:0">
+        Una sequenza smette da sola quando il lead <strong>esce da «contattato»</strong> nella
+        pipeline del CRM — trattativa, cliente o scartato: è il segnale che una persona registra
+        davvero. Si ferma anche se il lead si oppone, se l'indirizzo finisce in blacklist, o se
+        l'indirizzo non è più valido.
+      </p>
+      <p class="privacy-hint" style="margin:.6rem 0 0">
+        Quello che <em>non</em> fa è leggere la posta in arrivo per accorgersi di una risposta:
+        servirebbe tenere una connessione aperta sulla casella e interpretare i messaggi, e
+        sbagliare lì vorrebbe dire scrivere di nuovo a chi ti aveva già risposto. Finché sposti
+        il lead di stato quando ti rispondono, il seguito non parte.
+      </p>
+    </div>
+
+    <div class="mm-testata mm-testata-sezione">
+      <p class="muted" style="font-size:.86rem;margin:0">
+        I messaggi di una sequenza non partono per una strada loro: finiscono nella stessa coda
+        di tutto il resto, con gli stessi controlli e lo stesso ritmo. In
+        <a href="#/admin/crm/mail/registro">Send Log</a> si vede quando è toccato a chi.
+      </p>
+      <div class="mm-azioni">
+        <button class="btn btn-primary btn-sm" id="mm-seq-nuova">+ Nuova sequenza</button>
+      </div>
+    </div>
+
+    ${!caselle.length ? `
+      <div class="legal-warning mm-avviso" role="status">
+        <strong>Nessuna casella attiva.</strong> Una sequenza accesa senza casella accumulerebbe
+        messaggi che non hanno da dove uscire.
+        <br><a class="btn btn-outline btn-sm" style="margin-top:.6rem" href="#/admin/crm/mail/smtp">Apri SMTP &amp; Sending</a>
+      </div>` : ""}
+
+    ${ss.length === 0 ? `
+      <div class="card"><p class="muted mm-vuoto" style="border:0">
+        Nessuna sequenza. La prima è quasi sempre la stessa: un messaggio, poi un secondo dopo
+        cinque giorni a chi non ha risposto, e basta lì.</p></div>`
+    : ss.map(s => {
+        const c = s.conteggi;
+        const casella = D().smtp.find(x => x.id === s.smtp_id);
+        return `
+        <div class="card mm-sequenza ${s.attiva ? "accesa" : ""}">
+          <div class="mm-testata">
+            <div style="min-width:0">
+              <h3 style="margin:0">${esc(s.nome)}</h3>
+              <span class="muted" style="font-size:.78rem">
+                ${plurale(s.passi.length, "passo", "passi")} ·
+                ${casella ? esc(casella.from_email) : "nessuna casella scelta"}
+              </span>
+            </div>
+            <span class="pill ${s.attiva ? "pill-ok" : ""}">${s.attiva ? "accesa" : "spenta"}</span>
+          </div>
+
+          ${s.note ? `<p class="muted" style="font-size:.84rem">${esc(s.note)}</p>` : ""}
+
+          <ol class="mm-passi">
+            ${s.passi.map(p => `
+              <li>
+                <span class="mm-passo-quando">${p.ordine === 1 ? "subito" : `dopo ${plurale(p.dopo_giorni, "giorno", "giorni")}`}</span>
+                <span>${esc(p.oggetto || nomeModello(p.modello_id) || "(dal modello)")}</span>
+              </li>`).join("")}
+          </ol>
+
+          <div class="mm-azioni" style="margin-top:.7rem">
+            <span class="muted" style="font-size:.8rem">
+              🟢 ${c.attivi} in corso · ⏹ ${c.fermati} fermati · 🏁 ${c.finiti} in fondo
+            </span>
+          </div>
+
+          <div class="mm-azioni" style="margin-top:.7rem">
+            <button class="btn ${s.attiva ? "btn-outline" : "btn-primary"} btn-sm"
+                    data-seq-attiva="${esc(s.id)}" data-verso="${s.attiva ? "0" : "1"}">
+              ${s.attiva ? "⏸ Spegni" : "▶ Accendi"}</button>
+            <button class="btn btn-outline btn-sm" data-seq-iscrivi="${esc(s.id)}">＋ Iscrivi una lista</button>
+            <button class="btn btn-outline btn-sm" data-seq-iscritti="${esc(s.id)}">
+              Chi è dentro (${c.attivi + c.fermati + c.finiti})</button>
+            <button class="btn btn-ghost btn-sm" data-seq-modifica="${esc(s.id)}">Modifica</button>
+            <button class="btn btn-ghost btn-sm danger" data-seq-elimina="${esc(s.id)}">🗑</button>
+          </div>
+        </div>`;
+      }).join("")}
+
+    ${seqAperta ? seqEditorView() : ""}
+    ${seqIscritti ? seqIscrittiView() : ""}
+    ${seqIscrivi ? seqIscriviView() : ""}`;
+  }
+
+  const nomeModello = id => (posta?.modelli || []).find(m => m.id === id)?.nome || "";
+
+  function seqEditorView() {
+    const nuova = seqAperta === "nuova";
+    const s = nuova ? {} : seqAperta;
+    const modelli = (posta?.modelli || []).filter(m => m.attivo);
+    const caselle = smtpDelMittente();
+
+    return `
+    <div class="mm-velo" data-chiudi-seq>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>${nuova ? "Nuova sequenza" : esc(s.nome)}</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-seq>Chiudi</button>
+        </div>
+        <form id="mm-seq-form">
+          <label class="field"><span>Nome *</span>
+            <input id="s-nome" value="${esc(s.nome || "")}" required
+                   placeholder="es. Primo contatto agenzie Lombardia"></label>
+
+          <div class="mm-griglia-due" style="margin-top:.6rem">
+            <label class="field"><span>Casella da cui parte</span>
+              <select id="s-smtp">
+                <option value="">— scegli —</option>
+                ${caselle.map(c => `
+                  <option value="${esc(c.id)}" ${s.smtp_id === c.id ? "selected" : ""}>
+                    ${esc(c.nome)} · ${esc(c.from_email)}</option>`).join("")}
+              </select></label>
+            <label class="field"><span>Firma come</span>
+              <select id="s-mittente">
+                <option value="">— nessuno —</option>
+                ${D().mittenti.map(m => `
+                  <option value="${esc(m.id)}" ${s.mittente_id === m.id ? "selected" : ""}>${esc(m.etichetta)}</option>`).join("")}
+              </select></label>
+          </div>
+
+          <label class="field" style="margin-top:.6rem"><span>Nota per te (facoltativa)</span>
+            <input id="s-note" value="${esc(s.note || "")}"
+                   placeholder="a chi serve, e perché"></label>
+
+          <h4 style="margin:1rem 0 .4rem">I passi</h4>
+          <p class="privacy-hint" style="margin:0 0 .6rem">
+            Il primo parte appena qualcuno entra. Gli altri contano i giorni
+            <strong>dal passo precedente</strong>, non dall'iscrizione.
+          </p>
+
+          <div id="mm-seq-passi">
+            ${seqPassi.map((p, i) => `
+              <div class="mm-passo-mod" data-passo="${i}">
+                <div class="mm-testata">
+                  <strong>Passo ${i + 1}</strong>
+                  ${seqPassi.length > 1 ? `
+                    <button type="button" class="btn btn-ghost btn-sm danger" data-passo-togli="${i}">Togli</button>` : ""}
+                </div>
+                ${i === 0 ? `
+                  <p class="muted" style="font-size:.8rem;margin:0 0 .4rem">Parte subito.</p>`
+                : `
+                  <label class="field"><span>Dopo quanti giorni dal passo ${i}</span>
+                    <input type="number" min="1" max="365" data-passo-giorni="${i}" value="${p.dopo_giorni}"></label>`}
+                <label class="field" style="margin-top:.4rem"><span>Modello</span>
+                  <select data-passo-modello="${i}">
+                    <option value="">— scrivo il testo qui sotto —</option>
+                    ${modelli.map(m => `
+                      <option value="${esc(m.id)}" ${p.modello_id === m.id ? "selected" : ""}>${esc(m.nome)}</option>`).join("")}
+                  </select></label>
+                ${p.modello_id ? "" : `
+                  <label class="field" style="margin-top:.4rem"><span>Oggetto</span>
+                    <input data-passo-oggetto="${i}" value="${esc(p.oggetto || "")}"></label>
+                  <label class="field" style="margin-top:.4rem"><span>Testo</span>
+                    <textarea rows="6" class="mail-corpo" data-passo-corpo="${i}">${esc(p.corpo || "")}</textarea></label>`}
+              </div>`).join("")}
+          </div>
+
+          ${seqPassi.length < 10 ? `
+            <button type="button" class="btn btn-outline btn-sm" id="mm-passo-aggiungi">+ Aggiungi un passo</button>` : `
+            <p class="privacy-hint">Dieci passi sono il massimo. Oltre, non è un seguito: è insistenza.</p>`}
+
+          <div class="mm-azioni" style="justify-content:flex-end;margin-top:.9rem">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-seq>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm">Salva</button>
+          </div>
+        </form>
+      </div>
+    </div>`;
+  }
+
+  function seqIscrittiView() {
+    const s = seqDati.sequenze.find(x => x.id === seqIscritti);
+    const dentro = seqDati.iscritti.filter(i => i.sequenza_id === seqIscritti);
+    return `
+    <div class="mm-velo" data-chiudi-dentro>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Chi è dentro «${esc(s?.nome || "")}»</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-dentro>Chiudi</button>
+        </div>
+        ${dentro.length === 0 ? `
+          <p class="muted mm-vuoto" style="border:0">Nessuno, per ora. Iscrivi una lista.</p>`
+        : `
+          <div class="mm-tabella">
+            <table>
+              <thead><tr><th>Chi</th><th>A che punto</th><th>Prossimo</th><th>Stato</th><th></th></tr></thead>
+              <tbody>
+                ${dentro.map(i => `
+                  <tr>
+                    <td>
+                      <strong>${esc(i.lead?.nome || "—")}</strong>
+                      <span class="muted" style="display:block;font-size:.72rem">${esc(i.lead?.email || "")}</span>
+                    </td>
+                    <td>${i.passo_fatto === 0 ? "non ancora partito" : `passo ${i.passo_fatto} di ${s?.passi.length ?? "?"}`}</td>
+                    <td>${i.stato === "attivo" ? esc(dataOra(i.prossimo_il)) : "—"}</td>
+                    <td>
+                      ${STATI_ISCRITTO[i.stato]?.[0] ?? ""} ${esc(STATI_ISCRITTO[i.stato]?.[1] ?? i.stato)}
+                      ${i.fermato_motivo ? `<span class="muted" style="display:block;font-size:.7rem">${esc(i.fermato_motivo)}</span>` : ""}
+                    </td>
+                    <td>${i.stato === "attivo" ? `
+                      <button class="btn btn-ghost btn-sm" data-seq-ferma="${esc(i.id)}">Ferma</button>` : ""}</td>
+                  </tr>`).join("")}
+              </tbody>
+            </table>
+          </div>`}
+      </div>
+    </div>`;
+  }
+
+  function seqIscriviView() {
+    const s = seqDati.sequenze.find(x => x.id === seqIscrivi);
+    const liste = D().liste;
+    return `
+    <div class="mm-velo" data-chiudi-iscrivi>
+      <div class="card mm-dialogo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Iscrivi una lista a «${esc(s?.nome || "")}»</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-iscrivi>Chiudi</button>
+        </div>
+        ${liste.length === 0 ? `
+          <p class="muted">Nessuna lista. Creane una in <a href="#/admin/crm/mail/liste">Lead Lists</a>.</p>`
+        : `
+          <form id="mm-iscrivi-form">
+            <label class="field"><span>Quale lista</span>
+              <select id="i-lista" required>
+                ${liste.map(l => `<option value="${esc(l.id)}">${esc(l.nome)} (${l.quanti})</option>`).join("")}
+              </select></label>
+            <p class="privacy-hint">
+              Chi è già dentro resta al suo passo: reiscriverlo gli riscriverebbe il primo messaggio
+              una seconda volta. Vengono saltati chi non ha indirizzo, chi si è opposto, chi è in
+              blacklist e chi è già oltre il primo contatto — e ti dico quanti e perché.
+            </p>
+            <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+              <button type="button" class="btn btn-ghost btn-sm" data-chiudi-iscrivi>Annulla</button>
+              <button type="submit" class="btn btn-primary btn-sm">Iscrivi</button>
+            </div>
+          </form>`}
+      </div>
+    </div>`;
+  }
+
   /* ---------------- IN ARRIVO ---------------- */
   function inArrivoView(k) {
     const s = INARRIVO[k];
@@ -1899,6 +2355,8 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
             : attiva === "modelli" ? modelliView()
             : attiva === "ai-writer" ? scrittoreView()
             : attiva === "registro" ? registroView()
+            : attiva === "automazioni" ? automazioniView()
+            : attiva === "blacklist" ? blacklistView()
             : inArrivoView(attiva)}
         </div>
       </div>`;
@@ -1915,6 +2373,8 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
        una coda ferma da un'ora che continua a sembrare in moto. */
     $("#mm-ricarica")?.addEventListener("click", () => {
       if (rottaCorrente === "registro") registroDati = null;
+      if (rottaCorrente === "blacklist") nereDati = null;
+      if (rottaCorrente === "automazioni") seqDati = null;
       carica();
     });
     $("#mm-riprova")?.addEventListener("click", carica);
@@ -1946,6 +2406,248 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     bindCampagne();
     bindPronte();
     bindRegistro();
+    bindNere();
+    bindSequenze();
+  }
+
+  /* ---------------- EVENTI · BLACKLIST ---------------- */
+  function bindNere() {
+    const $ = s => document.querySelector(s);
+    if (rottaCorrente !== "blacklist") return;
+    if (!nereDati) { caricaNere(); return; }
+
+    const campo = $("#mm-cerca-nere");
+    if (campo) {
+      let attesa;
+      campo.addEventListener("input", () => {
+        clearTimeout(attesa);
+        attesa = setTimeout(() => { filtroNere = campo.value.trim(); caricaNere(); }, 400);
+      });
+    }
+
+    $("#mm-nere-aggiungi")?.addEventListener("click", () => { aggiuntaNera = true; QF().render(); });
+
+    document.querySelectorAll("[data-chiudi-nera]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        aggiuntaNera = false; QF().render();
+      }));
+    if (aggiuntaNera) chiudiConEsc(() => { aggiuntaNera = false; });
+
+    $("#mm-nera-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      nuoveNere.indirizzi = $("#n-indirizzi").value;
+      nuoveNere.origine = $("#n-origine").value;
+      nuoveNere.motivo = $("#n-motivo").value.trim();
+      const esito = await chiama("blacklist-aggiungi", { ...nuoveNere });
+      if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+
+      const note = [
+        esito.gia ? `${esito.gia} c'${esito.gia === 1 ? "era" : "erano"} già` : null,
+        esito.nonValidi?.length
+          ? `${plurale(esito.nonValidi.length, "scartato", "scartati")} perché non ${esito.nonValidi.length === 1 ? "valido" : "validi"}`
+          : null,
+        esito.annullate ? `${plurale(esito.annullate, "messaggio annullato", "messaggi annullati")}` : null,
+        esito.leadSegnati ? `${plurale(esito.leadSegnati, "lead segnato", "lead segnati")} come opposto` : null
+      ].filter(Boolean);
+      aggiuntaNera = false;
+      nuoveNere.indirizzi = ""; nuoveNere.motivo = "";
+      QF().toast(`${plurale(esito.aggiunti, "indirizzo bloccato", "indirizzi bloccati")}${note.length ? `; ${note.join("; ")}` : ""}.`);
+      nereDati = null;
+      await caricaNere();
+    });
+
+    document.querySelectorAll("[data-nera-togli]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const r = nereDati.blacklist.find(x => x.id === b.dataset.neraTogli);
+        if (!confirm(
+          `Togliere ${r?.email} dalla blacklist?\n\n` +
+          `Vuol dire che da questo momento può tornare a ricevere messaggi. ` +
+          `Fallo solo se te l'ha chiesto lui: l'opposizione la revoca chi l'ha espressa.`)) return;
+        const esito = await chiama("blacklist-togli", { id: b.dataset.neraTogli });
+        if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+        QF().toast(`${esito.tolto} non è più in blacklist.`);
+        nereDati = null;
+        await caricaNere();
+      }));
+
+    $("#mm-nere-csv")?.addEventListener("click", () => {
+      scaricaCsv([
+        ...nereDati.blacklist.map(r => ({
+          indirizzo: r.email, chi: "", da: r.aggiunta_il, origine: r.origine,
+          motivo: r.motivo || "", fonte: "blacklist"
+        })),
+        ...nereDati.opposti.map(l => ({
+          indirizzo: l.email || "", chi: l.nome || "", da: l.no_contatto_il || "", origine: "opposizione",
+          motivo: l.no_contatto_motivo || "", fonte: "scheda del lead"
+        }))
+      ], "chi-non-contattare");
+    });
+  }
+
+  /* ---------------- EVENTI · AUTOMAZIONI ---------------- */
+
+  /* Un passo vuoto è quello che si vuole quasi sempre: cinque
+     giorni dopo il precedente, testo da scrivere. */
+  const passoVuoto = primo => ({ dopo_giorni: primo ? 0 : 5, modello_id: "", oggetto: "", corpo: "" });
+
+  function bindSequenze() {
+    const $ = s => document.querySelector(s);
+    if (rottaCorrente !== "automazioni") return;
+    /* L'editor ha bisogno dei modelli, che stanno nell'altra
+       funzione: si chiedono una volta e restano. */
+    if (!posta) { caricaPosta(); return; }
+    if (!seqDati) { caricaSeq(); return; }
+
+    $("#mm-seq-nuova")?.addEventListener("click", () => {
+      seqAperta = "nuova"; seqPassi = [passoVuoto(true)]; QF().render();
+    });
+
+    document.querySelectorAll("[data-seq-modifica]").forEach(b =>
+      b.addEventListener("click", () => {
+        const s = seqDati.sequenze.find(x => x.id === b.dataset.seqModifica);
+        if (!s) return;
+        seqAperta = s;
+        seqPassi = s.passi.map(p => ({
+          dopo_giorni: p.dopo_giorni, modello_id: p.modello_id || "",
+          oggetto: p.oggetto || "", corpo: p.corpo || ""
+        }));
+        if (!seqPassi.length) seqPassi = [passoVuoto(true)];
+        QF().render();
+      }));
+
+    document.querySelectorAll("[data-seq-attiva]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const attiva = b.dataset.verso === "1";
+        const esito = await chiama("sequenza-attiva", { id: b.dataset.seqAttiva, attiva });
+        if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+        QF().toast(attiva
+          ? "Sequenza accesa: il primo messaggio parte al prossimo giro della coda."
+          : "Sequenza spenta. Chi è dentro resta dov'è: riaccendendola riprende da lì.");
+        seqDati = null;
+        await caricaSeq();
+      }));
+
+    document.querySelectorAll("[data-seq-elimina]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const s = seqDati.sequenze.find(x => x.id === b.dataset.seqElimina);
+        if (!confirm(
+          `Eliminare «${s?.nome}»?\n\n` +
+          `Spariscono i passi e chi è dentro. Le email già partite restano nel registro.`)) return;
+        const esito = await chiama("sequenza-elimina", { id: b.dataset.seqElimina });
+        if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+        QF().toast("Sequenza eliminata.");
+        seqDati = null;
+        await caricaSeq();
+      }));
+
+    document.querySelectorAll("[data-seq-iscritti]").forEach(b =>
+      b.addEventListener("click", () => { seqIscritti = b.dataset.seqIscritti; QF().render(); }));
+    document.querySelectorAll("[data-seq-iscrivi]").forEach(b =>
+      b.addEventListener("click", () => { seqIscrivi = b.dataset.seqIscrivi; QF().render(); }));
+
+    document.querySelectorAll("[data-chiudi-dentro]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        seqIscritti = null; QF().render();
+      }));
+    document.querySelectorAll("[data-chiudi-iscrivi]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        seqIscrivi = null; QF().render();
+      }));
+    document.querySelectorAll("[data-chiudi-seq]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        seqAperta = null; QF().render();
+      }));
+    if (seqIscritti) chiudiConEsc(() => { seqIscritti = null; });
+    if (seqIscrivi) chiudiConEsc(() => { seqIscrivi = null; });
+    if (seqAperta) chiudiConEsc(() => { seqAperta = null; });
+
+    document.querySelectorAll("[data-seq-ferma]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const esito = await chiama("sequenza-ferma", { id: b.dataset.seqFerma });
+        if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+        QF().toast("Fermato: non riceverà i passi successivi.");
+        seqDati = null;
+        await caricaSeq();
+      }));
+
+    /* --- l'editor dei passi --- */
+    /* Ogni modifica finisce subito in seqPassi e la pagina si
+       ridisegna: scegliere un modello deve far sparire i campi
+       del testo scritto a mano, altrimenti restano lì a far
+       credere che valgano tutti e due. */
+    const leggiCampi = () => {
+      seqPassi.forEach((p, i) => {
+        const g = document.querySelector(`[data-passo-giorni="${i}"]`);
+        const o = document.querySelector(`[data-passo-oggetto="${i}"]`);
+        const c = document.querySelector(`[data-passo-corpo="${i}"]`);
+        if (g) p.dopo_giorni = Math.max(1, Number(g.value) || 1);
+        if (o) p.oggetto = o.value;
+        if (c) p.corpo = c.value;
+      });
+    };
+
+    document.querySelectorAll("[data-passo-modello]").forEach(s =>
+      s.addEventListener("change", () => {
+        leggiCampi();
+        seqPassi[Number(s.dataset.passoModello)].modello_id = s.value;
+        QF().render();
+      }));
+
+    $("#mm-passo-aggiungi")?.addEventListener("click", () => {
+      leggiCampi();
+      seqPassi.push(passoVuoto(false));
+      QF().render();
+    });
+
+    document.querySelectorAll("[data-passo-togli]").forEach(b =>
+      b.addEventListener("click", () => {
+        leggiCampi();
+        seqPassi.splice(Number(b.dataset.passoTogli), 1);
+        if (!seqPassi.length) seqPassi = [passoVuoto(true)];
+        /* Il primo passo parte sempre subito, anche se prima era
+           il secondo: l'attesa che aveva non ha più un prima. */
+        seqPassi[0].dopo_giorni = 0;
+        QF().render();
+      }));
+
+    $("#mm-seq-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      leggiCampi();
+      const esito = await chiama("sequenza-salva", {
+        id: seqAperta === "nuova" ? "" : seqAperta.id,
+        nome: $("#s-nome").value.trim(),
+        smtp_id: $("#s-smtp").value,
+        mittente_id: $("#s-mittente").value,
+        note: $("#s-note").value.trim(),
+        passi: seqPassi
+      });
+      if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+      seqAperta = null;
+      QF().toast(`Salvata, ${plurale(esito.passi, "passo", "passi")}.`);
+      seqDati = null;
+      await caricaSeq();
+    });
+
+    $("#mm-iscrivi-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const esito = await chiama("sequenza-iscrivi", { id: seqIscrivi, lista_id: $("#i-lista").value });
+      if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
+      const s = esito.saltati || {};
+      const note = [
+        s.senzaEmail ? `${s.senzaEmail} senza indirizzo` : null,
+        s.opposti ? `${plurale(s.opposti, "opposto", "opposti")}` : null,
+        s.inBlacklist ? `${s.inBlacklist} in blacklist` : null,
+        s.giaRisposto ? `${s.giaRisposto} già oltre il primo contatto` : null
+      ].filter(Boolean);
+      seqIscrivi = null;
+      QF().toast(`${plurale(esito.iscritti, "lead iscritto", "lead iscritti")}${note.length ? `; saltati: ${note.join(", ")}` : ""}.`);
+      seqDati = null;
+      await caricaSeq();
+    });
   }
 
   /* ---------------- EVENTI · SEND LOG ---------------- */

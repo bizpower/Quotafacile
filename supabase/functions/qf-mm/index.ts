@@ -5,9 +5,10 @@
 // dentro QuotaFacile. Undici sezioni; questa funzione le serve
 // tutte, una azione per volta.
 //
-// Costruite finora: la Dashboard, le caselle di invio, le liste
-// di lead, la scrittura assistita, le campagne, la posta in
-// uscita, la coda automatica e il registro.
+// Tutte e undici sono costruite: la Dashboard, il Lead Finder,
+// le liste, le campagne, la posta in uscita, la scrittura
+// assistita, i modelli, le caselle di invio, il registro, le
+// sequenze e la blacklist.
 //
 // I LEAD NON SI DUPLICANO
 // Su Lovable ogni lista aveva le proprie righe: la stessa azienda
@@ -1230,6 +1231,29 @@ const PAUSA_CODA = 3;
 async function codaScarica() {
   const adesso = new Date().toISOString();
 
+  /* Prima le sequenze, poi la coda. In quest'ordine un messaggio
+     che una sequenza ha appena maturato parte nello stesso giro
+     invece che al prossimo, e passa comunque dagli stessi
+     controlli: le sequenze mettono in coda, non spediscono. */
+  let seq = { esaminati: 0, messi: 0, fermati: 0, finiti: 0 };
+  const problemi: string[] = [];
+  try {
+    seq = await sequenzeAvanza();
+  } catch (e) {
+    /* Le sequenze che si inceppano non devono bloccare la posta
+       già approvata: quella è indipendente e deve partire. */
+    problemi.push(`Sequenze non avanzate: ${e instanceof Error ? e.message : String(e)}`.slice(0, 200));
+  }
+  if (seq.messi || seq.fermati || seq.finiti) {
+    problemi.push(
+      "Sequenze: " + [
+        seq.messi ? `${plurale(seq.messi, "messaggio in coda", "messaggi in coda")}` : null,
+        seq.fermati ? `${plurale(seq.fermati, "iscritto fermato", "iscritti fermati")}` : null,
+        seq.finiti ? `${plurale(seq.finiti, "arrivato in fondo", "arrivati in fondo")}` : null,
+      ].filter(Boolean).join(", "),
+    );
+  }
+
   const { data: dovute, error } = await db.from("mm_email")
     .select("id,destinatario,oggetto,corpo,smtp_id")
     .eq("stato", "in_coda")
@@ -1243,9 +1267,13 @@ async function codaScarica() {
     .select("id", { count: "exact", head: true })
     .eq("stato", "in_coda").lte("programmata_per", adesso);
 
+  const nota = () => (problemi.length ? problemi.join(" · ").slice(0, 500) : null);
+
   if (!dovute?.length) {
-    await db.from("mm_coda_giri").insert({ trovati: 0, partite: 0, fallite: 0, in_attesa: inAttesa ?? 0 });
-    return { trovati: 0, partite: 0, fallite: 0, inAttesa: inAttesa ?? 0 };
+    await db.from("mm_coda_giri").insert({
+      trovati: 0, partite: 0, fallite: 0, in_attesa: inAttesa ?? 0, note: nota(),
+    });
+    return { trovati: 0, partite: 0, fallite: 0, inAttesa: inAttesa ?? 0, sequenze: seq, problemi };
   }
 
   /* Le stesse due liste di sempre, controllate adesso: una
@@ -1280,7 +1308,6 @@ async function codaScarica() {
   }
 
   let partite = 0, fallite = 0;
-  const problemi: string[] = [];
 
   for (const [smtpId, gruppo] of perCasella) {
     let casella, password;
@@ -1350,11 +1377,13 @@ async function codaScarica() {
 
   const restano = Math.max(0, (inAttesa ?? 0) - partite - fallite - bloccati.length);
   await db.from("mm_coda_giri").insert({
-    trovati: dovute.length, partite, fallite, in_attesa: restano,
-    note: problemi.length ? problemi.join(" · ").slice(0, 500) : null,
+    trovati: dovute.length, partite, fallite, in_attesa: restano, note: nota(),
   });
 
-  return { trovati: dovute.length, partite, fallite, bloccati: bloccati.length, inAttesa: restano, problemi };
+  return {
+    trovati: dovute.length, partite, fallite, bloccati: bloccati.length,
+    inAttesa: restano, sequenze: seq, problemi,
+  };
 }
 
 // ---------------- Send Log ----------------
@@ -1372,7 +1401,7 @@ async function registro(d: Record<string, unknown>) {
   const da = new Date(Date.now() - giorni * 86400000).toISOString();
 
   let q = db.from("mm_email")
-    .select("id,destinatario,oggetto,corpo,stato,inviata_il,creata_il,errore,campagna_id,smtp_id")
+    .select("id,destinatario,oggetto,corpo,stato,inviata_il,creata_il,errore,campagna_id,sequenza_id,smtp_id")
     .in("stato", ["inviata", "fallita"])
     .gte("creata_il", da)
     .order("creata_il", { ascending: false }).limit(500);
@@ -1395,12 +1424,13 @@ async function registro(d: Record<string, unknown>) {
       id: r.id, destinatario: r.destinatario, oggetto: r.oggetto, corpo: r.corpo,
       esito: r.stato === "inviata" ? "inviata" : "fallita",
       quando: r.inviata_il ?? r.creata_il, errore: r.errore,
-      origine: "mail_marketing", campagna_id: r.campagna_id,
+      origine: r.sequenza_id ? "sequenza" : "mail_marketing",
+      campagna_id: r.campagna_id, sequenza_id: r.sequenza_id,
     })),
     ...(vecchie.data ?? []).map((r: Record<string, unknown>) => ({
       id: r.id, destinatario: r.destinatario, oggetto: r.oggetto, corpo: r.corpo,
       esito: r.esito, quando: r.inviata_il, errore: r.errore,
-      origine: "crm", campagna_id: null,
+      origine: "crm", campagna_id: null, sequenza_id: null,
     })),
   ].sort((a, b) => String(b.quando).localeCompare(String(a.quando)));
 
@@ -1418,6 +1448,487 @@ async function registro(d: Record<string, unknown>) {
     coda: ultimo
       ? { ultimoGiro: ultimo.quando, inAttesa: ultimo.in_attesa, nota: ultimo.note }
       : null,
+  };
+}
+
+// ---------------- Blacklist & Compliance ----------------
+
+/* Chi non va contattato. Le fonti sono due e restano due:
+   crm_lead.no_contatto è l'opposizione di qualcuno che abbiamo
+   in archivio, mm_blacklist è quella di tutti gli altri — chi
+   risponde NO da un indirizzo diverso, chi scrive per un
+   collega, chi chiede la cancellazione prima ancora di essere
+   schedato. Unirle in una tabella sola vorrebbe dire inventare
+   un lead per ogni opposizione, cioè schedare qualcuno perché ha
+   chiesto di non essere schedato.
+
+   Qui si leggono insieme, perché la domanda «a chi non posso
+   scrivere» è una sola. */
+
+async function blacklistElenco(d: Record<string, unknown>) {
+  const cerca = (testo(d.cerca, 120) || "").toLowerCase();
+
+  const [{ data: nero, error }, { data: opposti }, { data: inCoda }] = await Promise.all([
+    db.from("mm_blacklist").select("*").order("aggiunta_il", { ascending: false }).limit(2000),
+    db.from("crm_lead").select("id,nome,email,no_contatto_il,no_contatto_motivo,citta")
+      .eq("no_contatto", true).order("no_contatto_il", { ascending: false }).limit(1000),
+    /* Quanti messaggi mai partiti sono diretti a qualcuno che ora
+       è nell'elenco: è il numero che dice se l'opposizione sta
+       davvero mordendo o è solo scritta da qualche parte. */
+    db.from("mm_email").select("destinatario").in("stato", ["bozza", "pronta", "in_coda"]),
+  ]);
+  if (error) throw new Error(error.message);
+
+  const vietati = new Set([
+    ...(nero ?? []).map((r: { email: string }) => r.email.toLowerCase()),
+    ...(opposti ?? []).map((r: { email: string | null }) => (r.email ?? "").toLowerCase()).filter(Boolean),
+  ]);
+  const fermati = (inCoda ?? [])
+    .filter((r: { destinatario: string }) => vietati.has(r.destinatario.toLowerCase())).length;
+
+  const filtra = <T extends { email?: string | null; nome?: string }>(righe: T[]) =>
+    !cerca ? righe : righe.filter((r) =>
+      (r.email ?? "").toLowerCase().includes(cerca) || (r.nome ?? "").toLowerCase().includes(cerca));
+
+  return {
+    blacklist: filtra(nero ?? []),
+    opposti: filtra(opposti ?? []),
+    numeri: {
+      blacklist: (nero ?? []).length,
+      opposti: (opposti ?? []).length,
+      indirizzi: vietati.size,
+      fermati,
+    },
+  };
+}
+
+const ORIGINI_NERE = ["manuale", "risposta", "bounce", "reclamo"];
+
+async function blacklistAggiungi(d: Record<string, unknown>) {
+  const origine = ORIGINI_NERE.includes(String(d.origine)) ? String(d.origine) : "manuale";
+  const motivo = testo(d.motivo, 300);
+
+  /* Si incolla un elenco, non un indirizzo per volta: quando
+     arriva una lista di cancellazioni arriva tutta insieme. */
+  const grezzi = String(d.indirizzi ?? d.email ?? "")
+    .split(/[,;\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const indirizzi = [...new Set(grezzi)];
+  const nonValidi = indirizzi.filter((x) => !emailValida(x));
+  const buoni = indirizzi.filter((x) => emailValida(x));
+
+  if (!indirizzi.length) throw new ErroreCliente("Nessun indirizzo da aggiungere.");
+  if (!buoni.length) {
+    throw new ErroreCliente(
+      `${nonValidi.length === 1 ? "L'indirizzo non è valido" : "Nessuno degli indirizzi è valido"}: ${nonValidi.join(", ")}`,
+    );
+  }
+
+  const { data: gia } = await db.from("mm_blacklist").select("email").in("email", buoni);
+  const noti = new Set((gia ?? []).map((r: { email: string }) => r.email.toLowerCase()));
+  const nuovi = buoni.filter((x) => !noti.has(x));
+
+  if (nuovi.length) {
+    const { error } = await db.from("mm_blacklist")
+      .insert(nuovi.map((email) => ({ email, motivo, origine })));
+    if (error) throw new Error(error.message);
+  }
+
+  /* Un divieto che vale solo da domani non è un divieto. Quello
+     che era già pronto o già in coda per quell'indirizzo viene
+     annullato adesso, con scritto perché: al prossimo giro la
+     coda lo ricontrollerebbe comunque, ma «annullata» qui e
+     subito è la differenza fra un sistema che obbedisce e uno
+     che obbedisce quando gli capita. */
+  const { count } = await db.from("mm_email").update({
+    stato: "annullata",
+    errore: "Il destinatario è stato messo in blacklist: l'invio è stato rifiutato.",
+  }, { count: "exact" }).in("destinatario", buoni).in("stato", ["bozza", "pronta", "in_coda"]);
+
+  /* Se l'indirizzo corrisponde a un lead, l'opposizione va
+     scritta anche lì: le due fonti devono raccontare la stessa
+     cosa, e chi apre la scheda del lead deve vederla. */
+  const { data: leadTocc } = await db.from("crm_lead").select("id").in("email", buoni).eq("no_contatto", false);
+  if (leadTocc?.length) {
+    await db.from("crm_lead").update({
+      no_contatto: true,
+      no_contatto_il: new Date().toISOString(),
+      no_contatto_motivo: motivo || `Aggiunto alla blacklist (${origine})`,
+    }).in("id", leadTocc.map((r: { id: string }) => r.id));
+  }
+
+  return {
+    aggiunti: nuovi.length,
+    gia: buoni.length - nuovi.length,
+    nonValidi,
+    annullate: count ?? 0,
+    leadSegnati: leadTocc?.length ?? 0,
+  };
+}
+
+async function blacklistTogli(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new ErroreCliente("Manca l'identificativo.");
+  const { data: riga } = await db.from("mm_blacklist").select("email").eq("id", id).maybeSingle();
+  if (!riga) throw new ErroreCliente("Questo indirizzo non è più in elenco.", 404);
+  const { error } = await db.from("mm_blacklist").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  /* Il lead resta opposto: togliere l'indirizzo da qui non
+     revoca l'opposizione registrata sulla sua scheda. La revoca
+     la fa chi l'ha espressa, e si fa da lì. */
+  return { tolto: riga.email };
+}
+
+// ---------------- Automazioni ----------------
+
+/* Una sequenza è un seguito programmato: il primo messaggio,
+   poi un secondo dopo N giorni a chi non ha dato segno, poi
+   basta. La parte che conta non è mandare il secondo: è non
+   mandarlo.
+
+   COME SI CAPISCE CHE HANNO RISPOSTO
+   Non leggendo la posta in arrivo. Per farlo servirebbe tenere
+   una connessione IMAP aperta sulla casella e interpretare i
+   messaggi che arrivano, e un errore lì vorrebbe dire o seguiti
+   mandati a chi aveva già risposto, o seguiti mai mandati.
+   Il segnale che questo modulo usa è quello che una persona
+   registra davvero: lo stato del lead nella pipeline del CRM.
+   Appena esce da «contattato» — trattativa, cliente, scartato —
+   la sequenza si ferma. Insieme a questo si fermano da sole le
+   opposizioni, la blacklist e gli indirizzi non validi. */
+
+const SEQ_PER_GIRO = 20;
+const STATI_RISPOSTO = ["in_trattativa", "cliente", "scartato"];
+
+const COLONNE_SEQ = "id,creata_il,nome,attiva,mittente_id,smtp_id,note";
+
+async function sequenzaElenco() {
+  const [{ data: seq, error }, { data: passi }, { data: iscritti }] = await Promise.all([
+    db.from("mm_sequenze").select(COLONNE_SEQ).order("creata_il", { ascending: false }),
+    db.from("mm_sequenze_passi").select("*").order("ordine"),
+    db.from("mm_sequenze_iscritti")
+      .select("id,sequenza_id,lead_id,stato,passo_fatto,prossimo_il,entrato_il,fermato_motivo,fermato_il")
+      .order("prossimo_il"),
+  ]);
+  if (error) throw new Error(error.message);
+
+  /* I nomi dei lead iscritti: un elenco di identificativi non
+     dice a chi stiamo scrivendo. */
+  const ids = [...new Set((iscritti ?? []).map((r: { lead_id: string }) => r.lead_id))];
+  const { data: lead } = ids.length
+    ? await db.from("crm_lead").select("id,nome,email,citta,stato,no_contatto").in("id", ids)
+    : { data: [] };
+  const perLead = new Map((lead ?? []).map((l: { id: string }) => [l.id, l]));
+
+  const perSeq = new Map<string, { attivi: number; fermati: number; finiti: number }>();
+  for (const r of (iscritti ?? []) as { sequenza_id: string; stato: string }[]) {
+    const c = perSeq.get(r.sequenza_id) ?? { attivi: 0, fermati: 0, finiti: 0 };
+    if (r.stato === "attivo") c.attivi++;
+    else if (r.stato === "fermato") c.fermati++;
+    else c.finiti++;
+    perSeq.set(r.sequenza_id, c);
+  }
+
+  return {
+    sequenze: (seq ?? []).map((s: { id: string }) => ({
+      ...s,
+      passi: (passi ?? []).filter((p: { sequenza_id: string }) => p.sequenza_id === s.id),
+      conteggi: perSeq.get(s.id) ?? { attivi: 0, fermati: 0, finiti: 0 },
+    })),
+    iscritti: (iscritti ?? []).map((r: { lead_id: string }) => ({ ...r, lead: perLead.get(r.lead_id) ?? null })),
+  };
+}
+
+async function sequenzaSalva(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  const nome = testo(d.nome, 120);
+  if (!nome) throw new ErroreCliente("Dai un nome alla sequenza.");
+
+  const grezzi = Array.isArray(d.passi) ? d.passi : [];
+  if (!grezzi.length) throw new ErroreCliente("Una sequenza senza passi non manda niente: aggiungine almeno uno.");
+  if (grezzi.length > 10) throw new ErroreCliente("Dieci passi sono già tanti: oltre, è insistenza.");
+
+  const passi = grezzi.slice(0, 10).map((p, i) => {
+    const r = p as Record<string, unknown>;
+    return {
+      ordine: i + 1,
+      /* Il primo passo parte subito: aspettare prima del primo
+         messaggio vorrebbe dire iscrivere qualcuno a niente. */
+      dopo_giorni: i === 0 ? 0 : Math.max(1, Math.min(365, Number(r.dopo_giorni) || 3)),
+      modello_id: testo(r.modello_id, 40),
+      oggetto: testo(r.oggetto, 300),
+      corpo: testo(r.corpo, 40000),
+    };
+  });
+
+  for (const p of passi) {
+    if (!p.modello_id && (!p.oggetto || !p.corpo)) {
+      throw new ErroreCliente(
+        `Il passo ${p.ordine} non ha né un modello né un testo scritto a mano: non saprei cosa mandare.`,
+      );
+    }
+  }
+
+  const riga: Record<string, unknown> = {
+    nome,
+    mittente_id: testo(d.mittente_id, 40),
+    smtp_id: testo(d.smtp_id, 40),
+    note: testo(d.note, 500),
+  };
+
+  let seqId = id;
+  if (id) {
+    const { error } = await db.from("mm_sequenze").update(riga).eq("id", id);
+    if (error) throw new Error(error.message);
+    /* I passi si riscrivono per intero: tenerne traccia in
+       differenza vorrebbe dire indovinare quale riga era quale
+       dopo che qualcuno ne ha spostata una. Le email già create
+       da questa sequenza non cambiano: sono già partite o sono
+       in coda col testo che avevano. */
+    await db.from("mm_sequenze_passi").delete().eq("sequenza_id", id);
+  } else {
+    const { data, error } = await db.from("mm_sequenze").insert(riga).select("id").single();
+    if (error) throw new Error(error.message);
+    seqId = data.id;
+  }
+
+  const { error: e2 } = await db.from("mm_sequenze_passi")
+    .insert(passi.map((p) => ({ ...p, sequenza_id: seqId })));
+  if (e2) {
+    if (!id) await db.from("mm_sequenze").delete().eq("id", seqId as string);
+    throw new Error(e2.message);
+  }
+  return { id: seqId, passi: passi.length };
+}
+
+async function sequenzaElimina(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new ErroreCliente("Manca l'identificativo della sequenza.");
+  /* Le email già create restano, come per le campagne: sono
+     fatti accaduti e il registro deve poterli mostrare. */
+  await db.from("mm_email").update({ sequenza_id: null })
+    .eq("sequenza_id", id).in("stato", ["inviata", "fallita"]);
+  const { error } = await db.from("mm_sequenze").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  return { eliminata: id };
+}
+
+async function sequenzaAttiva(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  const attiva = d.attiva !== false;
+  if (!id) throw new ErroreCliente("Manca l'identificativo della sequenza.");
+
+  if (attiva) {
+    /* Accendere una sequenza senza casella vuol dire accumulare
+       messaggi che non hanno da dove uscire: meglio dirlo ora. */
+    const { data: s } = await db.from("mm_sequenze").select("smtp_id").eq("id", id).maybeSingle();
+    if (!s) throw new ErroreCliente("Questa sequenza non esiste più.", 404);
+    if (!s.smtp_id) throw new ErroreCliente("Scegli prima la casella da cui devono partire i messaggi.");
+    const { count } = await db.from("mm_sequenze_passi")
+      .select("id", { count: "exact", head: true }).eq("sequenza_id", id);
+    if (!count) throw new ErroreCliente("Questa sequenza non ha passi: non manderebbe niente.");
+  }
+
+  const { error } = await db.from("mm_sequenze").update({ attiva }).eq("id", id);
+  if (error) throw new Error(error.message);
+  return { id, attiva };
+}
+
+async function sequenzaIscrivi(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  const listaId = testo(d.lista_id, 40);
+  if (!id) throw new ErroreCliente("Manca la sequenza.");
+  if (!listaId) throw new ErroreCliente("Scegli la lista da iscrivere.");
+
+  const { data: dentro } = await db.from("mm_lista_lead").select("lead_id").eq("lista_id", listaId);
+  const ids = (dentro ?? []).map((r: { lead_id: string }) => r.lead_id);
+  if (!ids.length) throw new ErroreCliente("Questa lista è vuota.");
+
+  const { data: lead } = await db.from("crm_lead")
+    .select("id,email,no_contatto,stato").in("id", ids);
+  const { data: vietati } = await db.from("mm_blacklist").select("email");
+  const nero = new Set((vietati ?? []).map((r: { email: string }) => r.email.toLowerCase()));
+
+  /* Gli stessi motivi di sempre per saltare qualcuno, contati
+     separati: sono le tre risposte a «perché sono entrati in
+     meno di quanti ne avevo». */
+  const saltati = { senzaEmail: 0, opposti: 0, inBlacklist: 0, giaRisposto: 0 };
+  const buoni: string[] = [];
+  for (const l of (lead ?? []) as Record<string, unknown>[]) {
+    const email = String(l.email ?? "").toLowerCase();
+    if (!emailValida(email)) { saltati.senzaEmail++; continue; }
+    if (l.no_contatto) { saltati.opposti++; continue; }
+    if (nero.has(email)) { saltati.inBlacklist++; continue; }
+    if (STATI_RISPOSTO.includes(String(l.stato))) { saltati.giaRisposto++; continue; }
+    buoni.push(String(l.id));
+  }
+
+  if (!buoni.length) {
+    throw new ErroreCliente(
+      "Non è rimasto nessuno da iscrivere: " +
+      [
+        saltati.senzaEmail ? `${saltati.senzaEmail} senza indirizzo` : null,
+        saltati.opposti ? `${saltati.opposti} si sono opposti` : null,
+        saltati.inBlacklist ? `${saltati.inBlacklist} in blacklist` : null,
+        saltati.giaRisposto ? `${saltati.giaRisposto} già oltre il primo contatto` : null,
+      ].filter(Boolean).join(", ") + ".",
+    );
+  }
+
+  /* ignoreDuplicates: chi è già dentro resta dov'è, col suo
+     passo. Reiscriverlo lo rimetterebbe all'inizio, cioè gli
+     riscriverebbe il primo messaggio una seconda volta. */
+  const { error } = await db.from("mm_sequenze_iscritti")
+    .upsert(buoni.map((lead_id) => ({ sequenza_id: id, lead_id })),
+      { onConflict: "sequenza_id,lead_id", ignoreDuplicates: true });
+  if (error) {
+    if ((error as { code?: string }).code === "23503") {
+      throw new ErroreCliente("La sequenza non esiste più.");
+    }
+    throw new Error(error.message);
+  }
+
+  const { count } = await db.from("mm_sequenze_iscritti")
+    .select("id", { count: "exact", head: true })
+    .eq("sequenza_id", id).in("lead_id", buoni);
+  return { iscritti: count ?? buoni.length, candidati: buoni.length, saltati };
+}
+
+async function sequenzaFerma(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new ErroreCliente("Manca l'iscritto.");
+  const { error } = await db.from("mm_sequenze_iscritti").update({
+    stato: "fermato",
+    fermato_motivo: testo(d.motivo, 200) || "Fermato a mano",
+    fermato_il: new Date().toISOString(),
+  }).eq("id", id).eq("stato", "attivo");
+  if (error) throw new Error(error.message);
+  return { fermato: id };
+}
+
+/* Il giro delle sequenze, chiamato dallo stesso cron della coda.
+   Non spedisce: mette in coda. Così i messaggi di una sequenza
+   passano dagli stessi controlli e dallo stesso ritmo di tutti
+   gli altri, invece di avere una porta di servizio. */
+
+async function sequenzeAvanza() {
+  const adesso = new Date().toISOString();
+
+  const { data: attive } = await db.from("mm_sequenze")
+    .select(`${COLONNE_SEQ}`).eq("attiva", true);
+  if (!attive?.length) return { esaminati: 0, messi: 0, fermati: 0, finiti: 0 };
+
+  const idSeq = attive.map((s: { id: string }) => s.id);
+  const { data: dovuti } = await db.from("mm_sequenze_iscritti")
+    .select("id,sequenza_id,lead_id,passo_fatto")
+    .eq("stato", "attivo").in("sequenza_id", idSeq)
+    .lte("prossimo_il", adesso)
+    .order("prossimo_il").limit(SEQ_PER_GIRO);
+  if (!dovuti?.length) return { esaminati: 0, messi: 0, fermati: 0, finiti: 0 };
+
+  const [{ data: passi }, { data: lead }, { data: vietati }] = await Promise.all([
+    db.from("mm_sequenze_passi").select("*").in("sequenza_id", idSeq).order("ordine"),
+    db.from("crm_lead").select("id,nome,email,citta,telefono,no_contatto,stato")
+      .in("id", dovuti.map((r: { lead_id: string }) => r.lead_id)),
+    db.from("mm_blacklist").select("email"),
+  ]);
+  const nero = new Set((vietati ?? []).map((r: { email: string }) => r.email.toLowerCase()));
+  const perLead = new Map((lead ?? []).map((l: { id: string }) => [l.id, l as Record<string, unknown>]));
+  const perSeq = new Map(attive.map((s: { id: string }) => [s.id, s as Record<string, unknown>]));
+
+  /* I modelli citati dai passi, presi una volta sola invece che
+     una per iscritto. */
+  const idModelli = [...new Set((passi ?? [])
+    .map((p: { modello_id: string | null }) => p.modello_id).filter(Boolean))] as string[];
+  const { data: modelli } = idModelli.length
+    ? await db.from("crm_email_modelli").select("id,oggetto,corpo").in("id", idModelli)
+    : { data: [] };
+  const perModello = new Map((modelli ?? []).map((m: { id: string }) => [m.id, m as Record<string, unknown>]));
+
+  const daCreare: Record<string, unknown>[] = [];
+  const fermare: { id: string; motivo: string }[] = [];
+  const finire: string[] = [];
+  const avanzare: { id: string; passo: number; prossimo: string }[] = [];
+
+  for (const r of dovuti as Record<string, unknown>[]) {
+    const seq = perSeq.get(String(r.sequenza_id));
+    const l = perLead.get(String(r.lead_id));
+    if (!seq || !l) { fermare.push({ id: String(r.id), motivo: "Il lead o la sequenza non esistono più" }); continue; }
+
+    const email = String(l.email ?? "").toLowerCase();
+    if (!emailValida(email)) { fermare.push({ id: String(r.id), motivo: "Il lead non ha un indirizzo valido" }); continue; }
+    if (l.no_contatto) { fermare.push({ id: String(r.id), motivo: "Si è opposto a ricevere comunicazioni" }); continue; }
+    if (nero.has(email)) { fermare.push({ id: String(r.id), motivo: "L'indirizzo è in blacklist" }); continue; }
+    if (STATI_RISPOSTO.includes(String(l.stato))) {
+      fermare.push({ id: String(r.id), motivo: `Il lead è passato a «${l.stato}»: il seguito non serve più` });
+      continue;
+    }
+
+    const dellaSeq = (passi ?? []).filter((p: { sequenza_id: string }) => p.sequenza_id === r.sequenza_id);
+    const prossimo = dellaSeq.find((p: { ordine: number }) => p.ordine === Number(r.passo_fatto) + 1);
+    if (!prossimo) { finire.push(String(r.id)); continue; }
+
+    const modello = prossimo.modello_id ? perModello.get(prossimo.modello_id) : null;
+    const oggetto = prossimo.oggetto || String(modello?.oggetto ?? "");
+    const corpo = prossimo.corpo || String(modello?.corpo ?? "");
+    if (!oggetto || !corpo) {
+      fermare.push({ id: String(r.id), motivo: `Il passo ${prossimo.ordine} non ha più un testo da mandare` });
+      continue;
+    }
+
+    const variabili: Record<string, string> = {
+      azienda: String(l.nome ?? ""),
+      citta: String(l.citta ?? ""),
+      telefono: String(l.telefono ?? ""),
+      mittente: String(seq.nome ?? ""),
+    };
+    daCreare.push({
+      mittente_id: seq.mittente_id,
+      smtp_id: seq.smtp_id,
+      lead_id: l.id,
+      modello_id: prossimo.modello_id,
+      sequenza_id: seq.id,
+      destinatario: email,
+      oggetto: sostituisci(oggetto, variabili),
+      corpo: sostituisci(corpo, variabili),
+      stato: "in_coda",
+      programmata_per: adesso,
+      meta: { origine: "sequenza", passo: prossimo.ordine, sequenza: seq.nome },
+    });
+
+    /* Quando tocca al passo dopo. Se non ce n'è uno, questo era
+       l'ultimo: la data non serve più ma va scritta comunque,
+       perché la colonna non ammette il vuoto. */
+    const dopo = dellaSeq.find((p: { ordine: number }) => p.ordine === prossimo.ordine + 1);
+    const attesa = dopo ? Number(dopo.dopo_giorni ?? 0) : 0;
+    avanzare.push({
+      id: String(r.id),
+      passo: prossimo.ordine,
+      prossimo: new Date(Date.now() + attesa * 86400000).toISOString(),
+    });
+  }
+
+  if (daCreare.length) {
+    const { error } = await db.from("mm_email").insert(daCreare);
+    if (error) throw new Error(error.message);
+  }
+  for (const f of fermare) {
+    await db.from("mm_sequenze_iscritti").update({
+      stato: "fermato", fermato_motivo: f.motivo, fermato_il: adesso,
+    }).eq("id", f.id);
+  }
+  if (finire.length) {
+    await db.from("mm_sequenze_iscritti").update({ stato: "finito" }).in("id", finire);
+  }
+  for (const a of avanzare) {
+    await db.from("mm_sequenze_iscritti")
+      .update({ passo_fatto: a.passo, prossimo_il: a.prossimo }).eq("id", a.id);
+  }
+
+  return {
+    esaminati: dovuti.length,
+    messi: daCreare.length,
+    fermati: fermare.length,
+    finiti: finire.length,
   };
 }
 
@@ -1620,6 +2131,15 @@ const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> =
   "posta-invia": postaInvia,
   "coda-scarica": () => codaScarica(),
   registro,
+  "blacklist-elenco": blacklistElenco,
+  "blacklist-aggiungi": blacklistAggiungi,
+  "blacklist-togli": blacklistTogli,
+  "sequenza-elenco": () => sequenzaElenco(),
+  "sequenza-salva": sequenzaSalva,
+  "sequenza-elimina": sequenzaElimina,
+  "sequenza-attiva": sequenzaAttiva,
+  "sequenza-iscrivi": sequenzaIscrivi,
+  "sequenza-ferma": sequenzaFerma,
   "smtp-salva": smtpSalva,
   "smtp-elimina": smtpElimina,
   "smtp-stato": smtpStato,

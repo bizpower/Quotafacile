@@ -1114,3 +1114,32 @@ a.chip { display: inline-block; text-decoration: none; }
    torna, e il resto del tempo sono rumore. */
 .mm-giri > summary { cursor: pointer; font-weight: 600; color: var(--ink); }
 .mm-giri > summary::marker { color: var(--green-600); }
+
+/* --- Blacklist & Compliance, Automazioni ---
+   La scheda che spiega la regola sta in cima e si distingue dal
+   resto: non è un elenco, è il motivo per cui l'elenco esiste. */
+.mm-compliance { border-left: 3px solid var(--green-800); }
+
+/* Riquadri che contano e basta: senza il bordo che si accende
+   al passaggio, perché non c'è niente da premere. */
+.mm-riq-fermo { cursor: default; }
+.mm-riq-fermo:hover { border-color: var(--line); box-shadow: none; }
+
+.mm-sequenza.accesa { border-left: 3px solid var(--green-600); }
+.pill-ok { background: var(--green-50); color: var(--green-800); border-color: var(--green-600); }
+
+/* I passi come una scaletta: quando parte ognuno, e cosa manda. */
+.mm-passi { list-style: none; margin: .6rem 0 0; padding: 0;
+  border-left: 2px solid var(--line); }
+.mm-passi li { position: relative; padding: .3rem 0 .3rem .9rem;
+  font-size: .86rem; display: flex; gap: .6rem; flex-wrap: wrap; align-items: baseline; }
+.mm-passi li::before { content: ""; position: absolute; left: -5px; top: .75rem;
+  width: 8px; height: 8px; border-radius: 50%; background: var(--green-600); }
+.mm-passo-quando { font-size: .74rem; color: var(--ink-soft);
+  background: var(--green-50); border-radius: 999px; padding: .1rem .5rem; white-space: nowrap; }
+
+.mm-passo-mod { border: 1px solid var(--line); border-radius: 10px;
+  padding: .7rem; margin-bottom: .6rem; background: var(--card); }
+
+.mm-griglia-due { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .6rem; }
+.mm-griglia-due > * { min-width: 0; }
