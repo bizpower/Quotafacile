@@ -207,6 +207,14 @@ const viaLocalhost = (html, porta, base) =>
    visitatore. */
 const togliBanner = html => html.replace(/<div id="cc-root"[\s\S]*?<\/div>\s*(?=<\/body>)/i, "");
 
+/* La regione che annuncia il cambio di pagina a uno screen
+   reader. Nel file salvato ci finisce l'annuncio dell'ultima
+   navigazione fatta dal pre-render, che per chi apre la pagina
+   sarebbe un "pagina caricata" detto prima di aver navigato da
+   nessuna parte. Si riparte vuota, come all'apertura del sito. */
+const svuotaAnnuncio = html =>
+  html.replace(/(<p id="annuncio-rotta"[^>]*>)[\s\S]*?(<\/p>)/i, "$1$2");
+
 function meta(html, rotta, percorso) {
   const tag =
     `<meta name="qf-rotta" content="${rotta}">\n` +
@@ -290,6 +298,7 @@ for (const p of pagine) {
   html = assolutizza(html, BASE);
   html = linkVeri(html, BASE, mappa);
   html = togliBanner(html);
+  html = svuotaAnnuncio(html);
 
   const destinazione = p.file
     ? join(radice, p.percorso)

@@ -106,6 +106,13 @@
 </head>
 <body>
 
+  <!-- Prima di ogni pagina ci sono il logo, quattro voci di menu e
+       due bottoni: chi naviga con la tastiera o con uno screen
+       reader li riattraversa tutti ad ogni cambio di pagina. È il
+       criterio 2.4.1 delle WCAG, e si risolve con un link che
+       compare solo quando riceve il fuoco. -->
+  <a class="skip-link" href="#app">Salta al contenuto</a>
+
   <!-- HEADER -->
   <header class="topbar">
     <div class="container topbar-inner">
@@ -126,8 +133,22 @@
     </div>
   </header>
 
-  <!-- APP VIEW (renderizzata da app.js) -->
-  <main id="app" class="app-main" aria-live="polite"></main>
+  <!-- APP VIEW (renderizzata da app.js)
+
+       Qui c'era aria-live="polite". Sembrava la cosa giusta — il
+       contenuto cambia senza ricaricare la pagina, tanto vale
+       annunciarlo — ma significa che ad ogni cambio di rotta uno
+       screen reader rilegge l'intera pagina dall'inizio,
+       interrompendo chi stava leggendo altro. Su una bacheca da
+       sessantamila caratteri è inutilizzabile.
+       Al suo posto: il fuoco si sposta sul titolo della pagina
+       nuova, e l'annuncio breve lo fa la regione qui sotto.
+       tabindex="-1" rende <main> raggiungibile dal link "salta al
+       contenuto" senza entrare nel giro del tabulatore. -->
+  <main id="app" class="app-main" tabindex="-1"></main>
+
+  <!-- Una riga sola, invisibile: "Preventivo. Pagina caricata." -->
+  <p id="annuncio-rotta" class="solo-lettori" role="status" aria-live="polite"></p>
 
   <!-- FOOTER -->
   <footer class="footer">

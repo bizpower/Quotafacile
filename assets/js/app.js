@@ -1038,7 +1038,7 @@ views.professionisti = () => {
       </div>
       <div class="card" style="margin-top:1.2rem">
         <h3>I livelli</h3>
-        <p class="muted">Novizio (0) → Consulente (50) → Esperto (150) → <strong style="color:var(--gold-500)">Top Advisor (300)</strong>. I Top Advisor compaiono nella sezione "Intermediari in evidenza" della home.</p>
+        <p class="muted">Novizio (0) → Consulente (50) → Esperto (150) → <strong style="color:var(--gold-testo)">Top Advisor (300)</strong>. I Top Advisor compaiono nella sezione "Intermediari in evidenza" della home.</p>
       </div>
     </div>
   </section>
@@ -1103,7 +1103,14 @@ function qaCard(f) {
       <span>${esc(f.data)}</span>
       <span>· ${f.risposte.length} rispost${f.risposte.length === 1 ? "a" : "e"}${f.daily && proCount ? ` (${proCount} da intermediari)` : ""}</span>
     </div>
-    <h3 class="qa-title">${esc(f.domanda)}</h3>
+    <!-- Il titolo è un link vero, non un <h3> con un gestore di
+         click sopra. Cambia tre cose insieme: ci si arriva con il
+         tabulatore, uno screen reader lo annuncia come link con la
+         domanda per nome, e un motore di ricerca ha finalmente un
+         filo da /bacheca/ alle guide — prima l'unica strada era la
+         sitemap. La scheda resta cliccabile tutta grazie
+         all'area estesa in CSS. -->
+    <h3 class="qa-title"><a href="#/faq/${f.id}">${esc(f.domanda)}</a></h3>
     ${best ? `<p class="qa-excerpt">${esc(best.testo)}</p>` : `<p class="qa-excerpt" style="font-style:italic">Ancora senza risposta: sei un intermediario? Rispondi e guadagna punti.</p>`}
     <div class="qa-foot">
       ${a ? (a.auto
@@ -1510,10 +1517,10 @@ function proBoardHTML() {
   const staff = staffFaqs();
   const community = domandeCommunity().filter(f => !f.risposte.length);
   const row = f => `
-    <div class="lead-row" data-goto="#/faq/${f.id}" style="cursor:pointer">
+    <div class="lead-row lead-row-link" data-goto="#/faq/${f.id}">
       <span class="lead-icon">${f.staff ? "📌" : f.daily ? "☀️" : "🙋"}</span>
       <span class="leader-info">
-        <strong>${esc(f.domanda)}</strong>
+        <strong><a href="#/faq/${f.id}">${esc(f.domanda)}</a></strong>
         <span>${f.staff ? "Guida su keyword strategica · massima visibilità organica"
               : f.daily ? `Domanda del giorno #${f.num} · risposta automatica da integrare`
               : (f.risposte.length ? f.risposte.length + " risposte di altri intermediari" : "Ancora senza risposta")} · ${esc(f.cat)}</span>
@@ -1552,7 +1559,7 @@ views.areaPro = () => {
       <div class="container">
         <div class="section-head">
           <span class="eyebrow">Area professionisti</span>
-          <h2>Crea la tua QuotaPass</h2>
+          <h1 class="titolo-sezione">Crea la tua QuotaPass</h1>
           <p class="muted">Gratis, in 3 minuti. Subito dopo sblocchi dashboard, bacheca e statistiche.</p>
         </div>
         <div class="pro-layout">
@@ -1573,7 +1580,7 @@ views.areaPro = () => {
     <div class="container">
       <div class="section-head" style="margin-bottom:1.4rem">
         <span class="eyebrow">Area professionisti</span>
-        <h2>Ciao ${esc(p.nome.split(" ")[0])}, ecco la tua vetrina</h2>
+        <h1 class="titolo-sezione">Ciao ${esc(p.nome.split(" ")[0])}, ecco la tua vetrina</h1>
       </div>
 
       <div class="gami-banner">
@@ -1755,6 +1762,51 @@ function render() {
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle("active", a.dataset.nav === navKey));
   window.scrollTo({ top: 0 });
   bind();
+  annunciaPagina(path.join("/"));
+}
+
+/* Dopo un cambio di rotta il browser non fa niente: la pagina non
+   si è ricaricata, quindi il fuoco resta dov'era — di solito sul
+   link appena premuto, che nel frattempo è sparito. Chi naviga con
+   la tastiera si ritrova a ripartire dall'inizio del documento, e
+   chi usa uno screen reader non sa che è successo qualcosa.
+
+   Il fuoco va sul titolo della pagina nuova, e una riga invisibile
+   annuncia dove siamo. È il posto giusto dove ricominciare a
+   leggere e dove ricominciare a tabulare. */
+let rottaAnnunciata = null;
+function annunciaPagina(rotta) {
+  /* Solo quando la rotta cambia davvero. render() viene chiamata
+     anche per ridisegnare la stessa pagina — quando la bacheca
+     risponde, quando si cambia un filtro, quando si vota una
+     risposta — e spostare il fuoco in quei casi vorrebbe dire
+     strapparlo di mano a chi sta usando la tastiera proprio
+     mentre lo usa.
+
+     La prima volta è un'assegnazione, non un cambio: chi apre il
+     sito non ha ancora navigato da nessuna parte, e il fuoco
+     deve restare dove il browser l'ha messo. */
+  const prima = rottaAnnunciata;
+  rottaAnnunciata = rotta;
+  if (prima === null || prima === rotta) return;
+
+  const titolo = app.querySelector("h1");
+  const bersaglio = titolo || app;
+  if (!titolo) app.setAttribute("tabindex", "-1");
+  else if (!titolo.hasAttribute("tabindex")) titolo.setAttribute("tabindex", "-1");
+  /* preventScroll: la pagina è già stata riportata in cima poco
+     sopra, e un secondo salto la farebbe sobbalzare. */
+  try { bersaglio.focus({ preventScroll: true }); } catch (e) { bersaglio.focus(); }
+
+  const avviso = document.getElementById("annuncio-rotta");
+  if (avviso) {
+    /* Il titolo del documento, non quello visibile: è più corto e
+       dice anche di che sito si tratta. Svuotare prima costringe
+       la regione a rileggere anche se il testo è identico. */
+    const testo = (document.title || "").split("|")[0].trim();
+    avviso.textContent = "";
+    setTimeout(() => { avviso.textContent = testo + ". Pagina caricata."; }, 60);
+  }
 }
 
 /* ---------------- SEGNALAZIONE CONTENUTI (DSA) ----------------
@@ -1805,7 +1857,12 @@ function apriSegnalazione(target) {
     </div>
   </div>`;
   document.body.appendChild(host);
-  const chiudi = () => host.remove();
+  const chiudi = () => { document.removeEventListener("keydown", conEsc); host.remove(); };
+  /* Escape chiude, come in qualsiasi finestra di dialogo. Senza,
+     l'unica via d'uscita erano due bottoni da trovare col
+     tabulatore — e per chi usa la tastiera "annulla" è Escape. */
+  const conEsc = e => { if (e.key === "Escape") { e.stopPropagation(); chiudi(); } };
+  document.addEventListener("keydown", conEsc);
   host.querySelectorAll("[data-close-report]").forEach(el =>
     el.addEventListener("click", e => { if (e.target === el) chiudi(); }));
   host.querySelector("#report-form").addEventListener("submit", e => {
@@ -2086,6 +2143,20 @@ window.QF = {
 
 window.addEventListener("hashchange", render);
 
+/* Il link "salta al contenuto" punta a #app, che per un browser
+   senza JavaScript è esattamente il salto giusto. Ma qui il
+   frammento è il router: lasciarlo passare vorrebbe dire chiedere
+   la rotta "app", che non esiste, e finire sulla pagina 404.
+   Quindi si sposta il fuoco a mano e l'indirizzo non si tocca. */
+document.querySelector(".skip-link")?.addEventListener("click", e => {
+  e.preventDefault();
+  const m = document.getElementById("app");
+  const bersaglio = m.querySelector("h1") || m;
+  if (!bersaglio.hasAttribute("tabindex")) bersaglio.setAttribute("tabindex", "-1");
+  bersaglio.focus();
+  bersaglio.scrollIntoView({ block: "start" });
+});
+
 /* I link veri delle pagine pre-renderizzate, ripresi al volo.
    Senza questo, ogni clic sul menu di una pagina arrivata da
    Google ricaricherebbe l'intero sito — mezzo megabyte — per
@@ -2103,6 +2174,18 @@ document.addEventListener("click", e => {
   const a = e.target.closest("a[href]");
   if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
   if (a.origin !== location.origin) return;
+
+  /* Un link che è solo un frammento — href="#/faq/k1" — non
+     racconta niente nel suo percorso: per il browser quel
+     percorso è quello della pagina in cui si trova. Passarlo di
+     qui significherebbe leggere "sono su /bacheca/" e mandare a
+     /bacheca/ chiunque clicchi su una guida. Su una pagina
+     pre-renderizzata era esattamente quello che succedeva: tutti
+     i link interni riportavano alla pagina di partenza.
+     Questi link li gestisce il router, come ha sempre fatto. */
+  const href = a.getAttribute("href") || "";
+  if (href.startsWith("#")) return;
+
   const rotta = rottaDaPercorso(a.pathname);
   if (rotta === null) return;
   e.preventDefault();

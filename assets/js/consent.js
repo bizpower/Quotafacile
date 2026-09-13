@@ -186,7 +186,13 @@
   });
 
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape" && document.querySelector(".cc-overlay")) { stato ? chiudi() : mostraBanner(); }
+    /* Escape chiude il pannello dei cookie, non un dialogo
+       qualsiasi: la finestra di segnalazione usa le stesse classi
+       ma vive fuori da #cc-root, e chiuderla da qui vorrebbe dire
+       svuotare la cartella sbagliata. Se ne occupa da sé. */
+    if (e.key === "Escape" && root().querySelector(".cc-overlay")) {
+      stato ? chiudi() : mostraBanner();
+    }
   });
 
   function toastCC(msg) {
@@ -204,4 +210,75 @@
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mostraBanner);
     else mostraBanner();
   }
+})();
+
+/* ============================================================
+   Il fuoco dentro i dialoghi
+   ------------------------------------------------------------
+   I due dialoghi del sito — preferenze sui cookie e segnalazione
+   di un contenuto — dicevano aria-modal="true", che per uno
+   screen reader significa "il resto della pagina non c'è". Per la
+   tastiera però non significa niente: premendo Tab si usciva
+   dalla finestra e si continuava a girare fra i link dietro, che
+   nel frattempo sono coperti e non si vedono. Si finiva a
+   premere Invio alla cieca.
+
+   Qui il giro si chiude su sé stesso, il fuoco entra sul primo
+   elemento utile e, alla chiusura, torna esattamente da dove era
+   partito — sul bottone che ha aperto la finestra, non in cima
+   alla pagina.
+
+   Vale per qualunque .cc-overlay, quindi anche per un dialogo
+   che venisse aggiunto domani. Il banner dei cookie resta fuori
+   di proposito: non è una finestra modale, dichiara
+   aria-modal="false", e intrappolarci dentro chi vuole solo
+   leggere la pagina sarebbe il difetto opposto.
+   ============================================================ */
+(function fuocoNeiDialoghi() {
+  "use strict";
+
+  const SELEZIONABILI = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  const dialogoAperto = () => document.querySelector(".cc-overlay .cc-modal");
+  const dentro = d => [...d.querySelectorAll(SELEZIONABILI)].filter(el => el.getClientRects().length);
+
+  let fuocoPrecedente = null;
+
+  /* I dialoghi nascono da innerHTML o da appendChild, in due file
+     diversi e senza un evento comune: osservare il documento è il
+     solo modo di accorgersene senza legare fra loro moduli che
+     oggi non si conoscono. */
+  new MutationObserver(() => {
+    const d = dialogoAperto();
+    if (d) {
+      if (d.dataset.fuocoEntrato) return;
+      d.dataset.fuocoEntrato = "1";
+      fuocoPrecedente = document.activeElement;
+      const primo = dentro(d)[0];
+      if (primo) primo.focus();
+      else { d.setAttribute("tabindex", "-1"); d.focus(); }
+    } else if (fuocoPrecedente) {
+      const torna = fuocoPrecedente;
+      fuocoPrecedente = null;
+      /* Se l'elemento di partenza è sparito insieme al dialogo
+         non si insiste: il fuoco resta dov'è, che è comunque
+         meglio di un'eccezione. */
+      if (torna.isConnected) { try { torna.focus(); } catch (e) { /* no-op */ } }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+
+  document.addEventListener("keydown", e => {
+    if (e.key !== "Tab") return;
+    const d = dialogoAperto();
+    if (!d) return;
+    const lista = dentro(d);
+    if (!lista.length) return;
+    const primo = lista[0], ultimo = lista[lista.length - 1];
+    const corrente = document.activeElement;
+    if (e.shiftKey && (corrente === primo || !d.contains(corrente))) {
+      e.preventDefault(); ultimo.focus();
+    } else if (!e.shiftKey && (corrente === ultimo || !d.contains(corrente))) {
+      e.preventDefault(); primo.focus();
+    }
+  });
 })();
