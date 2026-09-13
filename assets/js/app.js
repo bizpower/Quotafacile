@@ -283,6 +283,7 @@ const INDIRIZZI = {
   termini: "termini/",
   "note-legali": "note-legali/",
   contatti: "contatti/",
+  magazine: "magazine/",
   /* "Chi siamo" e "Contatti" mostrano la stessa pagina. Due
      indirizzi con lo stesso contenuto sono contenuto duplicato:
      entrambi restano raggiungibili — ci sono link e segnalibri
@@ -315,6 +316,21 @@ const BASE_SITO = (() => {
    anche quando lo si incolla in una chat, e "polizza-vita-
    pignorabile" dice cos'è mentre "k5" no. */
 function indirizzoPubblico(page, path) {
+  /* Un articolo del Magazine vive a /magazine/<slug>/. Lo slug
+     sta nell'indirizzo interno ed è già quello pubblico: non c'è
+     niente da cercare, a differenza delle guide dove l'indirizzo
+     interno è un id.
+
+     Con un'eccezione: se il servizio ha già risposto che quello
+     slug non esiste, l'indirizzo pubblico non c'è. Senza questo
+     controllo qualunque slug inventato sotto /magazine/
+     dichiarava un canonical e un "index, follow" — cioè chiedeva
+     a Google di indicizzare una pagina che dice "questo articolo
+     non c'è". */
+  if (page === "magazine" && path && path[1]) {
+    if (window.QFMagazine?.stato.corpi[path[1]] === null) return null;
+    return "magazine/" + path[1] + "/";
+  }
   if (page === "faq") {
     const f = getFaqById(path && path[1]);
     if (f && f.slug) return "guide/" + f.slug + "/";
@@ -343,6 +359,10 @@ function rottaDaPercorso(pathname) {
     const f = staffFaqs().find(x => x.slug === m[1]);
     if (f) return "faq/" + f.id;
   }
+  /* Il Magazine non ha bisogno di cercare niente: lo slug
+     nell'indirizzo pubblico è lo stesso che usa la rotta. */
+  const g = rel.match(/^magazine\/([^/]+)\/$/);
+  if (g) return "magazine/" + g[1];
   return null;
 }
 
@@ -1208,6 +1228,288 @@ function guideCorrelate(f, quante = 3) {
   </nav>`;
 }
 
+
+/* ================= MAGAZINE (pubblico) =================
+
+   Gli articoli arrivano dal database e le pagine le scrive il
+   deploy, come per le guide. La differenza è che qui il legame
+   fra pillar e cluster è un dato, non una convenzione: i link
+   fra articoli li costruisce il sito, e restano giusti anche
+   quando gli articoli diventano venti. */
+
+const MAG = () => window.QFMagazine;
+const urlArticolo = a => SITO() + "magazine/" + (a && a.slug ? a.slug + "/" : "");
+
+function magCategoria(a) {
+  const c = MAG()?.categoria(a && a.categoria_id);
+  return c ? c.nome : "";
+}
+
+const magData = s => s
+  ? new Date(s).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })
+  : "";
+
+/* 220 parole al minuto è la velocità media di lettura su schermo
+   in italiano. Serve a dire quanto tempo chiede un articolo,
+   prima che qualcuno cominci a leggerlo. */
+const magMinuti = html => Math.max(1, Math.round(
+  String(html || "").replace(/<[^>]+>/g, " ").trim().split(/\s+/).filter(Boolean).length / 220));
+
+function magSchedaHtml(a, grande) {
+  const cat = magCategoria(a);
+  return `
+  <a class="mag-card ${grande ? "mag-card-grande" : ""} ${a.tipo === "pillar" ? "mag-card-pillar" : ""}"
+     href="#/magazine/${esc(a.slug)}">
+    ${a.cover_url ? `
+      <img class="mag-card-cover" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
+           loading="lazy" decoding="async">` : `<span class="mag-card-cover mag-card-vuota" aria-hidden="true"></span>`}
+    <span class="mag-card-corpo">
+      <span class="mag-card-meta">
+        ${a.tipo === "pillar" ? `<span class="mag-pillar-tag">Guida completa</span>` : ""}
+        ${cat ? `<span class="mag-card-cat">${esc(cat)}</span>` : ""}
+        <span>${esc(magData(a.pubblicato_il))}</span>
+      </span>
+      <span class="mag-card-titolo">${esc(a.titolo)}</span>
+      ${a.apertura ? `<span class="mag-card-apertura">${esc(a.apertura)}</span>` : ""}
+    </span>
+  </a>`;
+}
+
+views.magazine = () => {
+  const m = MAG();
+  const arts = m ? m.stato.articoli : [];
+
+  /* Il grafo dell'elenco dichiara che questa è una raccolta di
+     articoli e quali sono: senza, per un motore è una pagina
+     qualsiasi con dei link dentro. */
+  if (arts.length) {
+    setJsonLd({
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Blog",
+          "@id": SITO() + "magazine/#blog",
+          "name": "Magazine QuotaFacile",
+          "description": "Guide e approfondimenti sulle assicurazioni, scritti dalla redazione con riferimenti normativi verificabili.",
+          "inLanguage": "it-IT",
+          "publisher": { "@id": SITO() + "#org" },
+          "isPartOf": { "@id": SITO() + "#website" }
+        },
+        {
+          "@type": "ItemList",
+          "itemListOrder": "https://schema.org/ItemListOrderDescending",
+          "numberOfItems": arts.length,
+          "itemListElement": arts.slice(0, 30).map((a, i) => ({
+            "@type": "ListItem", "position": i + 1,
+            "url": urlArticolo(a), "name": a.titolo
+          }))
+        },
+        breadcrumbJsonLd([
+          { nome: "Home", rotta: "home" },
+          { nome: "Magazine", rotta: "magazine" }
+        ])
+      ]
+    });
+  } else {
+    setJsonLd(null);
+  }
+
+  const pillar = arts.filter(a => a.tipo === "pillar");
+  const resto = arts.filter(a => a.tipo !== "pillar");
+
+  return `
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Magazine</span>
+        <h1 class="titolo-sezione">Capire le assicurazioni prima di comprarle</h1>
+        <p class="muted">Guide lunghe e approfondimenti scritti dalla redazione, con i riferimenti
+        normativi in chiaro. Niente promesse di risparmio: quello che serve per leggere una polizza
+        e capire cosa stai firmando.</p>
+      </div>
+
+      ${!m || !m.stato.caricata ? `
+        <div class="card"><p class="muted">${m && m.stato.errore
+          ? "Gli articoli non si sono caricati. Ricarica la pagina fra un momento."
+          : "Caricamento degli articoli…"}</p></div>`
+      : arts.length === 0 ? `
+        <div class="card">
+          <h2 style="margin-top:0;font-size:1.2rem">Il primo articolo sta arrivando</h2>
+          <p class="muted">Nel frattempo, in <a href="#/bacheca">bacheca</a> ci sono nove guide
+          già pubblicate e una domanda nuova ogni giorno.</p>
+        </div>`
+      : `
+        ${pillar.length ? `
+          <div class="mag-griglia mag-griglia-pillar">
+            ${pillar.map(a => magSchedaHtml(a, true)).join("")}
+          </div>` : ""}
+        ${resto.length ? `
+          <h2 class="mag-sezione-titolo">Approfondimenti</h2>
+          <div class="mag-griglia">
+            ${resto.map(a => magSchedaHtml(a, false)).join("")}
+          </div>` : ""}`}
+    </div>
+  </section>`;
+};
+
+/* Indice costruito dai titoli del testo. Non è un campo da
+   compilare: su un articolo da cinquemila parole nessuno lo
+   terrebbe aggiornato, e un indice sbagliato è peggio di nessun
+   indice. Gli identificativi nascono qui e sono gli stessi che
+   finiscono nell'HTML salvato dal deploy, quindi un link a una
+   sezione continua a funzionare. */
+function magIndice(html) {
+  const voci = [];
+  const visti = new Set();
+  String(html || "").replace(/<h([23])[^>]*>([\s\S]*?)<\/h\1>/gi, (tutto, liv, dentro) => {
+    const testo = dentro.replace(/<[^>]+>/g, "").trim();
+    if (!testo) return tutto;
+    let id = testo.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70) || "sezione";
+    let unico = id, n = 1;
+    while (visti.has(unico)) unico = id + "-" + (++n);
+    visti.add(unico);
+    voci.push({ id: unico, testo, livello: +liv });
+    return tutto;
+  });
+  return voci;
+}
+
+function magConAncore(html, voci) {
+  let i = 0;
+  return String(html || "").replace(/<h([23])([^>]*)>/gi, (tutto, liv, attr) => {
+    const v = voci[i++];
+    return v ? `<h${liv} id="${v.id}"${attr}>` : tutto;
+  });
+}
+
+views.magazineArticolo = (slug) => {
+  const m = MAG();
+  const a = m ? m.articolo(slug) : undefined;
+
+  /* undefined = sta arrivando; null = chiesto, non esiste. */
+  if (a === undefined) {
+    /* Se questa pagina è il file che il deploy ha scritto per
+       questo articolo, il testo è già sotto gli occhi di chi
+       legge: si lascia stare finché i dati non arrivano, invece
+       di cancellarlo per riscriverlo identico. */
+    if (PERCORSO_PAGINA && ROTTA_PAGINA === "magazine/" + slug) return null;
+    return `<section class="section"><div class="container">
+      <p class="muted">Caricamento dell'articolo…</p></div></section>`;
+  }
+  if (!a) {
+    setJsonLd(null);
+    return `<section class="section"><div class="container" style="max-width:640px">
+      <h1 class="titolo-sezione">Questo articolo non c'è</h1>
+      <p class="lead">Può essere stato ritirato, o l'indirizzo può essere sbagliato.</p>
+      <p><a class="btn btn-primary" href="#/magazine">Vai al Magazine</a></p>
+    </div></section>`;
+  }
+
+  const voci = magIndice(a.corpo);
+  const corpo = magConAncore(a.corpo, voci);
+  const cat = magCategoria(a);
+  const url = urlArticolo(a);
+  const data = a.pubblicato_il || a.creato_il;
+  const aggiornato = a.aggiornato_il || data;
+
+  /* Un articolo dichiarato per quello che è. I campi sono tutti
+     veri: la data è quella della pubblicazione, l'editore è
+     quello delle note legali, il testo è quello visibile in
+     pagina. Dove un dato non c'è, il campo non compare. */
+  setJsonLd({
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BlogPosting",
+        "@id": url + "#articolo",
+        "headline": String(a.titolo).slice(0, 110),
+        "description": a.meta_description || String(a.apertura || "").slice(0, 200),
+        "inLanguage": "it-IT",
+        "datePublished": data,
+        "dateModified": aggiornato,
+        "author": { "@id": SITO() + "#org" },
+        "publisher": { "@id": SITO() + "#org" },
+        "isPartOf": { "@id": SITO() + "magazine/#blog" },
+        "mainEntityOfPage": { "@type": "WebPage", "@id": url },
+        "articleSection": cat || undefined,
+        "image": a.cover_url || (SITO() + "assets/img/og-quotafacile.png"),
+        "wordCount": String(a.corpo || "").replace(/<[^>]+>/g, " ").trim().split(/\s+/).filter(Boolean).length,
+        "about": a.keyword ? { "@type": "Thing", "name": a.keyword } : undefined
+      },
+      breadcrumbJsonLd([
+        { nome: "Home", rotta: "home" },
+        { nome: "Magazine", rotta: "magazine" },
+        { nome: a.titolo, percorso: "magazine/" + a.slug + "/" }
+      ])
+    ]
+  });
+
+  const correlati = a.correlati || [];
+  const padre = correlati.find(x => x.tipo === "pillar" && x.id === a.pillar_id);
+  const fratelli = correlati.filter(x => x !== padre);
+
+  return `
+  <article class="section mag-articolo">
+    <div class="container" style="max-width:760px">
+      <nav class="mag-briciole" aria-label="Percorso">
+        <a href="#/">Home</a> <span aria-hidden="true">/</span>
+        <a href="#/magazine">Magazine</a>
+      </nav>
+
+      <div class="mag-testa-meta">
+        ${a.tipo === "pillar" ? `<span class="mag-pillar-tag">Guida completa</span>` : ""}
+        ${cat ? `<span class="mag-card-cat">${esc(cat)}</span>` : ""}
+        <span>${esc(magData(data))}</span>
+        <span>· ${magMinuti(a.corpo)} min di lettura</span>
+      </div>
+
+      <h1 class="mag-titolo-articolo">${esc(a.titolo)}</h1>
+      ${a.apertura ? `<p class="lead mag-apertura">${esc(a.apertura)}</p>` : ""}
+
+      ${a.cover_url ? `
+        <img class="mag-cover" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
+             width="1200" height="675" decoding="async">` : ""}
+
+      ${padre ? `
+        <p class="mag-risale">Questo approfondimento fa parte della guida
+        <a href="#/magazine/${esc(padre.slug)}">${esc(padre.titolo)}</a>.</p>` : ""}
+
+      ${voci.length >= 3 ? `
+        <nav class="mag-indice" aria-label="Indice dell'articolo">
+          <h2 class="mag-indice-titolo">In questo articolo</h2>
+          <ol>
+            ${voci.map(v => `<li class="${v.livello === 3 ? "mag-indice-sotto" : ""}">
+              <a href="#${v.id}">${esc(v.testo)}</a></li>`).join("")}
+          </ol>
+        </nav>` : ""}
+
+      <div class="prosa mag-prosa">${corpo}</div>
+
+      <p class="mag-firma">— ${esc(a.firma || "Redazione QuotaFacile")}</p>
+
+      <p class="privacy-hint mag-avvertenza">
+        Contenuto informativo di carattere generale: non è consulenza personalizzata e non sostituisce
+        il set informativo del prodotto. Verifica sempre condizioni, esclusioni e massimali sul
+        contratto. QuotaFacile non distribuisce polizze — <a href="#/note-legali">note legali</a>.
+      </p>
+
+      <div class="mag-cta">
+        <h2 style="margin:0 0 .4rem;font-size:1.2rem">Ti serve un preventivo su questo?</h2>
+        <p class="muted" style="margin:0 0 .9rem">Ti mettiamo in contatto con intermediari iscritti
+        al RUI specializzati nel ramo. Gratuito, senza registrazione.</p>
+        <a class="btn btn-primary" href="#/preventivo">Richiedi un preventivo</a>
+      </div>
+
+      ${fratelli.length ? `
+        <nav class="mag-correlati" aria-label="Articoli collegati">
+          <h2 class="mag-sezione-titolo">${padre ? "Altri approfondimenti della stessa guida" : "Approfondimenti collegati"}</h2>
+          <div class="mag-griglia">${fratelli.map(x => magSchedaHtml(x, false)).join("")}</div>
+        </nav>` : ""}
+    </div>
+  </article>`;
+};
+
 /* ----- DETTAGLIO FAQ ----- */
 views.faqDetail = (id) => {
   const f = getFaqById(id);
@@ -1663,6 +1965,7 @@ const SEO_PAGINE = {
   "note-legali": ["Note legali | QuotaFacile", "Informazioni sul gestore del sito, natura dell'attività e avvertenze IVASS. QuotaFacile non è un intermediario assicurativo."],
   "contatti": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."],
   "chi-siamo": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."],
+  "magazine": ["Magazine QuotaFacile — guide e approfondimenti sulle assicurazioni", "Guide lunghe e approfondimenti scritti dalla redazione, con i riferimenti normativi in chiaro: come leggere una polizza e capire cosa stai firmando."],
   "admin": ["Area riservata | QuotaFacile", "Console di amministrazione."],
   "404": ["Pagina non trovata | QuotaFacile", "L'indirizzo cercato non esiste o è stato spostato. Da qui puoi tornare alla home, alla directory degli intermediari o alla bacheca."]
 };
@@ -1678,6 +1981,23 @@ function applicaSeo(page, path) {
       );
       return;
     }
+  }
+  if (page === "magazine" && path[1]) {
+    const a = window.QFMagazine?.stato.corpi[path[1]]
+           || window.QFMagazine?.stato.articoli.find(x => x.slug === path[1]);
+    if (a) {
+      setSeo(
+        a.titolo.length > 55 ? a.titolo : a.titolo + " | QuotaFacile",
+        a.meta_description || String(a.apertura || "").slice(0, 155).replace(/\s+\S*$/, "") + "…"
+      );
+      return;
+    }
+    /* L'articolo non è ancora arrivato. Sulla pagina scritta dal
+       deploy il titolo giusto c'è già: riscriverlo con quello
+       dell'elenco vorrebbe dire farlo lampeggiare per mezzo
+       secondo, e per un crawler che legge a metà rendering
+       vorrebbe dire leggere il titolo sbagliato. */
+    if (PERCORSO_PAGINA && ROTTA_PAGINA === "magazine/" + path[1]) return;
   }
   const s = SEO_PAGINE[page];
   setSeo(s ? s[0] : null, s ? s[1] : null);
@@ -1713,6 +2033,10 @@ function render() {
   else if (page === "intermediari") html = views.intermediari();
   else if (page === "bacheca") html = views.bacheca();
   else if (page === "faq") { html = views.faqDetail(path[1]); navKey = "bacheca"; }
+  else if (page === "magazine") {
+    html = path[1] ? views.magazineArticolo(path[1]) : views.magazine();
+    navKey = "magazine";
+  }
   else if (page === "preventivo") html = views.preventivo(query);
   else if (page === "area-pro") html = views.areaPro();
   else if (LEGAL_ROUTES[page]) { setJsonLd(null); html = LEGAL_ROUTES[page](); navKey = ""; }
@@ -2205,4 +2529,8 @@ render();
    così guide e domanda del giorno — che vivono nel codice — sono
    visibili subito anche con una rete lenta. */
 window.QFBacheca?.onAggiorna(() => render());
+/* Il Magazine arriva dal database come la bacheca: quando
+   risponde, la pagina si ridisegna con gli articoli veri. */
+window.QFMagazine?.onAggiorna(() => render());
 window.QFBacheca?.carica();
+window.QFMagazine?.carica();

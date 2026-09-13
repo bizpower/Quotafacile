@@ -87,6 +87,7 @@ const FISSE = [
   { rotta: "", percorso: "", priorita: "1.0", freq: "daily" },
   { rotta: "intermediari", percorso: "intermediari/", priorita: "0.9", freq: "daily" },
   { rotta: "bacheca", percorso: "bacheca/", priorita: "0.9", freq: "hourly" },
+  { rotta: "magazine", percorso: "magazine/", priorita: "0.9", freq: "daily" },
   { rotta: "professionisti", percorso: "professionisti/", priorita: "0.8", freq: "monthly" },
   { rotta: "preventivo", percorso: "preventivo/", priorita: "0.8", freq: "monthly" },
   { rotta: "contatti", percorso: "contatti/", priorita: "0.5", freq: "monthly" },
@@ -163,6 +164,39 @@ async function guideRemote(page, porta) {
     console.warn(
       "  ! Guide dell'area Admin non lette (" + String(e.message || e).split("\n")[0] + ").\n" +
       "    Il deploy prosegue con le sole guide del repository.");
+    return [];
+  }
+}
+
+/* Gli articoli del Magazine, come le guide dell'area Admin, non
+   stanno nel repository: nascono fra un deploy e l'altro. Stessa
+   regola — li chiede alla pagina, che sa già parlare con il
+   servizio — e stesso comportamento se il servizio non risponde:
+   il deploy prosegue senza. */
+async function articoliMagazine(page, porta) {
+  try {
+    await page.goto(`http://localhost:${porta}/#/magazine`, { waitUntil: "load" });
+    const elenco = await page.waitForFunction(() => {
+      const m = window.QFMagazine;
+      if (!m || !m.stato.caricata) return false;
+      return m.stato.articoli.filter(a => a.slug).map(a => ({
+        slug: a.slug, titolo: a.titolo, meta: a.meta_description || a.apertura || "", tipo: a.tipo
+      }));
+    }, null, { timeout: 20000 }).then(h => h.jsonValue());
+
+    return elenco.map(a => ({
+      rotta: "magazine/" + a.slug,
+      percorso: "magazine/" + a.slug + "/",
+      /* Un pillar è la pagina su cui si punta per quell'argomento:
+         vale più dei suoi cluster, e la sitemap può dirlo. */
+      priorita: a.tipo === "pillar" ? "1.0" : "0.8",
+      freq: "monthly",
+      remota: true, titolo: a.titolo, meta: a.meta
+    }));
+  } catch (e) {
+    console.warn(
+      "  ! Articoli del Magazine non letti (" + String(e.message || e).split("\n")[0] + ").\n" +
+      "    Il deploy prosegue senza.");
     return [];
   }
 }
@@ -279,7 +313,12 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const errori = [];
 page.on("pageerror", e => errori.push(String(e)));
 
-const pagine = [...FISSE, ...(await guide(radice)), ...(await guideRemote(page, PORTA))];
+const pagine = [
+  ...FISSE,
+  ...(await guide(radice)),
+  ...(await guideRemote(page, PORTA)),
+  ...(await articoliMagazine(page, PORTA))
+];
 const mappa = new Map(pagine.map(p => [p.rotta, p.percorso]));
 
 let scritte = 0;
@@ -338,9 +377,24 @@ async function aggiornaLlms(radice, pagine, origine, base) {
   if (!existsSync(p)) return;
   let txt = await readFile(p, "utf8");
 
-  const nuove = pagine
-    .filter(x => x.remota && x.titolo && !txt.includes("](/" + x.percorso + ")"))
-    .map(x => `- [${x.titolo}](${origine}${base}${x.percorso})` + (x.meta ? `: ${x.meta}` : ""));
+  const voce = x => `- [${x.titolo}](${origine}${base}${x.percorso})` + (x.meta ? `: ${x.meta}` : "");
+  const inedita = x => x.remota && x.titolo && !txt.includes("](/" + x.percorso + ")")
+                    && !txt.includes(origine + base + x.percorso + ")");
+
+  /* Le guide vanno in coda all'elenco delle guide; gli articoli
+     del Magazine in una sezione loro, che nasce alla prima
+     pubblicazione. Mescolarli direbbe a un motore generativo che
+     sono la stessa cosa, e non lo sono: una guida risponde a una
+     domanda, un pillar copre un argomento intero. */
+  const nuoviArticoli = pagine.filter(x => inedita(x) && x.percorso.startsWith("magazine/")).map(voce);
+  const nuove = pagine.filter(x => inedita(x) && !x.percorso.startsWith("magazine/")).map(voce);
+
+  if (nuoviArticoli.length) {
+    const blocco = "\n## Magazine\n\n" + nuoviArticoli.join("\n") + "\n";
+    txt = /\n## Magazine\n/.test(txt)
+      ? txt.replace(/\n## Magazine\n/, blocco.replace(/\n$/, "\n"))
+      : txt.replace(/\n## Sezioni/, blocco + "\n## Sezioni");
+  }
 
   /* prima di "## Sezioni", cioè in coda alle guide. Se quel
      titolo non c'è più — qualcuno ha riorganizzato il file — le

@@ -1366,3 +1366,155 @@ a.chip { display: inline-block; text-decoration: none; }
 .mag-cover-nota.ko { background: #FCECEC; color: var(--danger); }
 
 .mag-bottoni { display: flex; flex-direction: column; gap: .5rem; }
+
+/* ---------- Magazine (pubblico) ---------- */
+
+.mag-griglia {
+  display: grid; gap: 1.1rem; margin-bottom: 2.2rem;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+.mag-griglia-pillar { grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
+
+.mag-sezione-titolo {
+  font-size: 1.15rem; font-weight: 700; margin: 0 0 .9rem;
+  font-family: var(--font-display);
+}
+
+.mag-card {
+  display: flex; flex-direction: column;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; text-decoration: none; color: inherit;
+  transition: border-color .2s var(--ease), transform .2s var(--ease), box-shadow .2s var(--ease);
+}
+.mag-card:hover { border-color: var(--green-600); transform: translateY(-2px); box-shadow: var(--shadow-med); }
+/* Il fuoco si vede sulla scheda intera, non sul testo dentro:
+   è la scheda che si sta per aprire. */
+.mag-card:focus-visible { outline: 3px solid var(--green-600); outline-offset: 2px; }
+
+.mag-card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.mag-card-vuota { background: linear-gradient(135deg, var(--green-50), var(--gold-100)); }
+.mag-card-grande .mag-card-cover { aspect-ratio: 21 / 9; }
+
+.mag-card-corpo { display: flex; flex-direction: column; gap: .4rem; padding: 1rem 1.1rem 1.2rem; }
+.mag-card-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .45rem;
+  font-size: .74rem; color: var(--ink-soft);
+}
+.mag-card-cat {
+  background: var(--green-50); color: var(--green-800);
+  padding: .1rem .5rem; border-radius: 999px; font-weight: 600;
+}
+.mag-pillar-tag {
+  background: var(--gold-100); color: #8A5F11;
+  padding: .1rem .5rem; border-radius: 999px; font-weight: 700;
+}
+.mag-card-titolo {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.05rem;
+  line-height: 1.25; text-wrap: balance;
+}
+.mag-card-grande .mag-card-titolo { font-size: 1.3rem; }
+.mag-card:hover .mag-card-titolo { color: var(--green-800); }
+.mag-card-apertura { font-size: .88rem; line-height: 1.5; color: var(--ink-soft); }
+.mag-card-pillar { border-left: 3px solid var(--gold-500); }
+
+/* ----- la pagina di un articolo ----- */
+
+.mag-briciole { font-size: .82rem; color: var(--ink-soft); margin-bottom: 1.1rem; }
+.mag-briciole a { color: var(--ink-soft); text-decoration: underline; text-underline-offset: .15em; }
+.mag-briciole a:hover { color: var(--green-800); }
+.mag-briciole span { margin: 0 .35rem; }
+
+.mag-testa-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+  font-size: .8rem; color: var(--ink-soft); margin-bottom: .7rem;
+}
+.mag-titolo-articolo {
+  font-size: clamp(1.7rem, 4.4vw, 2.6rem); line-height: 1.12;
+  text-wrap: balance; margin: 0 0 .7rem;
+}
+.mag-apertura { font-size: 1.08rem; color: var(--ink-soft); margin-bottom: 1.4rem; }
+.mag-cover {
+  display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover;
+  border-radius: var(--radius-lg); margin-bottom: 1.6rem;
+}
+
+.mag-risale {
+  background: var(--green-50); border-left: 3px solid var(--green-600);
+  padding: .7rem 1rem; border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: .9rem; margin-bottom: 1.4rem;
+}
+
+.mag-indice {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg); padding: 1rem 1.2rem; margin-bottom: 1.8rem;
+}
+.mag-indice-titolo {
+  font-family: var(--font-body); font-size: .72rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft);
+  margin: 0 0 .5rem;
+}
+.mag-indice ol { margin: 0; padding-left: 1.1rem; font-size: .92rem; }
+.mag-indice li { margin-bottom: .1rem; }
+.mag-indice-sotto { margin-left: 1rem; font-size: .88rem; }
+/* Le voci dell'indice sono link uno sotto l'altro: stretti come
+   il testo che contengono restavano sotto i 24px che chiede il
+   criterio 2.5.8, e su un telefono si sbaglia a premere. Il
+   blocco con un po' di spazio sopra e sotto risolve senza
+   allontanarle visivamente. */
+.mag-indice a {
+  display: block; padding: .28rem 0;
+  color: var(--ink); text-decoration: none;
+}
+.mag-indice a:hover { color: var(--green-800); text-decoration: underline; }
+
+/* Il testo dell'articolo. Misura vicina ai 68 caratteri: oltre,
+   l'occhio perde la riga tornando a capo. */
+.mag-prosa { font-size: 1.03rem; line-height: 1.72; }
+.mag-prosa > :first-child { margin-top: 0; }
+.mag-prosa h2 {
+  font-size: clamp(1.3rem, 2.6vw, 1.6rem); line-height: 1.2;
+  margin: 2.4rem 0 .7rem; scroll-margin-top: 5rem;
+}
+.mag-prosa h3 {
+  font-size: 1.12rem; margin: 1.8rem 0 .5rem; scroll-margin-top: 5rem;
+  font-family: var(--font-display); font-weight: 700;
+}
+.mag-prosa h4 {
+  font-size: .98rem; margin: 1.3rem 0 .4rem;
+  font-family: var(--font-body); font-weight: 700; color: var(--ink);
+}
+.mag-prosa p { margin: 0 0 1.1rem; }
+.mag-prosa ul, .mag-prosa ol { margin: 0 0 1.2rem; padding-left: 1.3rem; }
+.mag-prosa li { margin-bottom: .45rem; }
+.mag-prosa a { color: var(--green-800); text-decoration: underline; text-underline-offset: .15em; }
+.mag-prosa strong { font-weight: 700; }
+.mag-prosa blockquote {
+  margin: 1.4rem 0; padding: .3rem 0 .3rem 1.1rem;
+  border-left: 3px solid var(--gold-500); color: var(--ink-soft); font-style: italic;
+}
+.mag-prosa blockquote p:last-child { margin-bottom: 0; }
+.mag-prosa img { display: block; width: 100%; height: auto; border-radius: var(--radius); margin: 1.4rem 0; }
+.mag-prosa hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+.mag-prosa code {
+  font-size: .9em; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 4px; padding: .05em .3em;
+}
+/* Una tabella larga scorre dentro di sé: la pagina no. */
+.mag-prosa table { width: 100%; border-collapse: collapse; margin: 1.4rem 0; font-size: .92rem; display: block; overflow-x: auto; }
+.mag-prosa th, .mag-prosa td { border: 1px solid var(--line); padding: .55rem .7rem; text-align: left; vertical-align: top; }
+.mag-prosa th { background: var(--bg); font-weight: 600; }
+
+.mag-firma { margin: 2rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--line); font-size: .9rem; color: var(--ink-soft); }
+.mag-avvertenza { margin-top: 1rem; }
+
+.mag-cta {
+  margin: 2.4rem 0; padding: 1.4rem 1.5rem;
+  background: var(--green-50); border: 1px solid var(--green-100);
+  border-radius: var(--radius-lg);
+}
+
+.mag-correlati { margin-top: 2.8rem; }
+
+@media (max-width: 560px) {
+  .mag-griglia, .mag-griglia-pillar { grid-template-columns: 1fr; }
+}

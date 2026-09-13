@@ -22,6 +22,12 @@
        tutti sarebbe un lavoro a sé, e l'attributo style non
        esegue codice.
 
+       img-src ammette res.cloudinary.com perché le copertine del
+       Magazine stanno lì: senza, il browser le blocca e non si
+       vede niente. È un solo host, nominato per esteso — non un
+       carattere jolly che aprirebbe a qualunque immagine di
+       qualunque origine.
+
        Due direttive NON ci sono, e non è una dimenticanza:
        frame-ancestors e X-Frame-Options valgono solo come
        intestazione vera e in un <meta> vengono ignorate. La
@@ -35,7 +41,7 @@
     script-src 'self';
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     font-src 'self' https://fonts.gstatic.com;
-    img-src 'self' data:;
+    img-src 'self' data: https://res.cloudinary.com;
     connect-src 'self' https://vainqxalnxyzjqautcop.supabase.co;
     form-action 'self';
     upgrade-insecure-requests">
@@ -124,6 +130,7 @@
         <a href="#/" data-nav="home">Home</a>
         <a href="#/intermediari" data-nav="intermediari">Intermediari</a>
         <a href="#/bacheca" data-nav="bacheca">Bacheca Q&amp;A</a>
+        <a href="#/magazine" data-nav="magazine">Magazine</a>
         <a href="#/professionisti" data-nav="professionisti">Per i professionisti</a>
       </nav>
       <div class="topbar-cta">
@@ -162,6 +169,7 @@
         <a href="#/intermediari">Trova un intermediario</a>
         <a href="#/preventivo">Richiedi un preventivo</a>
         <a href="#/bacheca">Bacheca Q&amp;A</a>
+        <a href="#/magazine">Magazine</a>
       </div>
       <div>
         <h4>Professionisti</h4>
@@ -217,6 +225,7 @@
        quando si entra davvero nell'area riservata. -->
   <script defer src="assets/js/mailer.js"></script>
   <script defer src="assets/js/bacheca.js"></script>
+  <script defer src="assets/js/magazine-pubblico.js"></script>
   <script defer src="assets/js/intermediari.js"></script>
   <script defer src="assets/js/daily-questions.js"></script>
   <script defer src="assets/js/staff-questions.js"></script>
