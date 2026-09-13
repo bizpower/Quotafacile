@@ -217,6 +217,11 @@
     $("#area-esci")?.addEventListener("click", async () => {
       await A().esci();
       documenti = []; miaProduzione = null; fase = "vuoto"; sezione = "documenti";
+      /* Il codice dell'area riservata ora arriva solo quando
+         serve: qui serve, e va aspettato. Senza l'attesa,
+         accesso() parlerebbe a un oggetto non ancora caricato e
+         chi esce si ritroverebbe davanti la schermata sbagliata. */
+      try { await QF().caricaRiservata(); } catch (e) { /* si riprova entrando */ }
       window.QF_ADMIN?.accesso("collaboratore");
       location.hash = "#/admin";
       QF().render();

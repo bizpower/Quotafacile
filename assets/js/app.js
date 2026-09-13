@@ -399,6 +399,45 @@ function setSeo(title, desc) {
    passarlo attraverso ogni chiamata. */
 let paginaCorrente = { page: "home", path: [] };
 
+/* ---------------- L'AREA RISERVATA ARRIVA QUANDO SERVE ----------------
+
+   Console di amministrazione, CRM e mail marketing sono 294 KB:
+   metà di tutto il codice del sito. Stavano fra gli script della
+   pagina, quindi ogni visitatore anonimo li scaricava e li
+   interpretava per leggere una guida sulle polizze — pagando in
+   tempo di caricamento una funzione che non userà mai.
+
+   Adesso si caricano alla prima apertura di #/admin, una volta
+   sola. La promessa viene tenuta da parte: se si apre due volte
+   di fila non si scarica due volte, e se si sta ancora
+   scaricando la seconda chiamata aspetta la prima invece di
+   avviarne un'altra.
+
+   Una nota sull'ordine: i tre file sono indipendenti. Ognuno
+   registra il proprio oggetto su window alla fine di sé stesso e
+   cerca gli altri solo al momento in cui servono davvero, non al
+   caricamento. Per questo possono arrivare in parallelo. */
+let riservataInCorso = null;
+
+function caricaRiservata() {
+  if (window.QF_ADMIN && window.QF_CRM && window.QF_MM) return Promise.resolve();
+  if (riservataInCorso) return riservataInCorso;
+  riservataInCorso = Promise.all(["admin", "crm", "mm"].map(nome => new Promise((risolvi, rifiuta) => {
+    const s = document.createElement("script");
+    s.src = BASE_SITO + "assets/js/" + nome + ".js";
+    s.onload = risolvi;
+    s.onerror = () => rifiuta(new Error(nome + ".js non si è caricato"));
+    document.head.appendChild(s);
+  }))).catch(e => {
+    /* Se il caricamento fallisce la promessa va scartata, non
+       tenuta: altrimenti ogni tentativo successivo ricadrebbe
+       sullo stesso errore anche quando la rete è tornata. */
+    riservataInCorso = null;
+    throw e;
+  });
+  return riservataInCorso;
+}
+
 /* JSON-LD dinamico per SEO (FAQPage) */
 function setJsonLd(obj) {
   $("#jsonld-dynamic").textContent = obj ? JSON.stringify(obj) : "";
@@ -1439,7 +1478,23 @@ function render() {
   else if (LEGAL_ROUTES[page]) { setJsonLd(null); html = LEGAL_ROUTES[page](); navKey = ""; }
   /* L'area riservata riceve tutto il percorso, non solo il primo
      segmento: dentro ci sono due applicazioni con rotte proprie. */
-  else if (page === "admin") { setJsonLd(null); html = window.QF_ADMIN ? window.QF_ADMIN.view(path.slice(1)) : ""; navKey = ""; }
+  else if (page === "admin") {
+    setJsonLd(null); navKey = "";
+    if (window.QF_ADMIN) {
+      html = window.QF_ADMIN.view(path.slice(1));
+    } else {
+      /* Primo ingresso: il codice dell'area riservata non è
+         ancora arrivato. Si dice che sta arrivando invece di
+         mostrare una pagina vuota, e appena c'è si ridisegna. */
+      html = `<div class="card"><p class="muted">Apertura dell'area riservata…</p></div>`;
+      caricaRiservata().then(render).catch(() => {
+        app.innerHTML = `<div class="legal-warning" role="alert">
+          <strong>L'area riservata non si è caricata.</strong>
+          Può essere la rete. Ricarica la pagina e riprova.
+        </div>`;
+      });
+    }
+  }
   else { html = views.home(); navKey = "home"; }
 
   applicaSeo(page, path);
@@ -1768,7 +1823,12 @@ window.QF = {
   get DB() { return DB; },
   saveDB, render, toast, esc, initials, livello, qpass, broker,
   staffFaqs, publishedDaily, dailyPublishedCount, getFaqById,
-  contaRisposte, sincronizzaBrokers, campo, DA_COMPILARE, ruiLabel
+  contaRisposte, sincronizzaBrokers, campo, DA_COMPILARE, ruiLabel,
+  /* Serve a chi deve parlare con l'area riservata prima che il
+     router ci arrivi: l'uscita dall'Area Pro di un collaboratore
+     la rimanda lì, e senza aspettare il caricamento parlerebbe a
+     un oggetto che non esiste ancora. */
+  caricaRiservata
 };
 
 window.addEventListener("hashchange", render);

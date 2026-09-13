@@ -140,18 +140,26 @@
 
   <div id="toast" class="toast" role="status"></div>
 
-  <script src="assets/js/mailer.js"></script>
-  <script src="assets/js/bacheca.js"></script>
-  <script src="assets/js/intermediari.js"></script>
-  <script src="assets/js/daily-questions.js"></script>
-  <script src="assets/js/staff-questions.js"></script>
-  <script src="assets/js/legal.js"></script>
-  <script src="assets/js/admin.js"></script>
-  <script src="assets/js/crm.js"></script>
-  <script src="assets/js/mm.js"></script>
-  <script src="assets/js/accesso.js"></script>
-  <script src="assets/js/area.js"></script>
-  <script src="assets/js/app.js"></script>
-  <script src="assets/js/consent.js"></script>
+  <!-- defer su tutti: senza, il browser si ferma a interpretare
+       ogni file prima di disegnare. Con defer scarica in
+       parallelo mentre legge la pagina ed esegue alla fine, in
+       quest'ordine. Su una pagina pre-renderizzata vuol dire che
+       il contenuto è già visibile mentre il codice arriva.
+
+       Qui dentro non ci sono admin.js, crm.js e mm.js: sono
+       294 KB di console di amministrazione, CRM e mail marketing
+       che ogni visitatore anonimo scaricava e interpretava per
+       leggere una guida sulle polizze. Ora li carica app.js solo
+       quando si entra davvero nell'area riservata. -->
+  <script defer src="assets/js/mailer.js"></script>
+  <script defer src="assets/js/bacheca.js"></script>
+  <script defer src="assets/js/intermediari.js"></script>
+  <script defer src="assets/js/daily-questions.js"></script>
+  <script defer src="assets/js/staff-questions.js"></script>
+  <script defer src="assets/js/legal.js"></script>
+  <script defer src="assets/js/accesso.js"></script>
+  <script defer src="assets/js/area.js"></script>
+  <script defer src="assets/js/app.js"></script>
+  <script defer src="assets/js/consent.js"></script>
 </body>
 </html>
