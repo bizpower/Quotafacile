@@ -1160,3 +1160,20 @@ a.chip { display: inline-block; text-decoration: none; }
 .lista-404 li { font-size: .92rem; color: var(--ink-soft); }
 .lista-404 a { color: var(--green-800); font-weight: 600; text-decoration: none; }
 .lista-404 a:hover { text-decoration: underline; }
+
+/* --- Le domande di identità in home ---
+   Chiuse di default: chi sa già cos'è QuotaFacile scorre, chi
+   non lo sa apre quella che gli serve. Il testo resta nell'HTML
+   anche da chiuso, quindi un motore lo legge comunque. */
+.section-identita .identita-elenco { display: grid; gap: .7rem; max-width: 52rem; }
+.identita-voce { border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); padding: .9rem 1.1rem; }
+.identita-voce > summary { cursor: pointer; font-weight: 700; color: var(--ink);
+  font-size: 1rem; line-height: 1.35; list-style: none; display: flex;
+  justify-content: space-between; align-items: center; gap: 1rem; }
+.identita-voce > summary::-webkit-details-marker { display: none; }
+.identita-voce > summary::after { content: "+"; color: var(--green-600);
+  font-weight: 800; font-size: 1.3rem; line-height: 1; flex: 0 0 auto; }
+.identita-voce[open] > summary::after { content: "–"; }
+.identita-voce > p { margin: .7rem 0 0; font-size: .93rem; line-height: 1.65; color: var(--ink-soft); }
+.identita-voce a { color: var(--green-800); font-weight: 600; }

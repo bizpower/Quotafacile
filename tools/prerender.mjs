@@ -123,6 +123,47 @@ async function guide(radice) {
   return out;
 }
 
+/* Le guide pubblicate dall'area Admin non stanno nel repository:
+   stanno nel database, e nascono fra un deploy e l'altro. Senza
+   questo passaggio una guida pubblicata oggi resterebbe visibile
+   solo dentro l'applicazione — nessun file, nessun indirizzo
+   nella sitemap, nessun canonical — cioè invisibile a chi cerca.
+
+   L'elenco non lo chiede questo script: lo chiede la pagina, che
+   sa già parlare con il servizio e conosce già la forma dei dati.
+   Duplicare qui la chiamata significherebbe tenerne allineate due.
+
+   Se il servizio non risponde il deploy prosegue con le sole
+   pagine del repository. Un contenuto in meno per qualche ora è
+   un problema piccolo; un deploy che fallisce e lascia online la
+   versione precedente del sito è un problema grande. */
+async function guideRemote(page, porta) {
+  try {
+    await page.goto(`http://localhost:${porta}/#/bacheca`, { waitUntil: "load" });
+    const elenco = await page.waitForFunction(() => {
+      const b = window.QFBacheca;
+      if (!b || !b.stato.caricata) return false;
+      return b.guideRemote()
+        .filter(g => g.slug)
+        .map(g => ({ id: g.id, slug: g.slug, data: g.data }));
+      /* il secondo argomento è l'argomento della funzione, non le
+         opzioni: metterci il timeout vuol dire non impostarlo */
+    }, null, { timeout: 20000 }).then(h => h.jsonValue());
+
+    return elenco.map(g => ({
+      rotta: "faq/" + g.id,
+      percorso: "guide/" + g.slug + "/",
+      priorita: "0.9",
+      freq: "weekly"
+    }));
+  } catch (e) {
+    console.warn(
+      "  ! Guide dell'area Admin non lette (" + String(e.message || e).split("\n")[0] + ").\n" +
+      "    Il deploy prosegue con le sole guide del repository.");
+    return [];
+  }
+}
+
 /* ---------------- riscritture sull'HTML salvato ---------------- */
 
 /* Gli asset sono scritti relativi ("assets/css/style.css"): da
@@ -217,8 +258,6 @@ async function caricaPlaywright() {
 const { chromium } = await caricaPlaywright();
 
 const radice = join(process.cwd(), RADICE);
-const pagine = [...FISSE, ...(await guide(radice))];
-const mappa = new Map(pagine.map(p => [p.rotta, p.percorso]));
 
 const server = servi(radice);
 await new Promise(r => server.listen(PORTA, r));
@@ -228,6 +267,9 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 
 const errori = [];
 page.on("pageerror", e => errori.push(String(e)));
+
+const pagine = [...FISSE, ...(await guide(radice)), ...(await guideRemote(page, PORTA))];
+const mappa = new Map(pagine.map(p => [p.rotta, p.percorso]));
 
 let scritte = 0;
 for (const p of pagine) {
@@ -239,7 +281,7 @@ for (const p of pagine) {
   await page.waitForFunction(() => {
     const m = document.getElementById("app");
     return m && m.textContent.trim().length > 200;
-  }, { timeout: 15000 }).catch(() => {});
+  }, null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(400);
 
   let html = "<!DOCTYPE html>\n" + await page.evaluate(() => document.documentElement.outerHTML);

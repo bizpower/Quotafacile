@@ -90,6 +90,12 @@ create table if not exists public.domande (
   difficolta           text,
   titolo_seo           text,
   meta_seo             text,
+  -- L'indirizzo pubblico della guida: /guide/<slug>/. Lo assegna
+  -- il trigger qui sotto al momento della pubblicazione e non
+  -- viene più toccato, perché un indirizzo che cambia è un
+  -- indirizzo che si rompe — per i link già condivisi e per i
+  -- motori di ricerca che lo hanno già indicizzato.
+  slug                 text,
   risposta_redazionale text,
   stato                text not null default 'pubblicata' check (stato in ('pubblicata','rimossa')),
   motivo_rimozione     text,
@@ -98,6 +104,79 @@ create table if not exists public.domande (
 comment on column public.domande.volume is
   'Volume di ricerca stimato, come annotato in fase di pianificazione (testo libero: "≈ 700/mese").';
 comment on column public.domande.difficolta is 'Difficoltà stimata della keyword.';
+
+-- ------------------------------------------------------------
+-- Lo slug delle guide
+--
+-- Una guida pubblicata dalla console deve avere un indirizzo
+-- pubblico leggibile, altrimenti esiste solo dentro
+-- l'applicazione: niente pagina propria, niente riga in sitemap,
+-- niente canonical. Lo slug potrebbe scriverlo la console, ma
+-- allora dipenderebbe da chi pubblica e da quale versione del
+-- codice sta girando. Qui invece nasce una volta sola, al
+-- momento dell'inserimento, e resta.
+--
+-- Su un database già esistente la create table qui sopra non
+-- viene rieseguita: la colonna va aggiunta a parte.
+alter table public.domande add column if not exists slug text;
+
+-- Gli accenti si traslitterano a mano: unaccent è un'estensione,
+-- e per ventisei lettere non vale una dipendenza in più.
+create or replace function public.unaccent_semplice(p text)
+returns text language sql immutable set search_path = '' as $$
+  select translate(coalesce(p, ''),
+    'àáâäãåèéêëìíîïòóôöõùúûüçñÀÁÂÄÃÅÈÉÊËÌÍÎÏÒÓÔÖÕÙÚÛÜÇÑ',
+    'aaaaaaeeeeiiiiooooouuuucnAAAAAAEEEEIIIIOOOOOUUUUCN');
+$$;
+
+-- Taglia a 70 caratteri ma non a metà di una parola: l'ultimo
+-- troncone incompleto viene buttato via.
+create or replace function public.slug_da_titolo(p_titolo text)
+returns text language sql immutable set search_path = '' as $$
+  select nullif(
+    regexp_replace(
+      left(
+        trim(both '-' from
+          regexp_replace(
+            lower(public.unaccent_semplice(coalesce(p_titolo, ''))),
+            '[^a-z0-9]+', '-', 'g')),
+        70),
+      '-[^-]*$', '')
+    , '');
+$$;
+
+create or replace function public.domande_assegna_slug()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  base text;
+  tentativo text;
+begin
+  if new.tipo <> 'guida' or new.stato <> 'pubblicata' or new.slug is not null then
+    return new;
+  end if;
+
+  base := coalesce(public.slug_da_titolo(coalesce(nullif(new.titolo_seo, ''), new.domanda)), 'guida');
+
+  -- Due titoli possono produrre lo stesso slug. In quel caso si
+  -- aggiunge un pezzo dell'id: brutto da leggere, ma è il caso
+  -- raro, e l'alternativa sarebbe rifiutare la pubblicazione.
+  tentativo := base;
+  if exists (select 1 from public.domande d where d.slug = tentativo and d.id <> new.id) then
+    tentativo := base || '-' || left(replace(new.id::text, '-', ''), 6);
+  end if;
+
+  new.slug := tentativo;
+  return new;
+end $$;
+
+drop trigger if exists domande_slug on public.domande;
+create trigger domande_slug before insert or update on public.domande
+for each row execute function public.domande_assegna_slug();
+
+-- L'unicità è la garanzia vera: il trigger prova a evitare le
+-- collisioni, l'indice le rende impossibili.
+create unique index if not exists domande_slug_idx
+  on public.domande (slug) where slug is not null;
 
 create table if not exists public.risposte (
   id               uuid primary key default gen_random_uuid(),

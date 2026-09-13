@@ -51,7 +51,10 @@ const CATEGORIE = ["Auto", "Casa", "Vita", "Impresa", "Salute", "Viaggi", "Cyber
 async function elenco() {
   const [d, r] = await Promise.all([
     db.from("domande")
-      .select("id, creato_il, tipo, categoria, domanda, keyword, titolo_seo, meta_seo, risposta_redazionale")
+      // lo slug è l'indirizzo pubblico della guida: senza, la pagina
+      // esiste solo dietro al frammento e resta fuori da sitemap,
+      // canonical e pre-render
+      .select("id, creato_il, tipo, categoria, domanda, keyword, titolo_seo, meta_seo, slug, risposta_redazionale")
       .eq("stato", "pubblicata")
       .order("creato_il", { ascending: false })
       .limit(300),

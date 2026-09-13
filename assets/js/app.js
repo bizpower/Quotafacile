@@ -347,7 +347,25 @@ function rottaDaPercorso(pathname) {
 }
 
 function urlCanonico(page, path) {
-  const rel = indirizzoPubblico(page, path);
+  let rel = indirizzoPubblico(page, path);
+
+  /* Le guide dell'area Admin vivono nel database: finché la
+     bacheca non ha risposto, indirizzoPubblico non le conosce e
+     direbbe "nessun indirizzo", cioè noindex. Ma se questa
+     pagina è proprio il file che il deploy ha scritto per quella
+     rotta, l'indirizzo lo sappiamo già — sta nella pagina — e
+     non c'è motivo di rinnegarlo mentre si aspetta la rete.
+     Senza questo, una bacheca lenta o ferma basterebbe a far
+     dichiarare noindex a una guida regolarmente pubblicata.
+
+     Vale solo per le guide: la pagina 404 è anch'essa un file
+     scritto dal deploy, ma è il solo file che non deve mai
+     dichiarare un canonical. */
+  if (rel === null && page === "faq" && PERCORSO_PAGINA &&
+      ROTTA_PAGINA === (path || []).join("/")) {
+    rel = PERCORSO_PAGINA;
+  }
+
   /* Una rotta senza indirizzo pubblico non ha un canonical da
      dichiarare: sarebbe un invito a indicizzare quello che non
      deve esserlo. */
@@ -372,6 +390,16 @@ function setSeo(title, desc) {
      L'origine resta quella reale, non un dominio fisso: dire che
      la pagina "vera" sta su un host diverso da quello che la sta
      servendo è il modo più rapido per farsi deindicizzare. */
+  /* L'immagine di condivisione vuole un indirizzo assoluto:
+     LinkedIn, WhatsApp e X un percorso relativo non lo leggono.
+     Si costruisce sull'origine reale come il canonical, così
+     vale anche mentre il sito è servito da un host diverso. */
+  const img = location.origin + BASE_SITO + "assets/img/og-quotafacile.png";
+  const ogi = document.querySelector('meta[property="og:image"]');
+  if (ogi) ogi.content = img;
+  const twi = document.querySelector('meta[name="twitter:image"]');
+  if (twi) twi.content = img;
+
   const url = urlCanonico(paginaCorrente.page, paginaCorrente.path);
   const can = document.querySelector('link[rel="canonical"]');
   const ogu = document.querySelector('meta[property="og:url"]');
@@ -564,13 +592,50 @@ function faqJsonLd(faqs) {
 
 /* Percorso di navigazione: aiuta i motori a capire la gerarchia
    e compare nello snippet al posto dell'URL con il cancelletto. */
+/* Le briciole di pane dicono al motore dove sta una pagina
+   dentro il sito. Vogliono indirizzi veri: costruite sul
+   frammento indicherebbero tutte la stessa pagina, cioe' non
+   direbbero niente. Ogni voce porta la propria rotta interna e
+   qui diventa l'indirizzo pubblico corrispondente. */
 function breadcrumbJsonLd(voci) {
   const base = SITO();
   return {
     "@type": "BreadcrumbList",
     "itemListElement": voci.map((v, i) => ({
-      "@type": "ListItem", "position": i + 1, "name": v.nome, "item": base + (v.hash || "")
+      "@type": "ListItem", "position": i + 1, "name": v.nome,
+      "item": base + (v.percorso !== undefined ? v.percorso : (indirizzoPubblico(v.rotta, v.path) || ""))
     }))
+  };
+}
+
+/* Una guida redazionale dichiarata per quello che è: un
+   articolo. Serve ai motori generativi più che ai risultati
+   arricchiti — è così che sanno chi firma un testo, quando è
+   stato scritto e su cosa, e quindi se citarlo e come.
+
+   Niente campi inventati: la data è quella della guida,
+   l'editore è quello dichiarato nelle note legali, il testo è
+   quello visibile in pagina. Se un dato non c'è, il campo non
+   compare invece di essere riempito a caso. */
+function articoloJsonLd(f) {
+  const base = SITO();
+  const testo = (f.risposte[0] && f.risposte[0].testo) || "";
+  return {
+    "@type": "Article",
+    "@id": urlGuida(f) + "#articolo",
+    "headline": (f.titolo || f.domanda).slice(0, 110),
+    "description": f.meta || testo.slice(0, 200),
+    "inLanguage": "it-IT",
+    "datePublished": f.data,
+    "dateModified": f.data,
+    "author": { "@id": base + "#org" },
+    "publisher": { "@id": base + "#org" },
+    "isPartOf": { "@id": base + "#website" },
+    "mainEntityOfPage": { "@type": "WebPage", "@id": urlGuida(f) },
+    "articleSection": f.cat,
+    "image": base + "assets/img/og-quotafacile.png",
+    "wordCount": testo ? testo.trim().split(/\s+/).length : undefined,
+    "about": f.keyword ? { "@type": "Thing", "name": f.keyword } : undefined
   };
 }
 
@@ -582,7 +647,7 @@ function directoryJsonLd(lista) {
     "@context": "https://schema.org",
     "@graph": [
       editoreJsonLd(),
-      breadcrumbJsonLd([{ nome: "Home", hash: "#/" }, { nome: "Intermediari", hash: "#/intermediari" }]),
+      breadcrumbJsonLd([{ nome: "Home", rotta: "home" }, { nome: "Intermediari", rotta: "intermediari" }]),
       {
         "@type": "ItemList",
         "name": "Intermediari assicurativi su QuotaFacile",
@@ -664,6 +729,79 @@ function qpass(b, flat = false) {
 const views = {};
 
 /* ----- HOME ----- */
+/* ---------------- LE DOMANDE DI IDENTITÀ ----------------
+
+   Chi arriva da una ricerca, o da un motore di risposta, si fa
+   sempre le stesse cinque o sei domande: cos'è questo sito, è un
+   broker, quanto costa, chi tratta la mia richiesta, che fine
+   fanno i miei dati. Le risposte esistevano già — sparse fra
+   note legali, termini e privacy — ma sparse vuol dire che chi
+   legge la pagina non le trova e chi la riassume nemmeno.
+
+   Sono qui perché sono vere e perché servono a chi legge, non
+   per avere un blocco FAQ da dare in pasto a Google: ogni
+   risposta dice un fatto verificabile e rimanda al documento in
+   cui è scritto per esteso. Gli stessi testi finiscono nei dati
+   strutturati, così quello che il motore riassume è esattamente
+   quello che l'utente vede. */
+/* Le stesse risposte, ripulite dal marcatore, per i dati
+   strutturati: un motore che riassume non deve ritrovarsi dentro
+   i tag. */
+function identitaJsonLd() {
+  return DOMANDE_IDENTITA.map(q => ({
+    "@type": "Question",
+    "name": q.d,
+    "acceptedAnswer": {
+      "@type": "Answer",
+      "text": q.r.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
+    }
+  }));
+}
+
+const DOMANDE_IDENTITA = [
+  {
+    d: "Che cos'è QuotaFacile?",
+    r: `Un marketplace italiano di intermediari assicurativi. Agenti, broker e collaboratori
+        iscritti al <strong>RUI</strong> — il registro IVASS — pubblicano un profilo verificabile e
+        rispondono a domande assicurative reali. Chi cerca una polizza confronta i profili e
+        contatta direttamente il professionista che preferisce.`
+  },
+  {
+    d: "QuotaFacile è un broker o un'agenzia assicurativa?",
+    r: `No. QuotaFacile <strong>non svolge attività di distribuzione assicurativa</strong> ai sensi
+        dell'art. 106 del d.lgs. 209/2005: non colloca polizze e non percepisce provvigioni sui
+        contratti. È una piattaforma di informazione e messa in contatto. Il sito è gestito da
+        Riccardo Di Falco, intermediario iscritto alla sezione E del RUI, che è anche presente fra
+        i professionisti in vetrina: è dichiarato nelle <a href="#/note-legali">note legali</a>.`
+  },
+  {
+    d: "Quanto costa usare QuotaFacile?",
+    r: `Per chi cerca una polizza è <strong>gratuito</strong> e non richiede registrazione. Non ci
+        sono costi di intermediazione: il rapporto economico, se nasce, è fra te e l'intermediario.`
+  },
+  {
+    d: "Chi gestisce la mia richiesta di preventivo?",
+    r: `L'intermediario che scegli tu, oppure gli intermediari specializzati nel ramo che hai
+        indicato. Da quel momento tratta i tuoi dati <strong>come titolare autonomo</strong>, con
+        una propria informativa che puoi chiedergli. QuotaFacile non risponde dei trattamenti che
+        effettua lui: lo spiega la <a href="#/privacy">privacy policy</a>.`
+  },
+  {
+    d: "Come faccio a verificare che un intermediario sia davvero iscritto?",
+    r: `Ogni profilo espone il <strong>numero di iscrizione al RUI</strong>. Lo puoi controllare tu
+        stesso sul <a href="https://servizi.ivass.it/RuirPubblica/" target="_blank" rel="noopener">registro
+        pubblico IVASS</a>, senza passare da noi.`
+  },
+  {
+    d: "Che fine fanno i miei dati?",
+    r: `Vengono trasmessi <strong>solo agli intermediari pertinenti</strong> alla richiesta e
+        conservati 24 mesi dall'ultimo contatto. Non sono venduti né ceduti per finalità di
+        marketing. Puoi chiederne accesso, rettifica o cancellazione in ogni momento scrivendo a
+        privacy@quotafacile.net.`
+  }
+];
+
+
 /* ---------------- PAGINA NON TROVATA ----------------
    GitHub Pages serve questo file con stato 404 vero quando il
    percorso non esiste. Dentro l'applicazione la stessa vista
@@ -693,7 +831,14 @@ views.nonTrovato = () => `
 views.home = () => {
   const featured = [...DB.brokers].sort((a, b) => b.punti - a.punti).slice(0, 3);
   const topFaq = [...staffFaqs().slice(0, 2), publishedDaily()[0], ...domandeCommunity().filter(f => f.risposte.length)].filter(Boolean).slice(0, 3);
-  setJsonLd(faqJsonLd(topFaq));
+  /* Nel grafo finiscono sia le guide in vetrina sia le domande
+     di identità: sono tutte visibili in pagina, ed è la
+     condizione perché dichiararle sia corretto invece che una
+     scorciatoia. */
+  const ld = faqJsonLd(topFaq);
+  const faqPage = ld["@graph"].find(n => n["@type"] === "FAQPage");
+  if (faqPage) faqPage.mainEntity = [...identitaJsonLd(), ...faqPage.mainEntity];
+  setJsonLd(ld);
   return `
   <section class="hero">
     <div class="container hero-inner">
@@ -739,6 +884,23 @@ views.home = () => {
         <div class="card"><span class="icon-dot">💶</span><h3>Risparmia sulle polizze</h3><p class="muted">Più professionisti in concorrenza sulla tua richiesta significa condizioni migliori per te.</p></div>
         <div class="card"><span class="icon-dot">🛡️</span><h3>Professionisti verificati</h3><p class="muted">Ogni profilo espone il numero di iscrizione al RUI, il registro IVASS degli intermediari.</p></div>
         <div class="card"><span class="icon-dot">🔍</span><h3>Nessuna intermediazione occulta</h3><p class="muted">QuotaFacile non vende polizze: mette in contatto. Il rapporto è tuo, diretto, con l'intermediario.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-identita">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">In breve</span>
+        <h2>Le domande che ci fanno più spesso</h2>
+        <p class="muted">Risposte dirette su cos'è QuotaFacile, cosa non è, e cosa succede ai tuoi dati.</p>
+      </div>
+      <div class="identita-elenco">
+        ${DOMANDE_IDENTITA.map(q => `
+          <details class="identita-voce">
+            <summary>${esc(q.d)}</summary>
+            <p>${q.r}</p>
+          </details>`).join("")}
       </div>
     </div>
   </section>
@@ -1042,14 +1204,37 @@ function guideCorrelate(f, quante = 3) {
 /* ----- DETTAGLIO FAQ ----- */
 views.faqDetail = (id) => {
   const f = getFaqById(id);
-  if (!f) return `<section class="section"><div class="container"><h2>Domanda non trovata</h2><a href="#/bacheca" class="btn btn-outline">← Torna alla bacheca</a></div></section>`;
+  if (!f) {
+    /* Le guide dell'area Admin arrivano dal database, e per
+       qualche istante dopo il caricamento non sono ancora qui.
+       Se però questa pagina è proprio il file che il deploy ha
+       scritto per questa guida, il testo è già sotto gli occhi
+       di chi legge: sostituirlo con "non trovata" vorrebbe dire
+       cancellare un contenuto giusto per riscriverlo identico
+       mezzo secondo dopo — e, se la bacheca non risponde,
+       cancellarlo e basta. Si restituisce null e render() lascia
+       la pagina com'è finché i dati non arrivano. */
+    if (PERCORSO_PAGINA && ROTTA_PAGINA === "faq/" + id &&
+        !window.QFBacheca?.stato.caricata) return null;
+    return `<section class="section"><div class="container"><h2>Domanda non trovata</h2><a href="#/bacheca" class="btn btn-outline">← Torna alla bacheca</a></div></section>`;
+  }
   const ld = faqJsonLd([f]);
+  /* Niente gradino per la categoria: non esiste una pagina di
+     categoria, e metterla porterebbe allo stesso indirizzo del
+     gradino precedente. Un percorso con due tappe identiche
+     descrive una struttura che il sito non ha. La categoria
+     resta dichiarata, al posto giusto, in articleSection. */
   ld["@graph"].push(breadcrumbJsonLd([
-    { nome: "Home", hash: "#/" },
-    { nome: "Bacheca Q&A", hash: "#/bacheca" },
-    { nome: f.cat, hash: "#/bacheca" },
-    { nome: f.domanda, hash: "#/faq/" + f.id }
+    { nome: "Home", rotta: "home" },
+    { nome: "Bacheca Q&A", rotta: "bacheca" },
+    { nome: f.titolo || f.domanda, percorso: (f.slug ? "guide/" + f.slug + "/" : "bacheca/") }
   ]));
+  /* Una guida e' un articolo, e dichiararlo cambia cosa i motori
+     — di ricerca e generativi — sanno farci: chi l'ha scritta,
+     quando, di cosa parla, quanto e' lunga. FAQPage da solo dice
+     che ci sono domande e risposte, non che c'e' un testo
+     redazionale con una data e una firma. */
+  if (f.staff) ld["@graph"].push(articoloJsonLd(f));
   setJsonLd(ld);
   const pro = DB.proProfile;
   return `
@@ -1564,7 +1749,9 @@ function render() {
   else { setJsonLd(null); html = views.nonTrovato(); navKey = ""; }
 
   applicaSeo(page, path);
-  app.innerHTML = html;
+  /* null non è "pagina vuota": è "quello che c'è va bene così".
+     Lo usa la guida pre-renderizzata che aspetta i propri dati. */
+  if (html !== null) app.innerHTML = html;
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle("active", a.dataset.nav === navKey));
   window.scrollTo({ top: 0 });
   bind();
