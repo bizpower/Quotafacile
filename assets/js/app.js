@@ -417,6 +417,27 @@ let paginaCorrente = { page: "home", path: [] };
    registra il proprio oggetto su window alla fine di sé stesso e
    cerca gli altri solo al momento in cui servono davvero, non al
    caricamento. Per questo possono arrivare in parallelo. */
+/* L'area riservata non si lascia incorniciare.
+ *
+ * Un sito dentro un <iframe> trasparente, sopra a una pagina
+ * qualunque, fa premere all'ignaro i pulsanti dell'altro senza
+ * che se ne accorga: è il clickjacking. La difesa vera è
+ * l'intestazione X-Frame-Options, che GitHub Pages non permette
+ * di impostare e che dentro un <meta> i browser ignorano.
+ * Questo controllo non la sostituisce, ma è la protezione che si
+ * può avere su questa piattaforma, e vale dove serve di più.
+ *
+ * Sta qui e non dentro admin.js per due motivi. Il primo: così
+ * il codice dell'area riservata, dentro una cornice, non viene
+ * nemmeno scaricato. Il secondo l'ho imparato sbagliando —
+ * interrompere admin.js a metà con un'eccezione gli impedisce di
+ * registrarsi, e il router, non trovandolo, lo ricarica in
+ * continuazione. Il controllo va fatto prima di chiedere il
+ * caricamento, non durante. */
+const dentroCornice = (() => {
+  try { return window.top !== window.self; } catch (e) { return true; }
+})();
+
 let riservataInCorso = null;
 
 function caricaRiservata() {
@@ -643,6 +664,32 @@ function qpass(b, flat = false) {
 const views = {};
 
 /* ----- HOME ----- */
+/* ---------------- PAGINA NON TROVATA ----------------
+   GitHub Pages serve questo file con stato 404 vero quando il
+   percorso non esiste. Dentro l'applicazione la stessa vista
+   compare per una rotta sconosciuta: lì lo stato HTTP non si può
+   cambiare — la risposta è già partita — ma almeno la pagina
+   dice la verità invece di far credere di essere arrivati. */
+views.nonTrovato = () => `
+  <section class="section">
+    <div class="container" style="max-width:42rem">
+      <span class="eyebrow">Errore 404</span>
+      <h1 class="titolo-sezione">Questa pagina non c'è</h1>
+      <p class="lead">L'indirizzo è sbagliato, oppure la pagina è stata spostata.
+      Non è colpa tua: se ci sei arrivato da un link nostro, segnalacelo.</p>
+      <div class="card" style="margin-top:1.4rem">
+        <h2 style="font-size:1.05rem;margin:0 0 .8rem">Da dove ripartire</h2>
+        <ul class="lista-404">
+          <li><a href="#/">Home</a> — cos'è QuotaFacile e come funziona</li>
+          <li><a href="#/intermediari">Trova un intermediario</a> — profili verificati sul RUI</li>
+          <li><a href="#/bacheca">Bacheca Q&amp;A</a> — domande vere con risposte firmate</li>
+          <li><a href="#/preventivo">Richiedi un preventivo</a> — gratuito, senza registrazione</li>
+          <li><a href="#/contatti">Contatti</a> — per segnalarci il link rotto</li>
+        </ul>
+      </div>
+    </div>
+  </section>`;
+
 views.home = () => {
   const featured = [...DB.brokers].sort((a, b) => b.punti - a.punti).slice(0, 3);
   const topFaq = [...staffFaqs().slice(0, 2), publishedDaily()[0], ...domandeCommunity().filter(f => f.risposte.length)].filter(Boolean).slice(0, 3);
@@ -1424,7 +1471,8 @@ const SEO_PAGINE = {
   "note-legali": ["Note legali | QuotaFacile", "Informazioni sul gestore del sito, natura dell'attività e avvertenze IVASS. QuotaFacile non è un intermediario assicurativo."],
   "contatti": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."],
   "chi-siamo": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."],
-  "admin": ["Area riservata | QuotaFacile", "Console di amministrazione."]
+  "admin": ["Area riservata | QuotaFacile", "Console di amministrazione."],
+  "404": ["Pagina non trovata | QuotaFacile", "L'indirizzo cercato non esiste o è stato spostato. Da qui puoi tornare alla home, alla directory degli intermediari o alla bacheca."]
 };
 
 function applicaSeo(page, path) {
@@ -1480,7 +1528,21 @@ function render() {
      segmento: dentro ci sono due applicazioni con rotte proprie. */
   else if (page === "admin") {
     setJsonLd(null); navKey = "";
-    if (window.QF_ADMIN) {
+    if (dentroCornice) {
+      /* Si prova anche a uscire dalla cornice: se chi incornicia
+         è della stessa origine funziona, se è di un'altra il
+         browser lo impedisce — e in quel caso resta il rifiuto
+         qui sotto, che è comunque la cosa importante. */
+      try { window.top.location = window.self.location.href; } catch (e) { /* atteso da altra origine */ }
+      html = `
+        <section class="section"><div class="container" style="max-width:34rem">
+          <h1 class="titolo-sezione">Questa pagina non si apre dentro un'altra</h1>
+          <p class="lead">L'area riservata di QuotaFacile funziona solo come pagina a sé.
+          Se ci sei arrivato da un link di qualcun altro, quel link non è nostro.</p>
+          <p><a class="btn btn-primary" href="https://www.quotafacile.net/">Vai su www.quotafacile.net</a></p>
+        </div></section>`;
+    }
+    else if (window.QF_ADMIN) {
       html = window.QF_ADMIN.view(path.slice(1));
     } else {
       /* Primo ingresso: il codice dell'area riservata non è
@@ -1495,7 +1557,11 @@ function render() {
       });
     }
   }
-  else { html = views.home(); navKey = "home"; }
+  /* Rotta che non esiste. Mostrare la homepage sarebbe comodo e
+     sbagliato: chi ha sbagliato a scrivere l'indirizzo crede di
+     essere arrivato, e un motore di ricerca si ritrova la stessa
+     pagina a indirizzi diversi. Meglio dirlo. */
+  else { setJsonLd(null); html = views.nonTrovato(); navKey = ""; }
 
   applicaSeo(page, path);
   app.innerHTML = html;

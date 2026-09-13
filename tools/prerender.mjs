@@ -101,7 +101,15 @@ const FISSE = [
   { rotta: "privacy-imprese", percorso: "privacy-imprese/", priorita: "0.3", freq: "yearly" },
   { rotta: "cookie-policy", percorso: "cookie-policy/", priorita: "0.3", freq: "yearly" },
   { rotta: "termini", percorso: "termini/", priorita: "0.3", freq: "yearly" },
-  { rotta: "note-legali", percorso: "note-legali/", priorita: "0.3", freq: "yearly" }
+  { rotta: "note-legali", percorso: "note-legali/", priorita: "0.3", freq: "yearly" },
+  /* La pagina di errore. GitHub Pages serve /404.html con stato
+     404 vero quando il percorso non esiste: prima rispondeva con
+     la sua pagina generica, e una rotta sbagliata dentro
+     l'applicazione mostrava la homepage con stato 200 — cioè
+     diceva a Google "questa pagina esiste" di un indirizzo
+     inventato. Si scrive come file singolo, non come cartella,
+     e naturalmente resta fuori dalla sitemap. */
+  { rotta: "404", percorso: "404.html", priorita: "0", freq: "yearly", sitemap: false, file: true }
 ];
 
 async function guide(radice) {
@@ -241,9 +249,11 @@ for (const p of pagine) {
   html = linkVeri(html, BASE, mappa);
   html = togliBanner(html);
 
-  const cartella = join(radice, p.percorso);
-  await mkdir(cartella, { recursive: true });
-  await writeFile(join(cartella, "index.html"), html, "utf8");
+  const destinazione = p.file
+    ? join(radice, p.percorso)
+    : join(radice, p.percorso, "index.html");
+  await mkdir(dirname(destinazione), { recursive: true });
+  await writeFile(destinazione, html, "utf8");
   scritte++;
 
   const testo = await page.evaluate(() => document.getElementById("app").innerText.trim().length);

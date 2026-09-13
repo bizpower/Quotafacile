@@ -7,6 +7,38 @@
   <meta name="description" content="Trova l'intermediario giusto, confronta e risparmia sulle tue polizze. Professionisti verificati RUI, contatto diretto, zero costi per chi cerca. Richiedi un preventivo gratuito.">
   <meta name="keywords" content="assicurazione a basso prezzo, risparmia sulle polizze, marketplace assicurativo, confronta assicurazioni online, intermediari assicurativi, broker assicurativo, preventivo assicurazione, marketplace agenti assicurativi">
   <meta name="robots" content="index, follow">
+
+  <!-- Content Security Policy.
+       GitHub Pages non permette di impostare intestazioni HTTP:
+       questa è l'unica strada per averla, e qui funziona perché
+       il sito non ha un solo gestore di eventi scritto dentro
+       l'HTML né una chiamata a eval. Per questo script-src può
+       essere 'self' secco, senza 'unsafe-inline': anche riuscendo
+       a iniettare del testo in pagina, quel testo non verrebbe
+       eseguito.
+
+       style-src deve ammettere 'unsafe-inline' perché ci sono
+       quasi quattrocento attributi style nelle viste: toglierli
+       tutti sarebbe un lavoro a sé, e l'attributo style non
+       esegue codice.
+
+       Due direttive NON ci sono, e non è una dimenticanza:
+       frame-ancestors e X-Frame-Options valgono solo come
+       intestazione vera e in un <meta> vengono ignorate. La
+       protezione dall'incorniciamento è dove può stare su questa
+       piattaforma: un controllo dentro l'area riservata. -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    base-uri 'self';
+    object-src 'none';
+    frame-src 'none';
+    script-src 'self';
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src 'self' https://fonts.gstatic.com;
+    img-src 'self' data:;
+    connect-src 'self' https://vainqxalnxyzjqautcop.supabase.co;
+    form-action 'self';
+    upgrade-insecure-requests">
   <link rel="canonical" href="https://www.quotafacile.net/">
   <meta name="theme-color" content="#145233">
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%23145233'/%3E%3Ctext%20x='32'%20y='46'%20font-family='system-ui,sans-serif'%20font-size='40'%20font-weight='800'%20fill='%23ffffff'%20text-anchor='middle'%3EQ%3C/text%3E%3C/svg%3E">
@@ -120,7 +152,7 @@
              chiave la verifica il server, e un indirizzo segreto
              non aggiunge sicurezza — aggiunge solo il fastidio di
              doverselo ricordare. -->
-        <a href="#/admin" class="footer-riservata">🔐 Area riservata</a>
+        <a href="#/admin" class="footer-riservata" rel="nofollow">🔐 Area riservata</a>
       </div>
     </div>
     <div class="container footer-bottom">

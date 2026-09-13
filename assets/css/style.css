@@ -1152,3 +1152,11 @@ a.chip { display: inline-block; text-decoration: none; }
    aveva prima da h2: cambia il significato del marcatore, non
    il disegno. */
 .titolo-sezione { font-size: clamp(1.6rem, 3.4vw, 2.3rem); font-weight: 700; }
+
+/* --- Elenco della pagina 404 ---
+   Non un elenco puntato qualunque: sono le strade da cui
+   ripartire, e vanno lette come tali. */
+.lista-404 { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.lista-404 li { font-size: .92rem; color: var(--ink-soft); }
+.lista-404 a { color: var(--green-800); font-weight: 600; text-decoration: none; }
+.lista-404 a:hover { text-decoration: underline; }
