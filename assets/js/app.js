@@ -216,6 +216,11 @@ function staffFaqs() {
   const remote = window.QFBacheca?.stato.caricata ? window.QFBacheca.guideRemote() : [];
   return [...remote, ...base.map(s => ({
     id: s.id, staff: true, cat: s.cat, keyword: s.keyword, meta: s.meta, titolo: s.titolo,
+    /* Lo slug è l'indirizzo pubblico della guida. Va portato fin
+       qui perché canonical, sitemap e pagina pre-renderizzata
+       devono dire tutti e tre lo stesso URL: se uno dei tre
+       diverge, Google sceglie da solo quale credere. */
+    slug: s.slug,
     autore: "qf", data: s.data, domanda: s.domanda,
     risposte: [
       { autore: "qf", testo: s.testo || spoglia(s.risposta), rich: s.risposta, voti: DB.staffVotes[s.id] || 0, accettata: true, auto: true, staff: true },
@@ -248,6 +253,108 @@ function hoursToNextDaily() {
    fra loro invece che con i concorrenti. */
 const SEO_BASE = { title: document.title, desc: document.querySelector('meta[name="description"]')?.content || "" };
 
+/* ---------------- INDIRIZZI PUBBLICI ----------------
+
+   Il sito naviga con il frammento (#/bacheca) perché è un'unica
+   pagina senza passo di build. Ma il frammento, per un motore di
+   ricerca, non esiste: Google ha smesso di trattarlo come
+   indirizzo a sé nel 2018. Due pagine che differiscono solo dopo
+   il cancelletto sono, per lui, la stessa pagina.
+
+   Quindi ogni rotta pubblica ha anche un indirizzo vero, fatto
+   di percorso, e a quell'indirizzo il deploy scrive una pagina
+   HTML completa. Questa tabella è la sola fonte di verità: la
+   usano il canonical, la sitemap e il pre-render. Se divergessero
+   Google sceglierebbe da sé a quale credere.
+
+   Le rotte che non sono qui dentro non hanno un indirizzo
+   pubblico, e non è una dimenticanza: l'area riservata e la
+   dashboard degli intermediari non vanno indicizzate. */
+const INDIRIZZI = {
+  "": "",
+  home: "",
+  intermediari: "intermediari/",
+  bacheca: "bacheca/",
+  professionisti: "professionisti/",
+  preventivo: "preventivo/",
+  privacy: "privacy/",
+  "privacy-imprese": "privacy-imprese/",
+  "cookie-policy": "cookie-policy/",
+  termini: "termini/",
+  "note-legali": "note-legali/",
+  contatti: "contatti/",
+  /* "Chi siamo" e "Contatti" mostrano la stessa pagina. Due
+     indirizzi con lo stesso contenuto sono contenuto duplicato:
+     entrambi restano raggiungibili — ci sono link e segnalibri
+     che ci puntano — ma dichiarano come pagina vera /contatti/,
+     e nella sitemap ce n'è uno solo. */
+  "chi-siamo": "contatti/"
+};
+
+/* La rotta che questa pagina rappresenta, scritta dal
+   pre-render. Sulla pagina servita così com'è dal repository non
+   c'è, e allora comanda il frammento come sempre. */
+const ROTTA_PAGINA = document.querySelector('meta[name="qf-rotta"]')?.content || "";
+const PERCORSO_PAGINA = document.querySelector('meta[name="qf-percorso"]')?.content || "";
+
+/* La base del sito: "/" sul dominio, "/Quotafacile/" finché è
+   servito dal sotto-percorso di github.io. Si ricava dalla pagina
+   stessa togliendo dal percorso la parte che è la rotta: quello
+   che resta è la base, qualunque host stia pubblicando. */
+const BASE_SITO = (() => {
+  let p = location.pathname;
+  if (!p.endsWith("/")) p = p.replace(/[^/]*$/, "");
+  if (PERCORSO_PAGINA && p.endsWith("/" + PERCORSO_PAGINA)) {
+    p = p.slice(0, p.length - PERCORSO_PAGINA.length);
+  }
+  return p || "/";
+})();
+
+/* L'indirizzo pubblico di una rotta. Per le guide non è l'id
+   interno ("k5") ma lo slug leggibile: un indirizzo si legge
+   anche quando lo si incolla in una chat, e "polizza-vita-
+   pignorabile" dice cos'è mentre "k5" no. */
+function indirizzoPubblico(page, path) {
+  if (page === "faq") {
+    const f = getFaqById(path && path[1]);
+    if (f && f.slug) return "guide/" + f.slug + "/";
+    return null;
+  }
+  const v = INDIRIZZI[page];
+  return v === undefined ? null : v;
+}
+
+/* La strada inversa: da un indirizzo pubblico alla rotta interna.
+   Serve perché le pagine pre-renderizzate hanno link veri, fatti
+   di percorso — un motore di ricerca deve poter seguire il filo
+   fra una pagina e l'altra, e un link al frammento per lui non
+   porta da nessuna parte. Quando però a cliccare è una persona,
+   ricadere sul frammento evita di ricaricare tutto il sito per
+   cambiare sezione. */
+function rottaDaPercorso(pathname) {
+  if (!pathname.startsWith(BASE_SITO)) return null;
+  const rel = pathname.slice(BASE_SITO.length);
+  if (rel === "") return "";
+  for (const [rotta, ind] of Object.entries(INDIRIZZI)) {
+    if (ind && ind === rel) return rotta;
+  }
+  const m = rel.match(/^guide\/([^/]+)\/$/);
+  if (m) {
+    const f = staffFaqs().find(x => x.slug === m[1]);
+    if (f) return "faq/" + f.id;
+  }
+  return null;
+}
+
+function urlCanonico(page, path) {
+  const rel = indirizzoPubblico(page, path);
+  /* Una rotta senza indirizzo pubblico non ha un canonical da
+     dichiarare: sarebbe un invito a indicizzare quello che non
+     deve esserlo. */
+  if (rel === null) return null;
+  return location.origin + BASE_SITO + rel;
+}
+
 function setSeo(title, desc) {
   document.title = title || SEO_BASE.title;
   const m = document.querySelector('meta[name="description"]');
@@ -256,16 +363,41 @@ function setSeo(title, desc) {
   if (og) og.content = title || SEO_BASE.title;
   const ogd = document.querySelector('meta[property="og:description"]');
   if (ogd) ogd.content = desc || SEO_BASE.desc;
-  /* Canonical e og:url si costruiscono dall'origine reale della pagina.
-     Puntarli a un dominio fisso mentre il sito è servito da un altro
-     host direbbe a Google che la pagina "vera" sta altrove, con il
-     rischio di far deindicizzare quella pubblicata. */
-  const url = location.origin + location.pathname + (location.hash || "");
+  /* Canonical e og:url vengono dall'indirizzo pubblico della
+     rotta, non da location: se li costruissimo dal frammento,
+     Google lo scarterebbe e leggerebbe "questa pagina è la
+     homepage" su ogni pagina del sito. Era esattamente quello
+     che succedeva prima.
+
+     L'origine resta quella reale, non un dominio fisso: dire che
+     la pagina "vera" sta su un host diverso da quello che la sta
+     servendo è il modo più rapido per farsi deindicizzare. */
+  const url = urlCanonico(paginaCorrente.page, paginaCorrente.path);
   const can = document.querySelector('link[rel="canonical"]');
-  if (can) can.href = url;
   const ogu = document.querySelector('meta[property="og:url"]');
-  if (ogu) ogu.content = url;
+  const rob = document.querySelector('meta[name="robots"]');
+
+  if (url) {
+    if (can) { can.href = url; can.removeAttribute("data-off"); }
+    if (ogu) ogu.content = url;
+    if (rob) rob.content = "index, follow";
+  } else {
+    /* Rotta senza indirizzo pubblico: area riservata, dashboard,
+       guide non ancora pubblicate. Niente canonical — non esiste
+       una pagina "vera" da dichiarare — e un noindex esplicito.
+       Il noindex non è la sicurezza: quella sta nel server. È
+       solo il modo di non far comparire in SERP una schermata
+       che non ha senso per chi arriva da una ricerca. */
+    if (can) { can.removeAttribute("href"); can.setAttribute("data-off", ""); }
+    if (ogu) ogu.content = location.origin + BASE_SITO;
+    if (rob) rob.content = "noindex, nofollow";
+  }
 }
+
+/* Quale rotta stiamo mostrando. setSeo ne ha bisogno per sapere
+   quale indirizzo pubblico dichiarare, e tenerlo qui evita di
+   passarlo attraverso ogni chiamata. */
+let paginaCorrente = { page: "home", path: [] };
 
 /* JSON-LD dinamico per SEO (FAQPage) */
 function setJsonLd(obj) {
@@ -276,7 +408,18 @@ function setJsonLd(obj) {
    è il modo in cui i motori generativi capiscono chi ha scritto
    una risposta, quando, e con quale titolo per firmarla. È la
    differenza fra essere citati e restare un risultato anonimo. */
-const SITO = () => location.origin + location.pathname;
+/* La radice del sito. Non location.pathname: su una pagina
+   pre-renderizzata quello è il percorso della pagina, e gli @id
+   del grafo finirebbero appesi a /guide/qualcosa/ invece che al
+   sito. Un identificatore che cambia a seconda della pagina da
+   cui lo si legge non identifica niente. */
+const SITO = () => location.origin + BASE_SITO;
+
+/* L'indirizzo pubblico di una guida, per i dati strutturati.
+   Deve coincidere con il canonical: se il grafo dichiara un URL
+   e il canonical un altro, Google ha due risposte alla stessa
+   domanda e ne sceglie una da sé. */
+const urlGuida = f => SITO() + (f && f.slug ? "guide/" + f.slug + "/" : "bacheca/");
 
 /* Identità dell'editore: dichiarata una volta e richiamata per
    riferimento da tutti gli altri nodi del grafo. */
@@ -325,7 +468,10 @@ function faqJsonLd(faqs) {
       editoreJsonLd(),
       {
         "@type": "FAQPage",
-        "@id": base + location.hash + "#faq",
+        /* L'identificatore della pagina FAQ e' l'indirizzo
+           pubblico su cui quelle domande sono davvero pubblicate,
+           non il frammento da cui le stiamo guardando. */
+        "@id": (urlCanonico(paginaCorrente.page, paginaCorrente.path) || base) + "#faq",
         "inLanguage": "it-IT",
         "isPartOf": { "@id": base + "#org" },
         "publisher": { "@id": base + "#org" },
@@ -337,14 +483,14 @@ function faqJsonLd(faqs) {
             : { "@type": "Organization", "name": "Redazione QuotaFacile", "@id": base + "#org" };
           return {
             "@type": "Question",
-            "@id": base + "#/faq/" + f.id,
+            "@id": urlGuida(f),
             "name": f.domanda,
             "answerCount": f.risposte.length,
             "datePublished": f.data,
             "acceptedAnswer": {
               "@type": "Answer",
               "text": best.testo,
-              "url": base + "#/faq/" + f.id,
+              "url": urlGuida(f),
               "datePublished": f.data,
               "upvoteCount": best.voti || 0,
               "author": autore
@@ -671,7 +817,7 @@ views.intermediari = () => {
   return `
   <section class="section">
     <div class="container">
-      <div class="section-head"><span class="eyebrow">Directory</span><h2>Trova il tuo intermediario</h2>
+      <div class="section-head"><span class="eyebrow">Directory</span><h1 class="titolo-sezione">Trova il tuo intermediario assicurativo</h1>
       <p class="muted">Ogni QuotaPass mostra ruolo, città, numero RUI e specializzazioni. Contatta direttamente chi preferisci.</p></div>
       <div class="filterbar">
         ${cats.map(c => `<button class="chip ${c === dirFilter ? "active" : ""}" data-filter="${c}">${c}</button>`).join("")}
@@ -734,7 +880,7 @@ views.bacheca = () => {
     <div class="container">
       <div class="section-head">
         <span class="eyebrow">Bacheca Q&amp;A · il sapere assicurativo, aperto</span>
-        <h2>Domande vere, risposte firmate</h2>
+        <h1 class="titolo-sezione">Domande vere, risposte firmate</h1>
         <p class="muted">Ogni giorno pubblichiamo una nuova domanda con risposta della redazione; gli intermediari integrano, guadagnano punti e salgono in classifica.</p>
       </div>
       <div class="daily-counter card">
@@ -900,7 +1046,7 @@ views.preventivo = (query) => {
     <div class="container" style="max-width:680px">
       <div class="section-head">
         <span class="eyebrow">Gratis e senza impegno</span>
-        <h2>${dest ? `Richiesta a ${esc(dest.nome)}` : "Richiedi preventivo o consulenza"}</h2>
+        <h1 class="titolo-sezione">${dest ? `Richiesta a ${esc(dest.nome)}` : "Richiedi un preventivo assicurativo o una consulenza"}</h1>
         ${dest ? `<p class="muted">Stai contattando direttamente ${esc(dest.ruolo).toLowerCase()} ${esc(dest.nome)} (${esc(dest.azienda)}).</p>` : `<p class="muted">Compila in 2 minuti: gli intermediari specializzati ti ricontattano direttamente.</p>`}
       </div>
       <div class="card">
@@ -1211,6 +1357,15 @@ const LEGAL_ROUTES = {
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, "") || "";
+  /* Senza frammento comanda la pagina: i file pre-renderizzati
+     stanno a un indirizzo vero e dichiarano quale rotta sono.
+     Chi arriva da Google su /guide/polizza-vita-pignorabile/
+     deve vedere quella guida, non la homepage — e deve vederla
+     senza un salto di redirect, che il motore leggerebbe come
+     "questa pagina non è quella giusta". */
+  if (!raw && ROTTA_PAGINA) {
+    return { path: ROTTA_PAGINA.split("/").filter(Boolean), query: {} };
+  }
   const [pathPart, queryPart] = raw.split("?");
   const query = {};
   if (queryPart) queryPart.split("&").forEach(kv => { const [k, v] = kv.split("="); query[k] = decodeURIComponent(v || ""); });
@@ -1224,6 +1379,7 @@ const SEO_PAGINE = {
   "preventivo": ["Richiedi un preventivo assicurativo gratuito | QuotaFacile", "Compila in due minuti e ricevi il contatto di intermediari specializzati nel ramo che ti serve. Gratuito, senza impegno, senza registrazione."],
   "area-pro": ["Area Pro — dashboard intermediari | QuotaFacile", "Gestisci la tua QuotaPass, rispondi alle domande della bacheca e monitora i contatti ricevuti."],
   "privacy": ["Privacy Policy | QuotaFacile", "Informativa sul trattamento dei dati personali ai sensi degli artt. 13-14 del Regolamento (UE) 2016/679."],
+  "privacy-imprese": ["Da dove abbiamo il tuo indirizzo — informativa per le aziende | QuotaFacile", "Hai ricevuto una nostra email? Qui trovi da dove viene il tuo recapito, perché ti scriviamo e come dirci di smettere: una riga, senza doverlo motivare."],
   "cookie-policy": ["Cookie Policy | QuotaFacile", "Cookie e strumenti di tracciamento usati su QuotaFacile, categorie, durate e come gestire il consenso."],
   "termini": ["Termini e Condizioni | QuotaFacile", "Condizioni generali di utilizzo della piattaforma QuotaFacile per utenti e intermediari assicurativi."],
   "note-legali": ["Note legali | QuotaFacile", "Informazioni sul gestore del sito, natura dell'attività e avvertenze IVASS. QuotaFacile non è un intermediario assicurativo."],
@@ -1254,6 +1410,14 @@ function render() {
   const { path, query } = parseHash();
   const page = path[0] || "home";
   let html, navKey = page || "home";
+
+  /* Va segnata prima di costruire le viste, non dopo: i dati
+     strutturati nascono dentro le viste e devono già sapere su
+     quale indirizzo pubblico si trovano. Segnarla dopo vorrebbe
+     dire che ogni pagina dichiara nel proprio grafo l'indirizzo
+     di quella precedente — un errore che si nota solo leggendo
+     il JSON-LD, cioè quasi mai. */
+  paginaCorrente = { page, path };
 
   /* Dopo un invio completato, qualunque nuova navigazione riporta il
      preventivo a un modulo vuoto: chi torna sulla pagina vuole fare
@@ -1608,6 +1772,36 @@ window.QF = {
 };
 
 window.addEventListener("hashchange", render);
+
+/* I link veri delle pagine pre-renderizzate, ripresi al volo.
+   Senza questo, ogni clic sul menu di una pagina arrivata da
+   Google ricaricherebbe l'intero sito — mezzo megabyte — per
+   cambiare sezione. Con questo, il motore di ricerca continua a
+   vedere link normali e la persona continua a navigare
+   nell'applicazione.
+
+   I guardrail contano quanto il resto: si interviene solo sul
+   tasto sinistro senza modificatori (chi apre in una scheda
+   nuova vuole una pagina vera), solo su link interni, e solo su
+   rotte che hanno un indirizzo pubblico. Tutto il resto —
+   area riservata compresa — passa e si comporta come sempre. */
+document.addEventListener("click", e => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest("a[href]");
+  if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+  if (a.origin !== location.origin) return;
+  const rotta = rottaDaPercorso(a.pathname);
+  if (rotta === null) return;
+  e.preventDefault();
+  const nuovo = "#/" + rotta + (a.search || "");
+  /* Stesso indirizzo: cambiare l'hash non scatenerebbe niente,
+     quindi si ridisegna a mano. Capita tornando sulla home dalla
+     home, ed è il caso in cui azzerare il modulo del preventivo
+     serve davvero. */
+  if (location.hash === nuovo) { render(); return; }
+  location.hash = nuovo;
+});
+
 render();
 
 /* La bacheca è contenuto condiviso: si carica dal database e la

@@ -42,6 +42,7 @@
        --------------------------------------------------------- */
     {
       id: "k1",
+      slug: "assicurazione-monopattino-elettrico-obbligatoria",
       cat: "Auto",
       keyword: "assicurazione monopattino elettrico obbligatoria",
       titolo: "Assicurazione monopattino elettrico: obbligatoria dal 2026",
@@ -85,6 +86,7 @@
        --------------------------------------------------------- */
     {
       id: "k2",
+      slug: "polizza-catastrofale-obbligatoria-pmi",
       cat: "Impresa",
       keyword: "polizza catastrofale obbligatoria micro imprese scadenza",
       titolo: "Polizza catastrofale obbligatoria: scadenze e rischi PMI",
@@ -130,6 +132,7 @@
        --------------------------------------------------------- */
     {
       id: "k3",
+      slug: "assicurazione-casalinghe-inail",
       cat: "Salute",
       keyword: "assicurazione casalinghe INAIL obbligatoria quanto costa",
       titolo: "Assicurazione casalinghe INAIL: obbligatoria, 24 € l'anno",
@@ -174,6 +177,7 @@
        --------------------------------------------------------- */
     {
       id: "k4",
+      slug: "assicurazione-cane-obbligatoria",
       cat: "Casa",
       keyword: "assicurazione cane obbligatoria",
       titolo: "Assicurazione cane obbligatoria? Quando sì e quando no",
@@ -215,6 +219,7 @@
        --------------------------------------------------------- */
     {
       id: "k5",
+      slug: "polizza-vita-pignorabile",
       cat: "Vita",
       keyword: "polizza vita pignorabile",
       titolo: "Polizza vita pignorabile? Cosa dice l'art. 1923 c.c.",
@@ -261,6 +266,7 @@
        --------------------------------------------------------- */
     {
       id: "k6",
+      slug: "classe-di-merito-sbagliata",
       cat: "Auto",
       keyword: "classe di merito sbagliata come farla correggere",
       titolo: "Classe di merito sbagliata: come farla correggere",
@@ -296,6 +302,7 @@
     },
     {
       id: "k7",
+      slug: "reclamo-assicurazione-ivass",
       cat: "Impresa",
       keyword: "reclamo assicurazione IVASS come funziona",
       titolo: "Reclamo contro l'assicurazione: la procedura completa",
@@ -334,6 +341,7 @@
     },
     {
       id: "k8",
+      slug: "risarcimento-sinistro-troppo-basso",
       cat: "Auto",
       keyword: "risarcimento sinistro troppo basso cosa fare",
       titolo: "Risarcimento troppo basso: come contestare la perizia",
@@ -369,6 +377,7 @@
     },
     {
       id: "k9",
+      slug: "polizza-catastrofale-immobile-affittato",
       cat: "Casa",
       keyword: "polizza catastrofale immobile affittato chi paga",
       titolo: "Polizza catastrofale su immobile affittato: chi paga",

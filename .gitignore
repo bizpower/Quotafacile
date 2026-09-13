@@ -1,2 +1,5 @@
 .DS_Store
 node_modules/
+
+# Cartella costruita dal deploy: il sito pubblicato, non sorgente.
+_sito/

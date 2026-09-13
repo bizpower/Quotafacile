@@ -1143,3 +1143,12 @@ a.chip { display: inline-block; text-decoration: none; }
 
 .mm-griglia-due { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .6rem; }
 .mm-griglia-due > * { min-width: 0; }
+
+/* --- L'intestazione principale di una pagina di sezione ---
+   Directory, bacheca e preventivo avevano un <h2> come titolo
+   piu' alto: leggibile per una persona, ma per un motore di
+   ricerca una pagina senza h1 e' una pagina che non dichiara di
+   cosa parla. Ora e' un h1, e prende esattamente la misura che
+   aveva prima da h2: cambia il significato del marcatore, non
+   il disegno. */
+.titolo-sezione { font-size: clamp(1.6rem, 3.4vw, 2.3rem); font-weight: 700; }
