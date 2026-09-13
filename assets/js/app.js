@@ -469,9 +469,9 @@ const dentroCornice = (() => {
 let riservataInCorso = null;
 
 function caricaRiservata() {
-  if (window.QF_ADMIN && window.QF_CRM && window.QF_MM) return Promise.resolve();
+  if (window.QF_ADMIN && window.QF_CRM && window.QF_MM && window.QF_MAGAZINE) return Promise.resolve();
   if (riservataInCorso) return riservataInCorso;
-  riservataInCorso = Promise.all(["admin", "crm", "mm"].map(nome => new Promise((risolvi, rifiuta) => {
+  riservataInCorso = Promise.all(["admin", "crm", "mm", "magazine"].map(nome => new Promise((risolvi, rifiuta) => {
     const s = document.createElement("script");
     s.src = BASE_SITO + "assets/js/" + nome + ".js";
     s.onload = risolvi;

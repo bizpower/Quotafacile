@@ -1284,3 +1284,85 @@ a.chip { display: inline-block; text-decoration: none; }
    intorno un contorno grande quanto la pagina non aiuta nessuno:
    dice solo "sei qui", e quello lo dice già lo screen reader. */
 #app:focus { outline: none; }
+
+/* ---------- Magazine (area riservata) ---------- */
+
+.mag-riepilogo {
+  display: grid; gap: .8rem; margin-bottom: 1.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+.mag-riq { display: flex; flex-direction: column; gap: .15rem; padding: .9rem 1rem; }
+.mag-riq-n {
+  font-family: var(--font-display); font-weight: 800; font-size: 1.7rem;
+  line-height: 1; color: var(--green-800); font-variant-numeric: tabular-nums;
+}
+.mag-riq span:last-child { font-size: .78rem; color: var(--ink-soft); }
+
+/* La tabella può essere più larga dello schermo su un telefono:
+   scorre lei, dentro la sua cornice, invece di far scorrere di
+   lato tutta la pagina. */
+.mag-tabella-cornice { overflow-x: auto; }
+.mag-tabella { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.mag-tabella th {
+  text-align: left; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-soft); font-weight: 600; padding: .7rem .9rem;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.mag-tabella td { padding: .8rem .9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.mag-tabella tr:last-child td { border-bottom: 0; }
+.mag-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mag-azioni { text-align: right; white-space: nowrap; }
+.mag-azioni .btn + .btn, .mag-azioni a + a { margin-left: .35rem; }
+
+.mag-titolo { display: block; font-weight: 600; color: var(--ink); text-decoration: none; }
+.mag-titolo:hover { color: var(--green-800); text-decoration: underline; }
+.mag-sotto { display: block; margin-top: .2rem; font-size: .78rem; color: var(--ink-soft); }
+
+.mag-stato {
+  display: inline-block; padding: .2rem .55rem; border-radius: 999px;
+  font-size: .7rem; font-weight: 700; white-space: nowrap;
+}
+.mag-bozza { background: var(--gold-100); color: #8A5F11; }
+.mag-online { background: var(--green-50); color: var(--green-800); }
+.mag-ritirato { background: var(--bg); color: var(--ink-soft); border: 1px solid var(--line); }
+
+/* L'editor: il testo a sinistra e tutto il resto in una colonna
+   a parte. Su uno schermo stretto diventano una colonna sola,
+   con il testo per primo — è quello per cui si è aperta la
+   pagina. */
+.mag-editor { display: grid; gap: 1.2rem; grid-template-columns: minmax(0, 1fr) 22rem; align-items: start; }
+.mag-colonna { min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+.mag-fianco { display: flex; flex-direction: column; gap: 1rem; }
+.mag-fianco .card { padding: 1rem; }
+@media (max-width: 900px) {
+  .mag-editor { grid-template-columns: 1fr; }
+}
+
+.mag-corpo-testa { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+#mag-corpo {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .87rem; line-height: 1.65; tab-size: 2;
+}
+.mag-lungo { color: var(--danger); font-weight: 600; }
+
+.mag-preview {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); padding: 1.2rem 1.4rem; max-height: 34rem; overflow-y: auto;
+}
+.mag-preview h2 { font-size: 1.35rem; margin: 1.4rem 0 .5rem; }
+.mag-preview h3 { font-size: 1.1rem; margin: 1.1rem 0 .4rem; }
+.mag-preview h4 { font-size: .96rem; margin: .9rem 0 .3rem; }
+.mag-preview > :first-child { margin-top: 0; }
+.mag-preview img { border-radius: var(--radius); }
+.mag-preview blockquote {
+  margin: 1rem 0; padding: .2rem 0 .2rem 1rem;
+  border-left: 3px solid var(--green-600); color: var(--ink-soft);
+}
+
+.mag-cover-anteprima { margin-top: .6rem; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mag-cover-anteprima img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.mag-cover-nota { display: block; padding: .3rem .5rem; font-size: .7rem; background: var(--bg); color: var(--ink-soft); }
+.mag-cover-nota.ok { background: var(--green-50); color: var(--green-800); }
+.mag-cover-nota.ko { background: #FCECEC; color: var(--danger); }
+
+.mag-bottoni { display: flex; flex-direction: column; gap: .5rem; }

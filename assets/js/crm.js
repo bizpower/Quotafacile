@@ -41,6 +41,7 @@
      non riceve l'indirizzo, e senza questo attaccherebbe gli
      eventi del CRM a una schermata che non è la sua. */
   let dentroMail = false;
+  let dentroMagazine = false;
   /* Credenziali appena generate. Restano a schermo finché non le
      si chiude, perché è l'unico momento in cui la password è
      leggibile: dopo, nel database, c'è solo la sua forma cifrata
@@ -974,6 +975,7 @@
     documenti: ["📁 Documenti", documentiView],
     posta: ["✉️ Posta", mailView],
     mail: ["📮 Mail Marketing", null],
+    magazine: ["📰 Magazine", null],
     produzione: ["🏆 Produzione", produzioneView]
   };
 
@@ -993,6 +995,18 @@
       return `
       <section class="section admin-shell"><div class="container">
         ${window.QF_MM ? window.QF_MM.view(parti[1]) : ""}
+      </div></section>`;
+    }
+
+    /* Il Magazine, come il mail marketing, è un modulo con dati
+       propri e una funzione propria sul server. Prende la pagina
+       intera e da qui in giù l'indirizzo lo governa lui: l'elenco,
+       l'articolo nuovo, quello che si sta modificando. */
+    dentroMagazine = sub === "magazine";
+    if (dentroMagazine) {
+      return `
+      <section class="section admin-shell"><div class="container">
+        ${window.QF_MAGAZINE ? window.QF_MAGAZINE.view(parti.slice(1)) : ""}
       </div></section>`;
     }
 
@@ -1039,6 +1053,7 @@
     const $ = s => document.querySelector(s);
 
     if (dentroMail) { window.QF_MM?.bind(); return; }
+    if (dentroMagazine) { window.QF_MAGAZINE?.bind(); return; }
 
     if (fase === "vuoto") { carica(); return; }
 
@@ -1435,8 +1450,9 @@
      che il mail marketing aveva caricato: sono dati della
      società come tutti gli altri. */
   function dimentica() {
-    dati = null; fase = "vuoto"; avviso = null; modifica = null; dentroMail = false;
+    dati = null; fase = "vuoto"; avviso = null; modifica = null; dentroMail = false; dentroMagazine = false;
     window.QF_MM?.dimentica();
+    window.QF_MAGAZINE?.dimentica();
   }
 
   window.QF_CRM = { view, bind, dimentica };
