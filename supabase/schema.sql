@@ -1359,3 +1359,157 @@ begin
       'create policy "solo chi vede tutto" on public.%I for select to authenticated using (crm_interno.vede_tutto())', t);
   end loop;
 end $$;
+-- ============================================================
+-- 6. Magazine
+-- ------------------------------------------------------------
+-- Struttura ripresa dal progetto "Lori CRM — Landing Page"
+-- (tabelle posts / post_categories), portata qui e resa
+-- indipendente da Lovable.
+--
+-- Cosa resta uguale: il set di campi, che è provato e
+-- sufficiente — titolo, apertura, corpo, firma, slug, copertina,
+-- meta description, stato, categoria.
+--
+-- Cosa cambia, e perché:
+--   - gli stati sono testo e non 0/1. Nel resto di questo schema
+--     uno stato si legge ('pubblicata', 'rimossa'): un numero
+--     costringe a ricordarsi cosa vuol dire;
+--   - c'è il legame pillar → cluster, che in Lori non esiste. È
+--     la struttura editoriale richiesta: un articolo portante e i
+--     suoi satelliti, che si linkano a vicenda;
+--   - c'è l'alt della copertina. Senza, l'immagine di apertura
+--     non dice niente a chi non la vede.
+-- ============================================================
+
+create table if not exists public.mag_categorie (
+  id        uuid primary key default gen_random_uuid(),
+  nome      text not null,
+  slug      text not null unique,
+  ordine    smallint not null default 0,
+  creato_il timestamptz not null default now()
+);
+
+create table if not exists public.mag_articoli (
+  id           uuid primary key default gen_random_uuid(),
+  categoria_id uuid not null references public.mag_categorie(id) on delete restrict,
+
+  -- Un pillar è l'articolo portante di un argomento; i cluster
+  -- approfondiscono un lato solo e rimandano al pillar. Il legame
+  -- sta qui e non nel testo perché serve a costruire i link
+  -- interni da soli: scritti a mano, dopo tre articoli non sono
+  -- più aggiornati.
+  tipo      text not null default 'cluster' check (tipo in ('pillar', 'cluster')),
+  pillar_id uuid references public.mag_articoli(id) on delete set null,
+  constraint mag_pillar_non_ha_pillar check (tipo <> 'pillar' or pillar_id is null),
+
+  titolo           text not null,
+  slug             text unique,
+  apertura         text not null,
+  corpo            text not null,
+  meta_description text,
+  keyword          text,
+  firma            text not null default 'Redazione QuotaFacile',
+
+  -- La copertina è un indirizzo esterno (Cloudinary): non si
+  -- carica il file, si punta a quello che esiste già.
+  cover_url text,
+  cover_alt text,
+
+  stato         text not null default 'bozza'
+                check (stato in ('bozza', 'pubblicato', 'ritirato')),
+  pubblicato_il timestamptz,
+  creato_il     timestamptz not null default now(),
+  aggiornato_il timestamptz not null default now()
+);
+
+comment on column public.mag_articoli.apertura is
+  'Il gancio iniziale, mostrato sotto il titolo e usato come fallback della meta description.';
+comment on column public.mag_articoli.corpo is
+  'HTML già ripulito dalla Edge Function: solo h2, h3, h4, p, ul, ol, li, strong, em, a, blockquote, table, img. Mai h1: quello è il titolo.';
+comment on column public.mag_articoli.slug is
+  'Indirizzo pubblico: /magazine/<slug>/. Assegnato alla prima pubblicazione e mai più cambiato.';
+
+create index if not exists mag_articoli_pubblicati_idx
+  on public.mag_articoli (stato, pubblicato_il desc);
+create index if not exists mag_articoli_categoria_idx
+  on public.mag_articoli (categoria_id);
+create index if not exists mag_articoli_pillar_idx
+  on public.mag_articoli (pillar_id) where pillar_id is not null;
+
+-- ------------------------------------------------------------
+-- Lo slug, con la stessa regola delle guide
+--
+-- Nasce alla prima pubblicazione, non alla creazione: finché
+-- l'articolo è una bozza il titolo cambia ancora, e uno slug
+-- fissato sul primo titolo provvisorio resterebbe sbagliato per
+-- sempre. Dopo la pubblicazione non si tocca più: un indirizzo
+-- che cambia è un indirizzo che si rompe, per i link già
+-- condivisi e per i motori che lo hanno indicizzato.
+create or replace function public.mag_assegna_slug()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  base text;
+  tentativo text;
+begin
+  if new.stato <> 'pubblicato' or new.slug is not null then
+    return new;
+  end if;
+
+  base := coalesce(public.slug_da_titolo(new.titolo), 'articolo');
+
+  tentativo := base;
+  if exists (select 1 from public.mag_articoli a
+              where a.slug = tentativo and a.id <> new.id) then
+    tentativo := base || '-' || left(replace(new.id::text, '-', ''), 6);
+  end if;
+
+  new.slug := tentativo;
+  if new.pubblicato_il is null then new.pubblicato_il := now(); end if;
+  return new;
+end $$;
+
+revoke execute on function public.mag_assegna_slug() from public, anon, authenticated;
+
+drop trigger if exists mag_slug on public.mag_articoli;
+create trigger mag_slug before insert or update on public.mag_articoli
+for each row execute function public.mag_assegna_slug();
+
+create or replace function public.tocca_aggiornato_il()
+returns trigger language plpgsql set search_path = '' as $$
+begin new.aggiornato_il := now(); return new; end $$;
+
+revoke execute on function public.tocca_aggiornato_il() from public, anon, authenticated;
+
+drop trigger if exists mag_tocca on public.mag_articoli;
+create trigger mag_tocca before update on public.mag_articoli
+for each row execute function public.tocca_aggiornato_il();
+
+-- ------------------------------------------------------------
+-- Chi vede cosa
+--
+-- In lettura il Magazine è pubblico, ma solo per quello che è
+-- stato pubblicato: una bozza è lavoro in corso e non deve
+-- uscire da sola. In scrittura non esiste nessuna policy, quindi
+-- nessuno scrive dal browser: si passa dalla Edge Function, che
+-- verifica la chiave di amministrazione lato server.
+alter table public.mag_categorie enable row level security;
+alter table public.mag_articoli  enable row level security;
+
+drop policy if exists "categorie magazine visibili a tutti" on public.mag_categorie;
+create policy "categorie magazine visibili a tutti"
+  on public.mag_categorie for select using (true);
+
+drop policy if exists "articoli pubblicati visibili a tutti" on public.mag_articoli;
+create policy "articoli pubblicati visibili a tutti"
+  on public.mag_articoli for select using (stato = 'pubblicato');
+
+-- ------------------------------------------------------------
+-- Categorie iniziali: i rami in cui QuotaFacile pubblica già.
+insert into public.mag_categorie (nome, slug, ordine) values
+  ('Imprese',     'imprese',     10),
+  ('Auto',        'auto',        20),
+  ('Casa',        'casa',        30),
+  ('Vita',        'vita',        40),
+  ('Salute',      'salute',      50),
+  ('Normativa',   'normativa',   60)
+on conflict (slug) do nothing;
