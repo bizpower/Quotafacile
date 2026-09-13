@@ -145,7 +145,7 @@ async function guideRemote(page, porta) {
       if (!b || !b.stato.caricata) return false;
       return b.guideRemote()
         .filter(g => g.slug)
-        .map(g => ({ id: g.id, slug: g.slug, data: g.data }));
+        .map(g => ({ id: g.id, slug: g.slug, titolo: g.titolo || g.domanda, meta: g.meta }));
       /* il secondo argomento è l'argomento della funzione, non le
          opzioni: metterci il timeout vuol dire non impostarlo */
     }, null, { timeout: 20000 }).then(h => h.jsonValue());
@@ -154,7 +154,10 @@ async function guideRemote(page, porta) {
       rotta: "faq/" + g.id,
       percorso: "guide/" + g.slug + "/",
       priorita: "0.9",
-      freq: "weekly"
+      freq: "weekly",
+      /* serve a llms.txt, che dev'essere aggiornato solo per le
+         guide che non sono già scritte nel repository */
+      remota: true, titolo: g.titolo, meta: g.meta
     }));
   } catch (e) {
     console.warn(
@@ -315,6 +318,47 @@ for (const p of pagine) {
 
 const inSitemap = pagine.filter(p => p.sitemap !== false);
 await writeFile(join(radice, "sitemap.xml"), sitemap(inSitemap, ORIGINE, BASE), "utf8");
+
+/* llms.txt è la mappa del sito per i motori generativi, e vive
+   nel repository perché ogni voce porta una descrizione scritta a
+   mano — più precisa di qualunque meta description. Due cose però
+   non possono restare com'erano scritte:
+
+   - i percorsi sono relativi, e la convenzione di llms.txt vuole
+     indirizzi completi: chi scarica questo file lo legge fuori dal
+     sito, e "/guide/..." fuori dal sito non porta da nessuna parte;
+   - una guida pubblicata dall'area Admin non è nel file, perché
+     nasce dopo. Viene aggiunta in fondo all'elenco delle guide,
+     con il titolo e la descrizione che ha davvero in pagina.
+
+   Le voci già scritte non si toccano: una descrizione redazionale
+   vale più di una riga generata. */
+async function aggiornaLlms(radice, pagine, origine, base) {
+  const p = join(radice, "llms.txt");
+  if (!existsSync(p)) return;
+  let txt = await readFile(p, "utf8");
+
+  const nuove = pagine
+    .filter(x => x.remota && x.titolo && !txt.includes("](/" + x.percorso + ")"))
+    .map(x => `- [${x.titolo}](${origine}${base}${x.percorso})` + (x.meta ? `: ${x.meta}` : ""));
+
+  /* prima di "## Sezioni", cioè in coda alle guide. Se quel
+     titolo non c'è più — qualcuno ha riorganizzato il file — le
+     voci vanno in fondo invece che sparire in silenzio. */
+  if (nuove.length) {
+    const blocco = "\n" + nuove.join("\n") + "\n\n## Sezioni";
+    txt = /\n+## Sezioni/.test(txt)
+      ? txt.replace(/\n+## Sezioni/, blocco)
+      : txt.trimEnd() + "\n\n## Guide pubblicate dalla redazione\n\n" + nuove.join("\n") + "\n";
+  }
+
+  txt = txt.replace(/\]\(\/(?!\/)/g, `](${origine}${base}`);
+  await writeFile(p, txt, "utf8");
+  return nuove.length;
+}
+
+const aggiunte = await aggiornaLlms(radice, pagine, ORIGINE, BASE);
+if (aggiunte) console.log(`\nllms.txt: ${aggiunte} guide nuove aggiunte all'elenco.`);
 
 /* robots.txt dichiara dove trovare la sitemap. Deve dirlo
    sull'host che sta davvero servendo: un crawler che legge un

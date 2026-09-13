@@ -169,6 +169,15 @@ begin
   return new;
 end $$;
 
+-- Fuori da un trigger questa funzione non ha nemmeno un record su
+-- cui lavorare, ma stando nello schema public sarebbe esposta come
+-- /rest/v1/rpc/ e chiamabile da chiunque: una SECURITY DEFINER
+-- raggiungibile senza autenticazione è superficie di attacco che
+-- non serve. Il trigger continua a funzionare — PostgreSQL
+-- verifica il permesso a chi crea il trigger, non ad ogni
+-- esecuzione.
+revoke execute on function public.domande_assegna_slug() from public, anon, authenticated;
+
 drop trigger if exists domande_slug on public.domande;
 create trigger domande_slug before insert or update on public.domande
 for each row execute function public.domande_assegna_slug();
