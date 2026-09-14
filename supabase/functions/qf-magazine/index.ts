@@ -156,13 +156,30 @@ const ENTITA: Record<string, string> = {
   colon: ":", tab: "\t", newline: "\n", lpar: "(", rpar: ")", sol: "/", quot: '"', apos: "'",
 };
 
+// Gli spazi, le tabulazioni, gli a capo e i caratteri di
+// controllo si tolgono confrontando i punti di codice invece che
+// con una classe di caratteri: una classe piena di sequenze
+// \u00NN non sopravvive a ogni passaggio fra strumenti, e una
+// regex mezza decodificata smette di funzionare in silenzio.
+function senzaSpaziEControlli(s: string): string {
+  let out = "";
+  for (const ch of s) {
+    const c = ch.codePointAt(0)!;
+    if (c <= 32) continue;               // spazio, tab, a capo, controlli
+    if (c === 160) continue;             // spazio unificatore
+    if (c === 8232 || c === 8233) continue;  // separatori di riga e paragrafo
+    if (c === 65279) continue;           // marcatore d'ordine dei byte
+    out += ch;
+  }
+  return out;
+}
+
 function comeLoLeggeIlBrowser(v: string): string {
-  return v
+  const decodificato = v
     .replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/&#(\d+);?/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
-    .replace(/&([a-z]+);?/gi, (intero, n) => ENTITA[String(n).toLowerCase()] ?? intero)
-    .replace(/[\u0000-\u0020\u00a0\u2028\u2029]/g, "")
-    .toLowerCase();
+    .replace(/&([a-z]+);?/gi, (intero, n) => ENTITA[String(n).toLowerCase()] ?? intero);
+  return senzaSpaziEControlli(decodificato).toLowerCase();
 }
 
 function indirizzoSicuro(v: string, perImmagine: boolean): string | null {
@@ -408,8 +425,12 @@ async function elimina(d: Record<string, unknown>) {
 async function nuovaCategoria(d: Record<string, unknown>) {
   const nome = testo(d.nome, 50);
   if (!nome || nome.length < 2) throw new ErroreCliente("Nome della categoria troppo breve");
-  const slug = nome.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  // Stessa ragione: i segni diacritici si tolgono per punto di
+  // codice, non con una classe scritta a mano.
+  const senzaAccenti = [...nome.toLowerCase().normalize("NFD")]
+    .filter((ch) => { const c = ch.codePointAt(0)!; return c < 0x300 || c > 0x36f; })
+    .join("");
+  const slug = senzaAccenti
     .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
   if (!slug) throw new ErroreCliente("Nome della categoria non valido");
   const { data, error } = await db.from("mag_categorie")
