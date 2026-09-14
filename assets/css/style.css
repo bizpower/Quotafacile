@@ -1518,3 +1518,13 @@ a.chip { display: inline-block; text-decoration: none; }
 @media (max-width: 560px) {
   .mag-griglia, .mag-griglia-pillar { grid-template-columns: 1fr; }
 }
+
+/* Il rimando al pillar in testa a un cluster: si legge prima del
+   testo, perché serve a chi è arrivato qui da una ricerca stretta
+   e non sa che esiste la guida completa. */
+.mag-da-pillar {
+  background: var(--gold-100); border-left: 3px solid var(--gold-500);
+  padding: .7rem 1rem; border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: .9rem; margin: 0 0 1.6rem;
+}
+.mag-da-pillar a { color: #8A5F11; font-weight: 600; }

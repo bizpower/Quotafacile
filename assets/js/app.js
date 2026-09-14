@@ -1383,6 +1383,30 @@ function magConAncore(html, voci) {
   });
 }
 
+/* Le domande frequenti in fondo a un articolo sono già, nella
+   forma, quello che schema.org chiama FAQPage: una domanda e la
+   sua risposta. Dichiararlo cambia come i motori — di ricerca e
+   generativi — possono usarle: diventano citabili una per una.
+
+   Si leggono dal testo invece di essere un campo a parte per la
+   stessa ragione dell'indice: un campo che duplica il testo, dopo
+   la prima correzione, racconta una cosa diversa dal testo. */
+function magFaq(html) {
+  const testo = String(html || "");
+  const inizio = testo.search(/<h2[^>]*>\s*(domande frequenti|faq)\b/i);
+  if (inizio === -1) return [];
+  const coda = testo.slice(inizio);
+  const voci = [];
+  const re = /<h3[^>]*>([\s\S]*?)<\/h3>\s*<p[^>]*>([\s\S]*?)<\/p>/gi;
+  let m;
+  while ((m = re.exec(coda))) {
+    const d = m[1].replace(/<[^>]+>/g, "").trim();
+    const r = m[2].replace(/<[^>]+>/g, "").trim();
+    if (d && r) voci.push({ domanda: d, risposta: r });
+  }
+  return voci;
+}
+
 views.magazineArticolo = (slug) => {
   const m = MAG();
   const a = m ? m.articolo(slug) : undefined;
@@ -1408,6 +1432,7 @@ views.magazineArticolo = (slug) => {
 
   const voci = magIndice(a.corpo);
   const corpo = magConAncore(a.corpo, voci);
+  const faq = magFaq(a.corpo);
   const cat = magCategoria(a);
   const url = urlArticolo(a);
   const data = a.pubblicato_il || a.creato_il;
@@ -1441,7 +1466,16 @@ views.magazineArticolo = (slug) => {
         { nome: "Home", rotta: "home" },
         { nome: "Magazine", rotta: "magazine" },
         { nome: a.titolo, percorso: "magazine/" + a.slug + "/" }
-      ])
+      ]),
+      ...(faq.length ? [{
+        "@type": "FAQPage",
+        "@id": url + "#faq",
+        "mainEntity": faq.map(v => ({
+          "@type": "Question",
+          "name": v.domanda,
+          "acceptedAnswer": { "@type": "Answer", "text": v.risposta }
+        }))
+      }] : [])
     ]
   });
 
