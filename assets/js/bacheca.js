@@ -149,6 +149,10 @@
         keyword: d.keyword,
         titolo: d.titolo_seo,
         meta: d.meta_seo,
+        /* Assegnato dal database al momento della pubblicazione e
+           mai più cambiato: è l'indirizzo pubblico della guida, e
+           un indirizzo che cambia è un indirizzo che si rompe. */
+        slug: d.slug,
         data: (d.creato_il || "").slice(0, 10),
         domanda: d.domanda,
         remota: true,

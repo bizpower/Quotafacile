@@ -13,6 +13,22 @@
   --green-50:  #F1F8F4;
   --gold-500:  #E2A63D;   /* gamification */
   --gold-100:  #FBF0DC;
+
+  /* Gli stessi due colori, ma per il testo.
+     Verde 600 e oro 500 sono nati per sfondi, bordi e gradienti,
+     dove il contrasto non è un problema. Usati come colore del
+     testo su fondo chiaro arrivavano a 4.18:1 e 2.15:1, sotto il
+     4.5:1 che le WCAG chiedono al livello AA — cioè faticosi da
+     leggere per chi ha una vista non perfetta, e su un telefono
+     al sole per chiunque.
+     Sono volutamente due token separati e non due variabili
+     ritoccate: cambiare --gold-500 avrebbe scurito anche i
+     bottoni, le barre di avanzamento e la tessera QuotaPass, che
+     non hanno alcun problema. Questi valori superano il 4.5:1 su
+     tutti i fondi chiari del progetto (bianco, --bg, --green-50,
+     --gold-100, --green-100). */
+  --green-testo: #267A52;
+  --gold-testo:  #8B6626;
   --ink:       #12291C;
   --ink-soft:  #4C5F55;
   --line:      #DCE5E0;
@@ -85,7 +101,7 @@ p { line-height: 1.6; }
 }
 .topbar-inner { display: flex; align-items: center; gap: 2rem; height: 64px; }
 .brand { display: flex; align-items: center; gap: .55rem; font-family: var(--font-display); font-weight: 800; font-size: 1.2rem; color: var(--ink); }
-.brand em { font-style: normal; color: var(--green-600); }
+.brand em { font-style: normal; color: var(--green-testo); }
 .brand-mark {
   display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px;
   background: linear-gradient(135deg, var(--green-800), var(--green-600));
@@ -174,7 +190,7 @@ p { line-height: 1.6; }
 .section { padding: 4.2rem 0; }
 .section-alt { background: #fff; border-block: 1px solid var(--line); }
 .section-head { max-width: 40rem; margin-bottom: 2.4rem; }
-.eyebrow { font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--green-600); }
+.eyebrow { font-size: .78rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--green-testo); }
 
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2rem; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.2rem; }
@@ -196,8 +212,13 @@ p { line-height: 1.6; }
 /* ---------- Directory intermediari ---------- */
 .pass-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1.6rem; justify-items: center; }
 .pass-wrap { display: flex; flex-direction: column; gap: .8rem; width: 100%; max-width: 380px; }
-.pass-actions { display: flex; gap: .5rem; }
-.pass-actions .btn { flex: 1; }
+/* flex:1 da solo non basta: un elemento flessibile non scende
+   sotto la larghezza del proprio contenuto finché min-width resta
+   su auto, e su uno schermo da 390px i due bottoni della tessera
+   sforavano di cinque pixel — abbastanza per far scorrere l'intera
+   pagina di lato. */
+.pass-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.pass-actions .btn { flex: 1 1 8rem; min-width: 0; }
 
 .filterbar { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.8rem; }
 .chip {
@@ -212,7 +233,23 @@ a.chip { display: inline-block; text-decoration: none; }
 
 /* ---------- Bacheca Q&A ---------- */
 .board-layout { display: grid; grid-template-columns: 1fr 320px; gap: 2rem; align-items: start; }
-.qa-card { margin-bottom: 1rem; cursor: pointer; transition: box-shadow .2s, transform .2s; }
+/* Area cliccabile estesa: il link è il titolo, ma il suo
+   pseudo-elemento copre tutta la scheda, così chi usa il mouse
+   continua a cliccare dove vuole e chi usa la tastiera arriva a
+   un link solo — non a sei elementi diversi per la stessa
+   destinazione. */
+.qa-card { position: relative; margin-bottom: 1rem; cursor: pointer; transition: box-shadow .2s, transform .2s; }
+.qa-title a { color: inherit; text-decoration: none; }
+.qa-title a::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+/* Il fuoco si vede sulla scheda intera, non su tre parole in
+   mezzo: è la scheda che si sta per aprire. */
+.qa-card:has(.qa-title a:focus-visible) { outline: 3px solid var(--green-600); outline-offset: 2px; }
+.qa-title a:focus-visible { outline: none; }
+.lead-row-link { position: relative; cursor: pointer; }
+.lead-row-link .leader-info a { color: inherit; text-decoration: none; }
+.lead-row-link .leader-info a::after { content: ""; position: absolute; inset: 0; }
+.lead-row-link:has(a:focus-visible) { outline: 3px solid var(--green-600); outline-offset: 2px; border-radius: 6px; }
+.lead-row-link .leader-info a:focus-visible { outline: none; }
 .qa-card:hover { box-shadow: var(--shadow-med); transform: translateY(-2px); }
 .qa-meta { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; font-size: .75rem; color: var(--ink-soft); margin-bottom: .5rem; }
 .badge-cat { background: var(--green-100); color: var(--green-800); font-weight: 700; padding: .2rem .6rem; border-radius: 999px; font-size: .7rem; }
@@ -221,29 +258,29 @@ a.chip { display: inline-block; text-decoration: none; }
 .qa-foot { display: flex; justify-content: space-between; align-items: center; margin-top: .9rem; font-size: .78rem; color: var(--ink-soft); }
 .qa-author { display: flex; align-items: center; gap: .45rem; font-weight: 600; color: var(--green-800); }
 .mini-avatar { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--green-800); color: #fff; font-size: .7rem; font-weight: 700; }
-.pts { color: var(--gold-500); font-weight: 700; }
+.pts { color: var(--gold-testo); font-weight: 700; }
 
 .leader-card { position: sticky; top: 84px; }
 .leader-row { display: flex; align-items: center; gap: .7rem; padding: .6rem 0; border-bottom: 1px dashed var(--line); }
 .leader-row:last-child { border-bottom: 0; }
 .leader-rank { font-family: var(--font-display); font-weight: 800; width: 1.4rem; color: var(--ink-soft); }
-.leader-rank.gold { color: var(--gold-500); }
+.leader-rank.gold { color: var(--gold-testo); }
 .leader-info { flex: 1; min-width: 0; }
 .leader-info strong { display: block; font-size: .88rem; }
 .leader-info span { font-size: .72rem; color: var(--ink-soft); }
-.leader-pts { font-weight: 700; color: var(--gold-500); font-size: .88rem; white-space: nowrap; }
-.level-badge { font-size: .64rem; font-weight: 700; padding: .15rem .5rem; border-radius: 999px; background: var(--gold-100); color: #9A6B14; }
+.leader-pts { font-weight: 700; color: var(--gold-testo); font-size: .88rem; white-space: nowrap; }
+.level-badge { font-size: .64rem; font-weight: 700; padding: .15rem .5rem; border-radius: 999px; background: var(--gold-100); color: #8A5F11; }
 
 /* Q&A dettaglio */
 .answer { border-left: 3px solid var(--green-600); padding: .9rem 1.1rem; background: var(--green-50); border-radius: 0 var(--radius) var(--radius) 0; margin-top: 1rem; }
 .answer-auto { border-left-color: var(--gold-500); background: #FDFAF3; }
 .answer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: .4rem; flex-wrap: wrap; gap: .4rem; }
 .vote-btn { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: .3rem .8rem; font: 600 .78rem var(--font-body); cursor: pointer; color: var(--ink-soft); }
-.vote-btn:hover { border-color: var(--gold-500); color: #9A6B14; }
+.vote-btn:hover { border-color: var(--gold-500); color: #8A5F11; }
 
 /* Domanda del giorno */
-.badge-daily { background: var(--gold-100); color: #9A6B14; }
-.badge-auto { background: var(--gold-100); color: #9A6B14; }
+.badge-daily { background: var(--gold-100); color: #8A5F11; }
+.badge-auto { background: var(--gold-100); color: #8A5F11; }
 .qa-daily { border-color: #F0DDB6; }
 .mini-qf { background: linear-gradient(135deg, var(--gold-500), #C88A22); }
 .daily-counter {
@@ -328,7 +365,7 @@ a.chip { display: inline-block; text-decoration: none; }
                 radial-gradient(closest-side, #000 96%, transparent) bottom/100% 78% no-repeat;
 }
 .soon-tag {
-  font-size: .72rem; font-weight: 700; color: #9A6B14; background: var(--gold-100);
+  font-size: .72rem; font-weight: 700; color: #8A5F11; background: var(--gold-100);
   border: 1px solid #F0DDB6; padding: .4rem .8rem; border-radius: 999px;
 }
 .notify-form { display: flex; gap: .6rem; max-width: 26rem; }
@@ -369,7 +406,7 @@ a.chip { display: inline-block; text-decoration: none; }
 .m-topbar { display: flex; align-items: center; gap: .35rem; padding: .45rem .8rem; background: #fff; border-bottom: 1px solid var(--line); }
 .m-mark { display: grid; place-items: center; width: 17px; height: 17px; border-radius: 5px; background: linear-gradient(135deg, var(--green-800), var(--green-600)); color: #fff; font: 800 .58rem var(--font-display); }
 .m-brand { font: 800 .66rem var(--font-display); color: var(--ink); }
-.m-brand em { font-style: normal; color: var(--green-600); }
+.m-brand em { font-style: normal; color: var(--green-testo); }
 .m-hero { margin: .55rem .55rem 0; padding: .75rem .7rem; border-radius: 14px; background: linear-gradient(150deg, var(--green-950), var(--green-800) 70%); color: #fff; }
 .m-hero-title { font: 800 .72rem/1.15 var(--font-display); }
 .m-hero-sub { font-size: .52rem; color: #CBE5D6; margin-top: .18rem; }
@@ -405,7 +442,10 @@ a.chip { display: inline-block; text-decoration: none; }
 .footer { background: var(--green-950); color: #A9C8B6; padding: 3.2rem 0 5.5rem; margin-top: 4rem; }
 .footer-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 2rem; }
 .footer h4 { color: #fff; font-family: var(--font-display); font-size: .95rem; margin: 0 0 .8rem; }
-.footer a { display: block; color: #A9C8B6; font-size: .88rem; padding: .22rem 0; }
+/* .22rem sopra e sotto davano un bersaglio alto 23px: uno in
+   meno dei 24 che chiede il criterio 2.5.8 delle WCAG 2.2.
+   Con .3rem si arriva a 25 e il footer non cambia aspetto. */
+.footer a { display: block; color: #A9C8B6; font-size: .88rem; padding: .3rem 0; }
 .footer a:hover { color: #fff; }
 .footer-brand { color: #fff; margin-bottom: .6rem; }
 .footer-brand em { color: var(--gold-500); }
@@ -488,7 +528,11 @@ a.chip { display: inline-block; text-decoration: none; }
 .cc-banner a { text-decoration: underline; }
 .cc-actions { display: flex; gap: .6rem; flex-wrap: wrap; }
 .cc-actions .btn { flex: 1 1 auto; min-width: 140px; padding: .7rem 1rem; font-size: .92rem; }
-.cc-note { font-size: .74rem !important; margin: .8rem 0 0 !important; opacity: .8; }
+/* Niente opacity: --ink-soft su bianco sta a 6.8:1, ma al 80%
+   di opacità il browser lo fonde col fondo e scende a 4.2:1,
+   sotto la soglia. Su un testo di .74rem è proprio dove serve
+   di più. */
+.cc-note { font-size: .74rem !important; margin: .8rem 0 0 !important; }
 .cc-x {
   position: absolute; top: .7rem; right: .8rem; width: 32px; height: 32px; border-radius: 50%;
   border: 0; background: var(--bg); color: var(--ink-soft); font-size: .85rem; cursor: pointer;
@@ -538,9 +582,13 @@ a.chip { display: inline-block; text-decoration: none; }
 /* ---------- Segnalazione contenuti (DSA) ---------- */
 .report-btn {
   background: none; border: 0; color: var(--ink-soft); font-size: .74rem; cursor: pointer;
-  padding: .2rem .4rem; border-radius: 6px; opacity: .75;
+  /* .4rem verticali portano il bersaglio da 23 a 26px: sotto i
+     24 il criterio 2.5.8 delle WCAG 2.2 non è soddisfatto, e
+     su un telefono si sbaglia a premere. L'opacity è via per
+     lo stesso motivo del .cc-note qui sopra. */
+  padding: .4rem .5rem; border-radius: 6px;
 }
-.report-btn:hover { background: var(--green-50); color: var(--danger); opacity: 1; }
+.report-btn:hover { background: var(--green-50); color: var(--danger); }
 .answer-foot { display: flex; justify-content: flex-end; margin-top: .4rem; }
 
 @media (max-width: 560px) {
@@ -551,7 +599,7 @@ a.chip { display: inline-block; text-decoration: none; }
 
 /* ---------- Footer: link legali e disclaimer ---------- */
 .footer-linkbtn {
-  display: block; background: none; border: 0; padding: .22rem 0;
+  display: block; background: none; border: 0; padding: .3rem 0;
   color: #A9C8B6; font: inherit; font-size: .88rem; cursor: pointer; text-align: left;
 }
 .footer-linkbtn:hover { color: #fff; }
@@ -586,7 +634,7 @@ a.chip { display: inline-block; text-decoration: none; }
   background: rgba(226, 166, 61, .22); border-bottom: 1px dotted var(--gold-500);
   color: inherit; padding: 0 .2rem; border-radius: 3px;
 }
-.rui-pending { color: var(--gold-500); font-family: var(--font-body); letter-spacing: 0; font-size: .74rem; }
+.rui-pending { color: var(--gold-testo); font-family: var(--font-body); letter-spacing: 0; font-size: .74rem; }
 .qpass-rui { font-size: .74rem; line-height: 1.35; max-width: 62%; }
 
 /* ============================================================
@@ -838,7 +886,7 @@ a.chip { display: inline-block; text-decoration: none; }
 .correlata:hover { border-color: var(--green-600); transform: translateX(3px); }
 .correlata-cat {
   display: inline-block; font-size: .68rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .06em; color: var(--green-600); margin-bottom: .2rem;
+  letter-spacing: .06em; color: var(--green-testo); margin-bottom: .2rem;
 }
 .correlata-titolo { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--ink); line-height: 1.25; }
 .correlata-meta { display: block; font-size: .82rem; color: var(--ink-soft); margin-top: .25rem; line-height: 1.5; }
@@ -973,7 +1021,7 @@ a.chip { display: inline-block; text-decoration: none; }
 .mm-casella-grande.in-errore { border-left: 3px solid var(--danger); }
 
 .mm-errore-box { background: #FDF0F0; border-radius: 8px; padding: .45rem .6rem; }
-.mm-ok-box { color: var(--green-600); font-size: .78rem; margin: 0; }
+.mm-ok-box { color: var(--green-testo); font-size: .78rem; margin: 0; }
 
 .mm-quota-riga { display: flex; justify-content: space-between; font-size: .72rem;
   color: var(--ink-soft); margin-bottom: .2rem; }
@@ -1143,3 +1191,340 @@ a.chip { display: inline-block; text-decoration: none; }
 
 .mm-griglia-due { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .6rem; }
 .mm-griglia-due > * { min-width: 0; }
+
+/* --- L'intestazione principale di una pagina di sezione ---
+   Directory, bacheca e preventivo avevano un <h2> come titolo
+   piu' alto: leggibile per una persona, ma per un motore di
+   ricerca una pagina senza h1 e' una pagina che non dichiara di
+   cosa parla. Ora e' un h1, e prende esattamente la misura che
+   aveva prima da h2: cambia il significato del marcatore, non
+   il disegno. */
+.titolo-sezione { font-size: clamp(1.6rem, 3.4vw, 2.3rem); font-weight: 700; }
+
+/* --- Elenco della pagina 404 ---
+   Non un elenco puntato qualunque: sono le strade da cui
+   ripartire, e vanno lette come tali. */
+.lista-404 { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.lista-404 li { font-size: .92rem; color: var(--ink-soft); }
+.lista-404 a { color: var(--green-800); font-weight: 600; text-decoration: none; }
+.lista-404 a:hover { text-decoration: underline; }
+
+/* --- Le domande di identità in home ---
+   Chiuse di default: chi sa già cos'è QuotaFacile scorre, chi
+   non lo sa apre quella che gli serve. Il testo resta nell'HTML
+   anche da chiuso, quindi un motore lo legge comunque. */
+.section-identita .identita-elenco { display: grid; gap: .7rem; max-width: 52rem; }
+.identita-voce { border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); padding: .9rem 1.1rem; }
+.identita-voce > summary { cursor: pointer; font-weight: 700; color: var(--ink);
+  font-size: 1rem; line-height: 1.35; list-style: none; display: flex;
+  justify-content: space-between; align-items: center; gap: 1rem; }
+.identita-voce > summary::-webkit-details-marker { display: none; }
+.identita-voce > summary::after { content: "+"; color: var(--green-600);
+  font-weight: 800; font-size: 1.3rem; line-height: 1; flex: 0 0 auto; }
+.identita-voce[open] > summary::after { content: "–"; }
+.identita-voce > p { margin: .7rem 0 0; font-size: .93rem; line-height: 1.65; color: var(--ink-soft); }
+.identita-voce a { color: var(--green-800); font-weight: 600; }
+
+/* ---------- Link dentro il testo ----------
+   Il criterio 1.4.1 delle WCAG dice che il colore non può essere
+   l'unico modo per distinguere qualcosa. Un link dentro un
+   paragrafo che si riconosce solo perché è verde non lo vede chi
+   non distingue quel verde dal nero — e non lo vede nessuno su
+   una stampa in bianco e nero o con un filtro di lettura.
+
+   Vale per il testo che si legge di seguito, non per la
+   navigazione, i bottoni, le schede: lì la forma e la posizione
+   dicono già che si può cliccare. Per questo la regola è
+   circoscritta ai contenitori di prosa invece di stare su tutti
+   gli <a> del sito. */
+#app p a:not(.btn):not([class*="card"]),
+#app li a:not(.btn):not([class*="card"]),
+#app td a:not(.btn),
+#app dd a:not(.btn),
+#app .lead a:not(.btn),
+#app .legal-callout a:not(.btn),
+#app .privacy-hint a:not(.btn),
+.cc-modal p a,
+.footer-bottom p a {
+  text-decoration: underline;
+  text-underline-offset: .15em;
+  text-decoration-thickness: from-font;
+}
+
+/* ---------- Accessibilità: fuoco e annunci ---------- */
+
+/* Visibile solo a chi legge con uno screen reader. Non
+   display:none e non visibility:hidden — quelli tolgono
+   l'elemento anche dall'albero di accessibilità, che è il
+   contrario di quello che serve qui. */
+/* Niente margin negativo: il modo classico di nascondere un
+   elemento lo sposta di un pixel fuori dal bordo sinistro, e un
+   pixel fuori dal bordo è comunque una pagina che scorre di
+   lato. Basta ritagliarlo dov'è. */
+.solo-lettori {
+  position: absolute; width: 1px; height: 1px;
+  margin: 0; padding: 0; border: 0;
+  clip-path: inset(50%); overflow: hidden; white-space: nowrap;
+}
+
+/* Fuori dallo schermo finché non riceve il fuoco, poi scende in
+   alto a sinistra. Sta sopra la barra fissa (z-index 60). */
+.skip-link {
+  position: fixed; top: 0; left: 0; z-index: 200;
+  transform: translateY(-120%);
+  background: var(--green-800); color: #fff;
+  padding: .7rem 1.1rem; border-radius: 0 0 var(--radius) 0;
+  font-size: .9rem; font-weight: 600; text-decoration: none;
+  transition: transform .15s var(--ease);
+}
+.skip-link:focus { transform: translateY(0); outline: 3px solid var(--gold-500); outline-offset: -3px; }
+
+/* <main> riceve il fuoco a ogni cambio di rotta, ma disegnargli
+   intorno un contorno grande quanto la pagina non aiuta nessuno:
+   dice solo "sei qui", e quello lo dice già lo screen reader. */
+#app:focus { outline: none; }
+
+/* ---------- Magazine (area riservata) ---------- */
+
+.mag-riepilogo {
+  display: grid; gap: .8rem; margin-bottom: 1.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+.mag-riq { display: flex; flex-direction: column; gap: .15rem; padding: .9rem 1rem; }
+.mag-riq-n {
+  font-family: var(--font-display); font-weight: 800; font-size: 1.7rem;
+  line-height: 1; color: var(--green-800); font-variant-numeric: tabular-nums;
+}
+.mag-riq span:last-child { font-size: .78rem; color: var(--ink-soft); }
+
+/* La tabella può essere più larga dello schermo su un telefono:
+   scorre lei, dentro la sua cornice, invece di far scorrere di
+   lato tutta la pagina. */
+.mag-tabella-cornice { overflow-x: auto; }
+.mag-tabella { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.mag-tabella th {
+  text-align: left; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-soft); font-weight: 600; padding: .7rem .9rem;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.mag-tabella td { padding: .8rem .9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.mag-tabella tr:last-child td { border-bottom: 0; }
+.mag-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mag-azioni { text-align: right; white-space: nowrap; }
+.mag-azioni .btn + .btn, .mag-azioni a + a { margin-left: .35rem; }
+
+.mag-titolo { display: block; font-weight: 600; color: var(--ink); text-decoration: none; }
+.mag-titolo:hover { color: var(--green-800); text-decoration: underline; }
+.mag-sotto { display: block; margin-top: .2rem; font-size: .78rem; color: var(--ink-soft); }
+
+.mag-stato {
+  display: inline-block; padding: .2rem .55rem; border-radius: 999px;
+  font-size: .7rem; font-weight: 700; white-space: nowrap;
+}
+.mag-bozza { background: var(--gold-100); color: #8A5F11; }
+.mag-online { background: var(--green-50); color: var(--green-800); }
+.mag-ritirato { background: var(--bg); color: var(--ink-soft); border: 1px solid var(--line); }
+
+/* L'editor: il testo a sinistra e tutto il resto in una colonna
+   a parte. Su uno schermo stretto diventano una colonna sola,
+   con il testo per primo — è quello per cui si è aperta la
+   pagina. */
+.mag-editor { display: grid; gap: 1.2rem; grid-template-columns: minmax(0, 1fr) 22rem; align-items: start; }
+.mag-colonna { min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+.mag-fianco { display: flex; flex-direction: column; gap: 1rem; }
+.mag-fianco .card { padding: 1rem; }
+@media (max-width: 900px) {
+  .mag-editor { grid-template-columns: 1fr; }
+}
+
+.mag-corpo-testa { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+#mag-corpo {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .87rem; line-height: 1.65; tab-size: 2;
+}
+.mag-lungo { color: var(--danger); font-weight: 600; }
+
+.mag-preview {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); padding: 1.2rem 1.4rem; max-height: 34rem; overflow-y: auto;
+}
+.mag-preview h2 { font-size: 1.35rem; margin: 1.4rem 0 .5rem; }
+.mag-preview h3 { font-size: 1.1rem; margin: 1.1rem 0 .4rem; }
+.mag-preview h4 { font-size: .96rem; margin: .9rem 0 .3rem; }
+.mag-preview > :first-child { margin-top: 0; }
+.mag-preview img { border-radius: var(--radius); }
+.mag-preview blockquote {
+  margin: 1rem 0; padding: .2rem 0 .2rem 1rem;
+  border-left: 3px solid var(--green-600); color: var(--ink-soft);
+}
+
+.mag-cover-anteprima { margin-top: .6rem; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mag-cover-anteprima img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.mag-cover-nota { display: block; padding: .3rem .5rem; font-size: .7rem; background: var(--bg); color: var(--ink-soft); }
+.mag-cover-nota.ok { background: var(--green-50); color: var(--green-800); }
+.mag-cover-nota.ko { background: #FCECEC; color: var(--danger); }
+
+.mag-bottoni { display: flex; flex-direction: column; gap: .5rem; }
+
+/* ---------- Magazine (pubblico) ---------- */
+
+.mag-griglia {
+  display: grid; gap: 1.1rem; margin-bottom: 2.2rem;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+}
+.mag-griglia-pillar { grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
+
+.mag-sezione-titolo {
+  font-size: 1.15rem; font-weight: 700; margin: 0 0 .9rem;
+  font-family: var(--font-display);
+}
+
+.mag-card {
+  display: flex; flex-direction: column;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; text-decoration: none; color: inherit;
+  transition: border-color .2s var(--ease), transform .2s var(--ease), box-shadow .2s var(--ease);
+}
+.mag-card:hover { border-color: var(--green-600); transform: translateY(-2px); box-shadow: var(--shadow-med); }
+/* Il fuoco si vede sulla scheda intera, non sul testo dentro:
+   è la scheda che si sta per aprire. */
+.mag-card:focus-visible { outline: 3px solid var(--green-600); outline-offset: 2px; }
+
+.mag-card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.mag-card-vuota { background: linear-gradient(135deg, var(--green-50), var(--gold-100)); }
+.mag-card-grande .mag-card-cover { aspect-ratio: 21 / 9; }
+
+.mag-card-corpo { display: flex; flex-direction: column; gap: .4rem; padding: 1rem 1.1rem 1.2rem; }
+.mag-card-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .45rem;
+  font-size: .74rem; color: var(--ink-soft);
+}
+.mag-card-cat {
+  background: var(--green-50); color: var(--green-800);
+  padding: .1rem .5rem; border-radius: 999px; font-weight: 600;
+}
+.mag-pillar-tag {
+  background: var(--gold-100); color: #8A5F11;
+  padding: .1rem .5rem; border-radius: 999px; font-weight: 700;
+}
+.mag-card-titolo {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.05rem;
+  line-height: 1.25; text-wrap: balance;
+}
+.mag-card-grande .mag-card-titolo { font-size: 1.3rem; }
+.mag-card:hover .mag-card-titolo { color: var(--green-800); }
+.mag-card-apertura { font-size: .88rem; line-height: 1.5; color: var(--ink-soft); }
+.mag-card-pillar { border-left: 3px solid var(--gold-500); }
+
+/* ----- la pagina di un articolo ----- */
+
+.mag-briciole { font-size: .82rem; color: var(--ink-soft); margin-bottom: 1.1rem; }
+.mag-briciole a { color: var(--ink-soft); text-decoration: underline; text-underline-offset: .15em; }
+.mag-briciole a:hover { color: var(--green-800); }
+.mag-briciole span { margin: 0 .35rem; }
+
+.mag-testa-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem;
+  font-size: .8rem; color: var(--ink-soft); margin-bottom: .7rem;
+}
+.mag-titolo-articolo {
+  font-size: clamp(1.7rem, 4.4vw, 2.6rem); line-height: 1.12;
+  text-wrap: balance; margin: 0 0 .7rem;
+}
+.mag-apertura { font-size: 1.08rem; color: var(--ink-soft); margin-bottom: 1.4rem; }
+.mag-cover {
+  display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover;
+  border-radius: var(--radius-lg); margin-bottom: 1.6rem;
+}
+
+.mag-risale {
+  background: var(--green-50); border-left: 3px solid var(--green-600);
+  padding: .7rem 1rem; border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: .9rem; margin-bottom: 1.4rem;
+}
+
+.mag-indice {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg); padding: 1rem 1.2rem; margin-bottom: 1.8rem;
+}
+.mag-indice-titolo {
+  font-family: var(--font-body); font-size: .72rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft);
+  margin: 0 0 .5rem;
+}
+.mag-indice ol { margin: 0; padding-left: 1.1rem; font-size: .92rem; }
+.mag-indice li { margin-bottom: .1rem; }
+.mag-indice-sotto { margin-left: 1rem; font-size: .88rem; }
+/* Le voci dell'indice sono link uno sotto l'altro: stretti come
+   il testo che contengono restavano sotto i 24px che chiede il
+   criterio 2.5.8, e su un telefono si sbaglia a premere. Il
+   blocco con un po' di spazio sopra e sotto risolve senza
+   allontanarle visivamente. */
+.mag-indice a {
+  display: block; padding: .28rem 0;
+  color: var(--ink); text-decoration: none;
+}
+.mag-indice a:hover { color: var(--green-800); text-decoration: underline; }
+
+/* Il testo dell'articolo. Misura vicina ai 68 caratteri: oltre,
+   l'occhio perde la riga tornando a capo. */
+.mag-prosa { font-size: 1.03rem; line-height: 1.72; }
+.mag-prosa > :first-child { margin-top: 0; }
+.mag-prosa h2 {
+  font-size: clamp(1.3rem, 2.6vw, 1.6rem); line-height: 1.2;
+  margin: 2.4rem 0 .7rem; scroll-margin-top: 5rem;
+}
+.mag-prosa h3 {
+  font-size: 1.12rem; margin: 1.8rem 0 .5rem; scroll-margin-top: 5rem;
+  font-family: var(--font-display); font-weight: 700;
+}
+.mag-prosa h4 {
+  font-size: .98rem; margin: 1.3rem 0 .4rem;
+  font-family: var(--font-body); font-weight: 700; color: var(--ink);
+}
+.mag-prosa p { margin: 0 0 1.1rem; }
+.mag-prosa ul, .mag-prosa ol { margin: 0 0 1.2rem; padding-left: 1.3rem; }
+.mag-prosa li { margin-bottom: .45rem; }
+.mag-prosa a { color: var(--green-800); text-decoration: underline; text-underline-offset: .15em; }
+.mag-prosa strong { font-weight: 700; }
+.mag-prosa blockquote {
+  margin: 1.4rem 0; padding: .3rem 0 .3rem 1.1rem;
+  border-left: 3px solid var(--gold-500); color: var(--ink-soft); font-style: italic;
+}
+.mag-prosa blockquote p:last-child { margin-bottom: 0; }
+.mag-prosa img { display: block; width: 100%; height: auto; border-radius: var(--radius); margin: 1.4rem 0; }
+.mag-prosa hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
+.mag-prosa code {
+  font-size: .9em; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 4px; padding: .05em .3em;
+}
+/* Una tabella larga scorre dentro di sé: la pagina no. */
+.mag-prosa table { width: 100%; border-collapse: collapse; margin: 1.4rem 0; font-size: .92rem; display: block; overflow-x: auto; }
+.mag-prosa th, .mag-prosa td { border: 1px solid var(--line); padding: .55rem .7rem; text-align: left; vertical-align: top; }
+.mag-prosa th { background: var(--bg); font-weight: 600; }
+
+.mag-firma { margin: 2rem 0 0; padding-top: 1.2rem; border-top: 1px solid var(--line); font-size: .9rem; color: var(--ink-soft); }
+.mag-avvertenza { margin-top: 1rem; }
+
+.mag-cta {
+  margin: 2.4rem 0; padding: 1.4rem 1.5rem;
+  background: var(--green-50); border: 1px solid var(--green-100);
+  border-radius: var(--radius-lg);
+}
+
+.mag-correlati { margin-top: 2.8rem; }
+
+@media (max-width: 560px) {
+  .mag-griglia, .mag-griglia-pillar { grid-template-columns: 1fr; }
+}
+
+/* Il rimando al pillar in testa a un cluster: si legge prima del
+   testo, perché serve a chi è arrivato qui da una ricerca stretta
+   e non sa che esiste la guida completa. */
+.mag-da-pillar {
+  background: var(--gold-100); border-left: 3px solid var(--gold-500);
+  padding: .7rem 1rem; border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: .9rem; margin: 0 0 1.6rem;
+}
+.mag-da-pillar a { color: #8A5F11; font-weight: 600; }

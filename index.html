@@ -7,6 +7,44 @@
   <meta name="description" content="Trova l'intermediario giusto, confronta e risparmia sulle tue polizze. Professionisti verificati RUI, contatto diretto, zero costi per chi cerca. Richiedi un preventivo gratuito.">
   <meta name="keywords" content="assicurazione a basso prezzo, risparmia sulle polizze, marketplace assicurativo, confronta assicurazioni online, intermediari assicurativi, broker assicurativo, preventivo assicurazione, marketplace agenti assicurativi">
   <meta name="robots" content="index, follow">
+
+  <!-- Content Security Policy.
+       GitHub Pages non permette di impostare intestazioni HTTP:
+       questa è l'unica strada per averla, e qui funziona perché
+       il sito non ha un solo gestore di eventi scritto dentro
+       l'HTML né una chiamata a eval. Per questo script-src può
+       essere 'self' secco, senza 'unsafe-inline': anche riuscendo
+       a iniettare del testo in pagina, quel testo non verrebbe
+       eseguito.
+
+       style-src deve ammettere 'unsafe-inline' perché ci sono
+       quasi quattrocento attributi style nelle viste: toglierli
+       tutti sarebbe un lavoro a sé, e l'attributo style non
+       esegue codice.
+
+       img-src ammette res.cloudinary.com perché le copertine del
+       Magazine stanno lì: senza, il browser le blocca e non si
+       vede niente. È un solo host, nominato per esteso — non un
+       carattere jolly che aprirebbe a qualunque immagine di
+       qualunque origine.
+
+       Due direttive NON ci sono, e non è una dimenticanza:
+       frame-ancestors e X-Frame-Options valgono solo come
+       intestazione vera e in un <meta> vengono ignorate. La
+       protezione dall'incorniciamento è dove può stare su questa
+       piattaforma: un controllo dentro l'area riservata. -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    base-uri 'self';
+    object-src 'none';
+    frame-src 'none';
+    script-src 'self';
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src 'self' https://fonts.gstatic.com;
+    img-src 'self' data: https://res.cloudinary.com;
+    connect-src 'self' https://vainqxalnxyzjqautcop.supabase.co;
+    form-action 'self';
+    upgrade-insecure-requests">
   <link rel="canonical" href="https://www.quotafacile.net/">
   <meta name="theme-color" content="#145233">
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%23145233'/%3E%3Ctext%20x='32'%20y='46'%20font-family='system-ui,sans-serif'%20font-size='40'%20font-weight='800'%20fill='%23ffffff'%20text-anchor='middle'%3EQ%3C/text%3E%3C/svg%3E">
@@ -19,11 +57,22 @@
   <meta property="og:description" content="Trova l'intermediario giusto, confronta e risparmia sulle tue polizze. Professionisti verificati RUI, contatto diretto, nessuna intermediazione occulta.">
   <meta property="og:url" content="https://www.quotafacile.net/">
   <meta property="og:locale" content="it_IT">
+  <!-- Senza questa immagine ogni condivisione su LinkedIn,
+       WhatsApp o X usciva come un rettangolo vuoto, e la card
+       era già dichiarata "summary_large_image": si prometteva
+       un'immagine grande che non esisteva. L'indirizzo assoluto
+       lo riscrive app.js sull'origine reale, perché un og:image
+       relativo non viene letto da nessuno dei tre. -->
+  <meta property="og:image" content="https://www.quotafacile.net/assets/img/og-quotafacile.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="QuotaFacile — assicurazioni al miglior prezzo, in un solo marketplace. Professionisti verificati sul RUI.">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="QuotaFacile — Assicurazioni al miglior prezzo, in un solo marketplace">
   <meta name="twitter:description" content="Confronta intermediari assicurativi verificati RUI e risparmia sulle tue polizze. Gratuito per chi cerca.">
+  <meta name="twitter:image" content="https://www.quotafacile.net/assets/img/og-quotafacile.png">
 
   <!-- JSON-LD: Organization + WebSite -->
   <script type="application/ld+json">
@@ -63,6 +112,13 @@
 </head>
 <body>
 
+  <!-- Prima di ogni pagina ci sono il logo, quattro voci di menu e
+       due bottoni: chi naviga con la tastiera o con uno screen
+       reader li riattraversa tutti ad ogni cambio di pagina. È il
+       criterio 2.4.1 delle WCAG, e si risolve con un link che
+       compare solo quando riceve il fuoco. -->
+  <a class="skip-link" href="#app">Salta al contenuto</a>
+
   <!-- HEADER -->
   <header class="topbar">
     <div class="container topbar-inner">
@@ -74,6 +130,7 @@
         <a href="#/" data-nav="home">Home</a>
         <a href="#/intermediari" data-nav="intermediari">Intermediari</a>
         <a href="#/bacheca" data-nav="bacheca">Bacheca Q&amp;A</a>
+        <a href="#/magazine" data-nav="magazine">Magazine</a>
         <a href="#/professionisti" data-nav="professionisti">Per i professionisti</a>
       </nav>
       <div class="topbar-cta">
@@ -83,8 +140,22 @@
     </div>
   </header>
 
-  <!-- APP VIEW (renderizzata da app.js) -->
-  <main id="app" class="app-main" aria-live="polite"></main>
+  <!-- APP VIEW (renderizzata da app.js)
+
+       Qui c'era aria-live="polite". Sembrava la cosa giusta — il
+       contenuto cambia senza ricaricare la pagina, tanto vale
+       annunciarlo — ma significa che ad ogni cambio di rotta uno
+       screen reader rilegge l'intera pagina dall'inizio,
+       interrompendo chi stava leggendo altro. Su una bacheca da
+       sessantamila caratteri è inutilizzabile.
+       Al suo posto: il fuoco si sposta sul titolo della pagina
+       nuova, e l'annuncio breve lo fa la regione qui sotto.
+       tabindex="-1" rende <main> raggiungibile dal link "salta al
+       contenuto" senza entrare nel giro del tabulatore. -->
+  <main id="app" class="app-main" tabindex="-1"></main>
+
+  <!-- Una riga sola, invisibile: "Preventivo. Pagina caricata." -->
+  <p id="annuncio-rotta" class="solo-lettori" role="status" aria-live="polite"></p>
 
   <!-- FOOTER -->
   <footer class="footer">
@@ -98,6 +169,7 @@
         <a href="#/intermediari">Trova un intermediario</a>
         <a href="#/preventivo">Richiedi un preventivo</a>
         <a href="#/bacheca">Bacheca Q&amp;A</a>
+        <a href="#/magazine">Magazine</a>
       </div>
       <div>
         <h4>Professionisti</h4>
@@ -120,7 +192,7 @@
              chiave la verifica il server, e un indirizzo segreto
              non aggiunge sicurezza — aggiunge solo il fastidio di
              doverselo ricordare. -->
-        <a href="#/admin" class="footer-riservata">🔐 Area riservata</a>
+        <a href="#/admin" class="footer-riservata" rel="nofollow">🔐 Area riservata</a>
       </div>
     </div>
     <div class="container footer-bottom">
@@ -140,18 +212,27 @@
 
   <div id="toast" class="toast" role="status"></div>
 
-  <script src="assets/js/mailer.js"></script>
-  <script src="assets/js/bacheca.js"></script>
-  <script src="assets/js/intermediari.js"></script>
-  <script src="assets/js/daily-questions.js"></script>
-  <script src="assets/js/staff-questions.js"></script>
-  <script src="assets/js/legal.js"></script>
-  <script src="assets/js/admin.js"></script>
-  <script src="assets/js/crm.js"></script>
-  <script src="assets/js/mm.js"></script>
-  <script src="assets/js/accesso.js"></script>
-  <script src="assets/js/area.js"></script>
-  <script src="assets/js/app.js"></script>
-  <script src="assets/js/consent.js"></script>
+  <!-- defer su tutti: senza, il browser si ferma a interpretare
+       ogni file prima di disegnare. Con defer scarica in
+       parallelo mentre legge la pagina ed esegue alla fine, in
+       quest'ordine. Su una pagina pre-renderizzata vuol dire che
+       il contenuto è già visibile mentre il codice arriva.
+
+       Qui dentro non ci sono admin.js, crm.js e mm.js: sono
+       294 KB di console di amministrazione, CRM e mail marketing
+       che ogni visitatore anonimo scaricava e interpretava per
+       leggere una guida sulle polizze. Ora li carica app.js solo
+       quando si entra davvero nell'area riservata. -->
+  <script defer src="assets/js/mailer.js"></script>
+  <script defer src="assets/js/bacheca.js"></script>
+  <script defer src="assets/js/magazine-pubblico.js"></script>
+  <script defer src="assets/js/intermediari.js"></script>
+  <script defer src="assets/js/daily-questions.js"></script>
+  <script defer src="assets/js/staff-questions.js"></script>
+  <script defer src="assets/js/legal.js"></script>
+  <script defer src="assets/js/accesso.js"></script>
+  <script defer src="assets/js/area.js"></script>
+  <script defer src="assets/js/app.js"></script>
+  <script defer src="assets/js/consent.js"></script>
 </body>
 </html>

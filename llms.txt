@@ -21,29 +21,29 @@ I contenuti hanno valore informativo generale e non costituiscono consulenza per
 
 ## Guide
 
-- [Assicurazione monopattino elettrico: obbligatoria dal 2026](/#/faq/k1): obbligo di RC dal 16 luglio 2026, costi reali, sanzioni, perché la RC capofamiglia non basta.
-- [Polizza catastrofale obbligatoria: scadenze e rischi PMI](/#/faq/k2): termini per micro e piccole imprese, proroghe, conseguenze sull'accesso ai contributi pubblici.
-- [Assicurazione casalinghe INAIL: obbligatoria, 24 € l'anno](/#/faq/k3): obbligo, esoneri per reddito, soglie di indennizzo e cosa la copertura non copre.
-- [Assicurazione cane obbligatoria? Quando sì e quando no](/#/faq/k4): responsabilità oggettiva ex art. 2052 c.c., quando l'RC diventa obbligatoria, esclusioni tipiche.
-- [Polizza vita pignorabile? Cosa dice l'art. 1923 c.c.](/#/faq/k5): impignorabilità e le sue eccezioni, riqualificazione delle polizze finanziarie.
-- [Classe di merito sbagliata: come farla correggere](/#/faq/k6): differenza fra classe CU e classe interna, procedura di rettifica, termini.
-- [Reclamo contro l'assicurazione: la procedura completa](/#/faq/k7): reclamo all'impresa, 45 giorni, IVASS, Arbitro Assicurativo e limiti di ciascuno strumento.
-- [Risarcimento troppo basso: come contestare la perizia](/#/faq/k8): perito di parte, quietanza, voci di danno spesso dimenticate.
-- [Polizza catastrofale su immobile affittato: chi paga](/#/faq/k9): ripartizione dell'obbligo fra proprietario e conduttore.
+- [Assicurazione monopattino elettrico: obbligatoria dal 2026](/guide/assicurazione-monopattino-elettrico-obbligatoria/): obbligo di RC dal 16 luglio 2026, costi reali, sanzioni, perché la RC capofamiglia non basta.
+- [Polizza catastrofale obbligatoria: scadenze e rischi PMI](/guide/polizza-catastrofale-obbligatoria-pmi/): termini per micro e piccole imprese, proroghe, conseguenze sull'accesso ai contributi pubblici.
+- [Assicurazione casalinghe INAIL: obbligatoria, 24 € l'anno](/guide/assicurazione-casalinghe-inail/): obbligo, esoneri per reddito, soglie di indennizzo e cosa la copertura non copre.
+- [Assicurazione cane obbligatoria? Quando sì e quando no](/guide/assicurazione-cane-obbligatoria/): responsabilità oggettiva ex art. 2052 c.c., quando l'RC diventa obbligatoria, esclusioni tipiche.
+- [Polizza vita pignorabile? Cosa dice l'art. 1923 c.c.](/guide/polizza-vita-pignorabile/): impignorabilità e le sue eccezioni, riqualificazione delle polizze finanziarie.
+- [Classe di merito sbagliata: come farla correggere](/guide/classe-di-merito-sbagliata/): differenza fra classe CU e classe interna, procedura di rettifica, termini.
+- [Reclamo contro l'assicurazione: la procedura completa](/guide/reclamo-assicurazione-ivass/): reclamo all'impresa, 45 giorni, IVASS, Arbitro Assicurativo e limiti di ciascuno strumento.
+- [Risarcimento troppo basso: come contestare la perizia](/guide/risarcimento-sinistro-troppo-basso/): perito di parte, quietanza, voci di danno spesso dimenticate.
+- [Polizza catastrofale su immobile affittato: chi paga](/guide/polizza-catastrofale-immobile-affittato/): ripartizione dell'obbligo fra proprietario e conduttore.
 
 ## Sezioni
 
-- [Bacheca Q&A](/#/bacheca): domande degli utenti e risposte firmate da intermediari iscritti al RUI, più una domanda del giorno pubblicata dalla redazione.
-- [Directory intermediari](/#/intermediari): profili pubblici con ruolo, sezione RUI, città e specializzazioni.
-- [Per i professionisti](/#/professionisti): come funziona l'iscrizione, sistema di punti e livelli.
-- [Richiesta di preventivo](/#/preventivo): modulo gratuito, senza registrazione.
+- [Bacheca Q&A](/bacheca/): domande degli utenti e risposte firmate da intermediari iscritti al RUI, più una domanda del giorno pubblicata dalla redazione.
+- [Directory intermediari](/intermediari/): profili pubblici con ruolo, sezione RUI, città e specializzazioni.
+- [Per i professionisti](/professionisti/): come funziona l'iscrizione, sistema di punti e livelli.
+- [Richiesta di preventivo](/preventivo/): modulo gratuito, senza registrazione.
 
 ## Legale
 
-- [Privacy Policy](/#/privacy): trattamento dei dati ai sensi degli artt. 13-14 GDPR.
-- [Cookie Policy](/#/cookie-policy): strumenti installati e gestione del consenso.
-- [Termini e Condizioni](/#/termini): regole d'uso, obblighi degli intermediari, moderazione.
-- [Note legali](/#/note-legali): dati del gestore, natura dell'attività, avvertenze IVASS.
+- [Privacy Policy](/privacy/): trattamento dei dati ai sensi degli artt. 13-14 GDPR.
+- [Cookie Policy](/cookie-policy/): strumenti installati e gestione del consenso.
+- [Termini e Condizioni](/termini/): regole d'uso, obblighi degli intermediari, moderazione.
+- [Note legali](/note-legali/): dati del gestore, natura dell'attività, avvertenze IVASS.
 
 ## Verificabilità
 

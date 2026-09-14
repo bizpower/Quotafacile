@@ -216,6 +216,11 @@ function staffFaqs() {
   const remote = window.QFBacheca?.stato.caricata ? window.QFBacheca.guideRemote() : [];
   return [...remote, ...base.map(s => ({
     id: s.id, staff: true, cat: s.cat, keyword: s.keyword, meta: s.meta, titolo: s.titolo,
+    /* Lo slug è l'indirizzo pubblico della guida. Va portato fin
+       qui perché canonical, sitemap e pagina pre-renderizzata
+       devono dire tutti e tre lo stesso URL: se uno dei tre
+       diverge, Google sceglie da solo quale credere. */
+    slug: s.slug,
     autore: "qf", data: s.data, domanda: s.domanda,
     risposte: [
       { autore: "qf", testo: s.testo || spoglia(s.risposta), rich: s.risposta, voti: DB.staffVotes[s.id] || 0, accettata: true, auto: true, staff: true },
@@ -248,6 +253,146 @@ function hoursToNextDaily() {
    fra loro invece che con i concorrenti. */
 const SEO_BASE = { title: document.title, desc: document.querySelector('meta[name="description"]')?.content || "" };
 
+/* ---------------- INDIRIZZI PUBBLICI ----------------
+
+   Il sito naviga con il frammento (#/bacheca) perché è un'unica
+   pagina senza passo di build. Ma il frammento, per un motore di
+   ricerca, non esiste: Google ha smesso di trattarlo come
+   indirizzo a sé nel 2018. Due pagine che differiscono solo dopo
+   il cancelletto sono, per lui, la stessa pagina.
+
+   Quindi ogni rotta pubblica ha anche un indirizzo vero, fatto
+   di percorso, e a quell'indirizzo il deploy scrive una pagina
+   HTML completa. Questa tabella è la sola fonte di verità: la
+   usano il canonical, la sitemap e il pre-render. Se divergessero
+   Google sceglierebbe da sé a quale credere.
+
+   Le rotte che non sono qui dentro non hanno un indirizzo
+   pubblico, e non è una dimenticanza: l'area riservata e la
+   dashboard degli intermediari non vanno indicizzate. */
+const INDIRIZZI = {
+  "": "",
+  home: "",
+  intermediari: "intermediari/",
+  bacheca: "bacheca/",
+  professionisti: "professionisti/",
+  preventivo: "preventivo/",
+  privacy: "privacy/",
+  "privacy-imprese": "privacy-imprese/",
+  "cookie-policy": "cookie-policy/",
+  termini: "termini/",
+  "note-legali": "note-legali/",
+  contatti: "contatti/",
+  magazine: "magazine/",
+  /* "Chi siamo" e "Contatti" mostrano la stessa pagina. Due
+     indirizzi con lo stesso contenuto sono contenuto duplicato:
+     entrambi restano raggiungibili — ci sono link e segnalibri
+     che ci puntano — ma dichiarano come pagina vera /contatti/,
+     e nella sitemap ce n'è uno solo. */
+  "chi-siamo": "contatti/"
+};
+
+/* La rotta che questa pagina rappresenta, scritta dal
+   pre-render. Sulla pagina servita così com'è dal repository non
+   c'è, e allora comanda il frammento come sempre. */
+const ROTTA_PAGINA = document.querySelector('meta[name="qf-rotta"]')?.content || "";
+const PERCORSO_PAGINA = document.querySelector('meta[name="qf-percorso"]')?.content || "";
+
+/* La base del sito: "/" sul dominio, "/Quotafacile/" finché è
+   servito dal sotto-percorso di github.io. Si ricava dalla pagina
+   stessa togliendo dal percorso la parte che è la rotta: quello
+   che resta è la base, qualunque host stia pubblicando. */
+const BASE_SITO = (() => {
+  let p = location.pathname;
+  if (!p.endsWith("/")) p = p.replace(/[^/]*$/, "");
+  if (PERCORSO_PAGINA && p.endsWith("/" + PERCORSO_PAGINA)) {
+    p = p.slice(0, p.length - PERCORSO_PAGINA.length);
+  }
+  return p || "/";
+})();
+
+/* L'indirizzo pubblico di una rotta. Per le guide non è l'id
+   interno ("k5") ma lo slug leggibile: un indirizzo si legge
+   anche quando lo si incolla in una chat, e "polizza-vita-
+   pignorabile" dice cos'è mentre "k5" no. */
+function indirizzoPubblico(page, path) {
+  /* Un articolo del Magazine vive a /magazine/<slug>/. Lo slug
+     sta nell'indirizzo interno ed è già quello pubblico: non c'è
+     niente da cercare, a differenza delle guide dove l'indirizzo
+     interno è un id.
+
+     Con un'eccezione: se il servizio ha già risposto che quello
+     slug non esiste, l'indirizzo pubblico non c'è. Senza questo
+     controllo qualunque slug inventato sotto /magazine/
+     dichiarava un canonical e un "index, follow" — cioè chiedeva
+     a Google di indicizzare una pagina che dice "questo articolo
+     non c'è". */
+  if (page === "magazine" && path && path[1]) {
+    if (window.QFMagazine?.stato.corpi[path[1]] === null) return null;
+    return "magazine/" + path[1] + "/";
+  }
+  if (page === "faq") {
+    const f = getFaqById(path && path[1]);
+    if (f && f.slug) return "guide/" + f.slug + "/";
+    return null;
+  }
+  const v = INDIRIZZI[page];
+  return v === undefined ? null : v;
+}
+
+/* La strada inversa: da un indirizzo pubblico alla rotta interna.
+   Serve perché le pagine pre-renderizzate hanno link veri, fatti
+   di percorso — un motore di ricerca deve poter seguire il filo
+   fra una pagina e l'altra, e un link al frammento per lui non
+   porta da nessuna parte. Quando però a cliccare è una persona,
+   ricadere sul frammento evita di ricaricare tutto il sito per
+   cambiare sezione. */
+function rottaDaPercorso(pathname) {
+  if (!pathname.startsWith(BASE_SITO)) return null;
+  const rel = pathname.slice(BASE_SITO.length);
+  if (rel === "") return "";
+  for (const [rotta, ind] of Object.entries(INDIRIZZI)) {
+    if (ind && ind === rel) return rotta;
+  }
+  const m = rel.match(/^guide\/([^/]+)\/$/);
+  if (m) {
+    const f = staffFaqs().find(x => x.slug === m[1]);
+    if (f) return "faq/" + f.id;
+  }
+  /* Il Magazine non ha bisogno di cercare niente: lo slug
+     nell'indirizzo pubblico è lo stesso che usa la rotta. */
+  const g = rel.match(/^magazine\/([^/]+)\/$/);
+  if (g) return "magazine/" + g[1];
+  return null;
+}
+
+function urlCanonico(page, path) {
+  let rel = indirizzoPubblico(page, path);
+
+  /* Le guide dell'area Admin vivono nel database: finché la
+     bacheca non ha risposto, indirizzoPubblico non le conosce e
+     direbbe "nessun indirizzo", cioè noindex. Ma se questa
+     pagina è proprio il file che il deploy ha scritto per quella
+     rotta, l'indirizzo lo sappiamo già — sta nella pagina — e
+     non c'è motivo di rinnegarlo mentre si aspetta la rete.
+     Senza questo, una bacheca lenta o ferma basterebbe a far
+     dichiarare noindex a una guida regolarmente pubblicata.
+
+     Vale solo per le guide: la pagina 404 è anch'essa un file
+     scritto dal deploy, ma è il solo file che non deve mai
+     dichiarare un canonical. */
+  if (rel === null && page === "faq" && PERCORSO_PAGINA &&
+      ROTTA_PAGINA === (path || []).join("/")) {
+    rel = PERCORSO_PAGINA;
+  }
+
+  /* Una rotta senza indirizzo pubblico non ha un canonical da
+     dichiarare: sarebbe un invito a indicizzare quello che non
+     deve esserlo. */
+  if (rel === null) return null;
+  return location.origin + BASE_SITO + rel;
+}
+
 function setSeo(title, desc) {
   document.title = title || SEO_BASE.title;
   const m = document.querySelector('meta[name="description"]');
@@ -256,15 +401,110 @@ function setSeo(title, desc) {
   if (og) og.content = title || SEO_BASE.title;
   const ogd = document.querySelector('meta[property="og:description"]');
   if (ogd) ogd.content = desc || SEO_BASE.desc;
-  /* Canonical e og:url si costruiscono dall'origine reale della pagina.
-     Puntarli a un dominio fisso mentre il sito è servito da un altro
-     host direbbe a Google che la pagina "vera" sta altrove, con il
-     rischio di far deindicizzare quella pubblicata. */
-  const url = location.origin + location.pathname + (location.hash || "");
+  /* Canonical e og:url vengono dall'indirizzo pubblico della
+     rotta, non da location: se li costruissimo dal frammento,
+     Google lo scarterebbe e leggerebbe "questa pagina è la
+     homepage" su ogni pagina del sito. Era esattamente quello
+     che succedeva prima.
+
+     L'origine resta quella reale, non un dominio fisso: dire che
+     la pagina "vera" sta su un host diverso da quello che la sta
+     servendo è il modo più rapido per farsi deindicizzare. */
+  /* L'immagine di condivisione vuole un indirizzo assoluto:
+     LinkedIn, WhatsApp e X un percorso relativo non lo leggono.
+     Si costruisce sull'origine reale come il canonical, così
+     vale anche mentre il sito è servito da un host diverso. */
+  const img = location.origin + BASE_SITO + "assets/img/og-quotafacile.png";
+  const ogi = document.querySelector('meta[property="og:image"]');
+  if (ogi) ogi.content = img;
+  const twi = document.querySelector('meta[name="twitter:image"]');
+  if (twi) twi.content = img;
+
+  const url = urlCanonico(paginaCorrente.page, paginaCorrente.path);
   const can = document.querySelector('link[rel="canonical"]');
-  if (can) can.href = url;
   const ogu = document.querySelector('meta[property="og:url"]');
-  if (ogu) ogu.content = url;
+  const rob = document.querySelector('meta[name="robots"]');
+
+  if (url) {
+    if (can) { can.href = url; can.removeAttribute("data-off"); }
+    if (ogu) ogu.content = url;
+    if (rob) rob.content = "index, follow";
+  } else {
+    /* Rotta senza indirizzo pubblico: area riservata, dashboard,
+       guide non ancora pubblicate. Niente canonical — non esiste
+       una pagina "vera" da dichiarare — e un noindex esplicito.
+       Il noindex non è la sicurezza: quella sta nel server. È
+       solo il modo di non far comparire in SERP una schermata
+       che non ha senso per chi arriva da una ricerca. */
+    if (can) { can.removeAttribute("href"); can.setAttribute("data-off", ""); }
+    if (ogu) ogu.content = location.origin + BASE_SITO;
+    if (rob) rob.content = "noindex, nofollow";
+  }
+}
+
+/* Quale rotta stiamo mostrando. setSeo ne ha bisogno per sapere
+   quale indirizzo pubblico dichiarare, e tenerlo qui evita di
+   passarlo attraverso ogni chiamata. */
+let paginaCorrente = { page: "home", path: [] };
+
+/* ---------------- L'AREA RISERVATA ARRIVA QUANDO SERVE ----------------
+
+   Console di amministrazione, CRM e mail marketing sono 294 KB:
+   metà di tutto il codice del sito. Stavano fra gli script della
+   pagina, quindi ogni visitatore anonimo li scaricava e li
+   interpretava per leggere una guida sulle polizze — pagando in
+   tempo di caricamento una funzione che non userà mai.
+
+   Adesso si caricano alla prima apertura di #/admin, una volta
+   sola. La promessa viene tenuta da parte: se si apre due volte
+   di fila non si scarica due volte, e se si sta ancora
+   scaricando la seconda chiamata aspetta la prima invece di
+   avviarne un'altra.
+
+   Una nota sull'ordine: i tre file sono indipendenti. Ognuno
+   registra il proprio oggetto su window alla fine di sé stesso e
+   cerca gli altri solo al momento in cui servono davvero, non al
+   caricamento. Per questo possono arrivare in parallelo. */
+/* L'area riservata non si lascia incorniciare.
+ *
+ * Un sito dentro un <iframe> trasparente, sopra a una pagina
+ * qualunque, fa premere all'ignaro i pulsanti dell'altro senza
+ * che se ne accorga: è il clickjacking. La difesa vera è
+ * l'intestazione X-Frame-Options, che GitHub Pages non permette
+ * di impostare e che dentro un <meta> i browser ignorano.
+ * Questo controllo non la sostituisce, ma è la protezione che si
+ * può avere su questa piattaforma, e vale dove serve di più.
+ *
+ * Sta qui e non dentro admin.js per due motivi. Il primo: così
+ * il codice dell'area riservata, dentro una cornice, non viene
+ * nemmeno scaricato. Il secondo l'ho imparato sbagliando —
+ * interrompere admin.js a metà con un'eccezione gli impedisce di
+ * registrarsi, e il router, non trovandolo, lo ricarica in
+ * continuazione. Il controllo va fatto prima di chiedere il
+ * caricamento, non durante. */
+const dentroCornice = (() => {
+  try { return window.top !== window.self; } catch (e) { return true; }
+})();
+
+let riservataInCorso = null;
+
+function caricaRiservata() {
+  if (window.QF_ADMIN && window.QF_CRM && window.QF_MM && window.QF_MAGAZINE) return Promise.resolve();
+  if (riservataInCorso) return riservataInCorso;
+  riservataInCorso = Promise.all(["admin", "crm", "mm", "magazine"].map(nome => new Promise((risolvi, rifiuta) => {
+    const s = document.createElement("script");
+    s.src = BASE_SITO + "assets/js/" + nome + ".js";
+    s.onload = risolvi;
+    s.onerror = () => rifiuta(new Error(nome + ".js non si è caricato"));
+    document.head.appendChild(s);
+  }))).catch(e => {
+    /* Se il caricamento fallisce la promessa va scartata, non
+       tenuta: altrimenti ogni tentativo successivo ricadrebbe
+       sullo stesso errore anche quando la rete è tornata. */
+    riservataInCorso = null;
+    throw e;
+  });
+  return riservataInCorso;
 }
 
 /* JSON-LD dinamico per SEO (FAQPage) */
@@ -276,7 +516,18 @@ function setJsonLd(obj) {
    è il modo in cui i motori generativi capiscono chi ha scritto
    una risposta, quando, e con quale titolo per firmarla. È la
    differenza fra essere citati e restare un risultato anonimo. */
-const SITO = () => location.origin + location.pathname;
+/* La radice del sito. Non location.pathname: su una pagina
+   pre-renderizzata quello è il percorso della pagina, e gli @id
+   del grafo finirebbero appesi a /guide/qualcosa/ invece che al
+   sito. Un identificatore che cambia a seconda della pagina da
+   cui lo si legge non identifica niente. */
+const SITO = () => location.origin + BASE_SITO;
+
+/* L'indirizzo pubblico di una guida, per i dati strutturati.
+   Deve coincidere con il canonical: se il grafo dichiara un URL
+   e il canonical un altro, Google ha due risposte alla stessa
+   domanda e ne sceglie una da sé. */
+const urlGuida = f => SITO() + (f && f.slug ? "guide/" + f.slug + "/" : "bacheca/");
 
 /* Identità dell'editore: dichiarata una volta e richiamata per
    riferimento da tutti gli altri nodi del grafo. */
@@ -325,7 +576,10 @@ function faqJsonLd(faqs) {
       editoreJsonLd(),
       {
         "@type": "FAQPage",
-        "@id": base + location.hash + "#faq",
+        /* L'identificatore della pagina FAQ e' l'indirizzo
+           pubblico su cui quelle domande sono davvero pubblicate,
+           non il frammento da cui le stiamo guardando. */
+        "@id": (urlCanonico(paginaCorrente.page, paginaCorrente.path) || base) + "#faq",
         "inLanguage": "it-IT",
         "isPartOf": { "@id": base + "#org" },
         "publisher": { "@id": base + "#org" },
@@ -337,14 +591,14 @@ function faqJsonLd(faqs) {
             : { "@type": "Organization", "name": "Redazione QuotaFacile", "@id": base + "#org" };
           return {
             "@type": "Question",
-            "@id": base + "#/faq/" + f.id,
+            "@id": urlGuida(f),
             "name": f.domanda,
             "answerCount": f.risposte.length,
             "datePublished": f.data,
             "acceptedAnswer": {
               "@type": "Answer",
               "text": best.testo,
-              "url": base + "#/faq/" + f.id,
+              "url": urlGuida(f),
               "datePublished": f.data,
               "upvoteCount": best.voti || 0,
               "author": autore
@@ -358,13 +612,50 @@ function faqJsonLd(faqs) {
 
 /* Percorso di navigazione: aiuta i motori a capire la gerarchia
    e compare nello snippet al posto dell'URL con il cancelletto. */
+/* Le briciole di pane dicono al motore dove sta una pagina
+   dentro il sito. Vogliono indirizzi veri: costruite sul
+   frammento indicherebbero tutte la stessa pagina, cioe' non
+   direbbero niente. Ogni voce porta la propria rotta interna e
+   qui diventa l'indirizzo pubblico corrispondente. */
 function breadcrumbJsonLd(voci) {
   const base = SITO();
   return {
     "@type": "BreadcrumbList",
     "itemListElement": voci.map((v, i) => ({
-      "@type": "ListItem", "position": i + 1, "name": v.nome, "item": base + (v.hash || "")
+      "@type": "ListItem", "position": i + 1, "name": v.nome,
+      "item": base + (v.percorso !== undefined ? v.percorso : (indirizzoPubblico(v.rotta, v.path) || ""))
     }))
+  };
+}
+
+/* Una guida redazionale dichiarata per quello che è: un
+   articolo. Serve ai motori generativi più che ai risultati
+   arricchiti — è così che sanno chi firma un testo, quando è
+   stato scritto e su cosa, e quindi se citarlo e come.
+
+   Niente campi inventati: la data è quella della guida,
+   l'editore è quello dichiarato nelle note legali, il testo è
+   quello visibile in pagina. Se un dato non c'è, il campo non
+   compare invece di essere riempito a caso. */
+function articoloJsonLd(f) {
+  const base = SITO();
+  const testo = (f.risposte[0] && f.risposte[0].testo) || "";
+  return {
+    "@type": "Article",
+    "@id": urlGuida(f) + "#articolo",
+    "headline": (f.titolo || f.domanda).slice(0, 110),
+    "description": f.meta || testo.slice(0, 200),
+    "inLanguage": "it-IT",
+    "datePublished": f.data,
+    "dateModified": f.data,
+    "author": { "@id": base + "#org" },
+    "publisher": { "@id": base + "#org" },
+    "isPartOf": { "@id": base + "#website" },
+    "mainEntityOfPage": { "@type": "WebPage", "@id": urlGuida(f) },
+    "articleSection": f.cat,
+    "image": base + "assets/img/og-quotafacile.png",
+    "wordCount": testo ? testo.trim().split(/\s+/).length : undefined,
+    "about": f.keyword ? { "@type": "Thing", "name": f.keyword } : undefined
   };
 }
 
@@ -376,7 +667,7 @@ function directoryJsonLd(lista) {
     "@context": "https://schema.org",
     "@graph": [
       editoreJsonLd(),
-      breadcrumbJsonLd([{ nome: "Home", hash: "#/" }, { nome: "Intermediari", hash: "#/intermediari" }]),
+      breadcrumbJsonLd([{ nome: "Home", rotta: "home" }, { nome: "Intermediari", rotta: "intermediari" }]),
       {
         "@type": "ItemList",
         "name": "Intermediari assicurativi su QuotaFacile",
@@ -458,10 +749,116 @@ function qpass(b, flat = false) {
 const views = {};
 
 /* ----- HOME ----- */
+/* ---------------- LE DOMANDE DI IDENTITÀ ----------------
+
+   Chi arriva da una ricerca, o da un motore di risposta, si fa
+   sempre le stesse cinque o sei domande: cos'è questo sito, è un
+   broker, quanto costa, chi tratta la mia richiesta, che fine
+   fanno i miei dati. Le risposte esistevano già — sparse fra
+   note legali, termini e privacy — ma sparse vuol dire che chi
+   legge la pagina non le trova e chi la riassume nemmeno.
+
+   Sono qui perché sono vere e perché servono a chi legge, non
+   per avere un blocco FAQ da dare in pasto a Google: ogni
+   risposta dice un fatto verificabile e rimanda al documento in
+   cui è scritto per esteso. Gli stessi testi finiscono nei dati
+   strutturati, così quello che il motore riassume è esattamente
+   quello che l'utente vede. */
+/* Le stesse risposte, ripulite dal marcatore, per i dati
+   strutturati: un motore che riassume non deve ritrovarsi dentro
+   i tag. */
+function identitaJsonLd() {
+  return DOMANDE_IDENTITA.map(q => ({
+    "@type": "Question",
+    "name": q.d,
+    "acceptedAnswer": {
+      "@type": "Answer",
+      "text": q.r.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
+    }
+  }));
+}
+
+const DOMANDE_IDENTITA = [
+  {
+    d: "Che cos'è QuotaFacile?",
+    r: `Un marketplace italiano di intermediari assicurativi. Agenti, broker e collaboratori
+        iscritti al <strong>RUI</strong> — il registro IVASS — pubblicano un profilo verificabile e
+        rispondono a domande assicurative reali. Chi cerca una polizza confronta i profili e
+        contatta direttamente il professionista che preferisce.`
+  },
+  {
+    d: "QuotaFacile è un broker o un'agenzia assicurativa?",
+    r: `No. QuotaFacile <strong>non svolge attività di distribuzione assicurativa</strong> ai sensi
+        dell'art. 106 del d.lgs. 209/2005: non colloca polizze e non percepisce provvigioni sui
+        contratti. È una piattaforma di informazione e messa in contatto. Il sito è gestito da
+        Riccardo Di Falco, intermediario iscritto alla sezione E del RUI, che è anche presente fra
+        i professionisti in vetrina: è dichiarato nelle <a href="#/note-legali">note legali</a>.`
+  },
+  {
+    d: "Quanto costa usare QuotaFacile?",
+    r: `Per chi cerca una polizza è <strong>gratuito</strong> e non richiede registrazione. Non ci
+        sono costi di intermediazione: il rapporto economico, se nasce, è fra te e l'intermediario.`
+  },
+  {
+    d: "Chi gestisce la mia richiesta di preventivo?",
+    r: `L'intermediario che scegli tu, oppure gli intermediari specializzati nel ramo che hai
+        indicato. Da quel momento tratta i tuoi dati <strong>come titolare autonomo</strong>, con
+        una propria informativa che puoi chiedergli. QuotaFacile non risponde dei trattamenti che
+        effettua lui: lo spiega la <a href="#/privacy">privacy policy</a>.`
+  },
+  {
+    d: "Come faccio a verificare che un intermediario sia davvero iscritto?",
+    r: `Ogni profilo espone il <strong>numero di iscrizione al RUI</strong>. Lo puoi controllare tu
+        stesso sul <a href="https://servizi.ivass.it/RuirPubblica/" target="_blank" rel="noopener">registro
+        pubblico IVASS</a>, senza passare da noi.`
+  },
+  {
+    d: "Che fine fanno i miei dati?",
+    r: `Vengono trasmessi <strong>solo agli intermediari pertinenti</strong> alla richiesta e
+        conservati 24 mesi dall'ultimo contatto. Non sono venduti né ceduti per finalità di
+        marketing. Puoi chiederne accesso, rettifica o cancellazione in ogni momento scrivendo a
+        privacy@quotafacile.net.`
+  }
+];
+
+
+/* ---------------- PAGINA NON TROVATA ----------------
+   GitHub Pages serve questo file con stato 404 vero quando il
+   percorso non esiste. Dentro l'applicazione la stessa vista
+   compare per una rotta sconosciuta: lì lo stato HTTP non si può
+   cambiare — la risposta è già partita — ma almeno la pagina
+   dice la verità invece di far credere di essere arrivati. */
+views.nonTrovato = () => `
+  <section class="section">
+    <div class="container" style="max-width:42rem">
+      <span class="eyebrow">Errore 404</span>
+      <h1 class="titolo-sezione">Questa pagina non c'è</h1>
+      <p class="lead">L'indirizzo è sbagliato, oppure la pagina è stata spostata.
+      Non è colpa tua: se ci sei arrivato da un link nostro, segnalacelo.</p>
+      <div class="card" style="margin-top:1.4rem">
+        <h2 style="font-size:1.05rem;margin:0 0 .8rem">Da dove ripartire</h2>
+        <ul class="lista-404">
+          <li><a href="#/">Home</a> — cos'è QuotaFacile e come funziona</li>
+          <li><a href="#/intermediari">Trova un intermediario</a> — profili verificati sul RUI</li>
+          <li><a href="#/bacheca">Bacheca Q&amp;A</a> — domande vere con risposte firmate</li>
+          <li><a href="#/preventivo">Richiedi un preventivo</a> — gratuito, senza registrazione</li>
+          <li><a href="#/contatti">Contatti</a> — per segnalarci il link rotto</li>
+        </ul>
+      </div>
+    </div>
+  </section>`;
+
 views.home = () => {
   const featured = [...DB.brokers].sort((a, b) => b.punti - a.punti).slice(0, 3);
   const topFaq = [...staffFaqs().slice(0, 2), publishedDaily()[0], ...domandeCommunity().filter(f => f.risposte.length)].filter(Boolean).slice(0, 3);
-  setJsonLd(faqJsonLd(topFaq));
+  /* Nel grafo finiscono sia le guide in vetrina sia le domande
+     di identità: sono tutte visibili in pagina, ed è la
+     condizione perché dichiararle sia corretto invece che una
+     scorciatoia. */
+  const ld = faqJsonLd(topFaq);
+  const faqPage = ld["@graph"].find(n => n["@type"] === "FAQPage");
+  if (faqPage) faqPage.mainEntity = [...identitaJsonLd(), ...faqPage.mainEntity];
+  setJsonLd(ld);
   return `
   <section class="hero">
     <div class="container hero-inner">
@@ -507,6 +904,23 @@ views.home = () => {
         <div class="card"><span class="icon-dot">💶</span><h3>Risparmia sulle polizze</h3><p class="muted">Più professionisti in concorrenza sulla tua richiesta significa condizioni migliori per te.</p></div>
         <div class="card"><span class="icon-dot">🛡️</span><h3>Professionisti verificati</h3><p class="muted">Ogni profilo espone il numero di iscrizione al RUI, il registro IVASS degli intermediari.</p></div>
         <div class="card"><span class="icon-dot">🔍</span><h3>Nessuna intermediazione occulta</h3><p class="muted">QuotaFacile non vende polizze: mette in contatto. Il rapporto è tuo, diretto, con l'intermediario.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-identita">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">In breve</span>
+        <h2>Le domande che ci fanno più spesso</h2>
+        <p class="muted">Risposte dirette su cos'è QuotaFacile, cosa non è, e cosa succede ai tuoi dati.</p>
+      </div>
+      <div class="identita-elenco">
+        ${DOMANDE_IDENTITA.map(q => `
+          <details class="identita-voce">
+            <summary>${esc(q.d)}</summary>
+            <p>${q.r}</p>
+          </details>`).join("")}
       </div>
     </div>
   </section>
@@ -644,7 +1058,7 @@ views.professionisti = () => {
       </div>
       <div class="card" style="margin-top:1.2rem">
         <h3>I livelli</h3>
-        <p class="muted">Novizio (0) → Consulente (50) → Esperto (150) → <strong style="color:var(--gold-500)">Top Advisor (300)</strong>. I Top Advisor compaiono nella sezione "Intermediari in evidenza" della home.</p>
+        <p class="muted">Novizio (0) → Consulente (50) → Esperto (150) → <strong style="color:var(--gold-testo)">Top Advisor (300)</strong>. I Top Advisor compaiono nella sezione "Intermediari in evidenza" della home.</p>
       </div>
     </div>
   </section>
@@ -671,7 +1085,7 @@ views.intermediari = () => {
   return `
   <section class="section">
     <div class="container">
-      <div class="section-head"><span class="eyebrow">Directory</span><h2>Trova il tuo intermediario</h2>
+      <div class="section-head"><span class="eyebrow">Directory</span><h1 class="titolo-sezione">Trova il tuo intermediario assicurativo</h1>
       <p class="muted">Ogni QuotaPass mostra ruolo, città, numero RUI e specializzazioni. Contatta direttamente chi preferisci.</p></div>
       <div class="filterbar">
         ${cats.map(c => `<button class="chip ${c === dirFilter ? "active" : ""}" data-filter="${c}">${c}</button>`).join("")}
@@ -709,7 +1123,14 @@ function qaCard(f) {
       <span>${esc(f.data)}</span>
       <span>· ${f.risposte.length} rispost${f.risposte.length === 1 ? "a" : "e"}${f.daily && proCount ? ` (${proCount} da intermediari)` : ""}</span>
     </div>
-    <h3 class="qa-title">${esc(f.domanda)}</h3>
+    <!-- Il titolo è un link vero, non un <h3> con un gestore di
+         click sopra. Cambia tre cose insieme: ci si arriva con il
+         tabulatore, uno screen reader lo annuncia come link con la
+         domanda per nome, e un motore di ricerca ha finalmente un
+         filo da /bacheca/ alle guide — prima l'unica strada era la
+         sitemap. La scheda resta cliccabile tutta grazie
+         all'area estesa in CSS. -->
+    <h3 class="qa-title"><a href="#/faq/${f.id}">${esc(f.domanda)}</a></h3>
     ${best ? `<p class="qa-excerpt">${esc(best.testo)}</p>` : `<p class="qa-excerpt" style="font-style:italic">Ancora senza risposta: sei un intermediario? Rispondi e guadagna punti.</p>`}
     <div class="qa-foot">
       ${a ? (a.auto
@@ -734,7 +1155,7 @@ views.bacheca = () => {
     <div class="container">
       <div class="section-head">
         <span class="eyebrow">Bacheca Q&amp;A · il sapere assicurativo, aperto</span>
-        <h2>Domande vere, risposte firmate</h2>
+        <h1 class="titolo-sezione">Domande vere, risposte firmate</h1>
         <p class="muted">Ogni giorno pubblichiamo una nuova domanda con risposta della redazione; gli intermediari integrano, guadagnano punti e salgono in classifica.</p>
       </div>
       <div class="daily-counter card">
@@ -807,17 +1228,356 @@ function guideCorrelate(f, quante = 3) {
   </nav>`;
 }
 
+
+/* ================= MAGAZINE (pubblico) =================
+
+   Gli articoli arrivano dal database e le pagine le scrive il
+   deploy, come per le guide. La differenza è che qui il legame
+   fra pillar e cluster è un dato, non una convenzione: i link
+   fra articoli li costruisce il sito, e restano giusti anche
+   quando gli articoli diventano venti. */
+
+const MAG = () => window.QFMagazine;
+const urlArticolo = a => SITO() + "magazine/" + (a && a.slug ? a.slug + "/" : "");
+
+function magCategoria(a) {
+  const c = MAG()?.categoria(a && a.categoria_id);
+  return c ? c.nome : "";
+}
+
+const magData = s => s
+  ? new Date(s).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" })
+  : "";
+
+/* 220 parole al minuto è la velocità media di lettura su schermo
+   in italiano. Serve a dire quanto tempo chiede un articolo,
+   prima che qualcuno cominci a leggerlo. */
+const magMinuti = html => Math.max(1, Math.round(
+  String(html || "").replace(/<[^>]+>/g, " ").trim().split(/\s+/).filter(Boolean).length / 220));
+
+function magSchedaHtml(a, grande) {
+  const cat = magCategoria(a);
+  return `
+  <a class="mag-card ${grande ? "mag-card-grande" : ""} ${a.tipo === "pillar" ? "mag-card-pillar" : ""}"
+     href="#/magazine/${esc(a.slug)}">
+    ${a.cover_url ? `
+      <img class="mag-card-cover" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
+           loading="lazy" decoding="async">` : `<span class="mag-card-cover mag-card-vuota" aria-hidden="true"></span>`}
+    <span class="mag-card-corpo">
+      <span class="mag-card-meta">
+        ${a.tipo === "pillar" ? `<span class="mag-pillar-tag">Guida completa</span>` : ""}
+        ${cat ? `<span class="mag-card-cat">${esc(cat)}</span>` : ""}
+        <span>${esc(magData(a.pubblicato_il))}</span>
+      </span>
+      <span class="mag-card-titolo">${esc(a.titolo)}</span>
+      ${a.apertura ? `<span class="mag-card-apertura">${esc(a.apertura)}</span>` : ""}
+    </span>
+  </a>`;
+}
+
+views.magazine = () => {
+  const m = MAG();
+  const arts = m ? m.stato.articoli : [];
+
+  /* Il grafo dell'elenco dichiara che questa è una raccolta di
+     articoli e quali sono: senza, per un motore è una pagina
+     qualsiasi con dei link dentro. */
+  if (arts.length) {
+    setJsonLd({
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Blog",
+          "@id": SITO() + "magazine/#blog",
+          "name": "Magazine QuotaFacile",
+          "description": "Guide e approfondimenti sulle assicurazioni, scritti dalla redazione con riferimenti normativi verificabili.",
+          "inLanguage": "it-IT",
+          "publisher": { "@id": SITO() + "#org" },
+          "isPartOf": { "@id": SITO() + "#website" }
+        },
+        {
+          "@type": "ItemList",
+          "itemListOrder": "https://schema.org/ItemListOrderDescending",
+          "numberOfItems": arts.length,
+          "itemListElement": arts.slice(0, 30).map((a, i) => ({
+            "@type": "ListItem", "position": i + 1,
+            "url": urlArticolo(a), "name": a.titolo
+          }))
+        },
+        breadcrumbJsonLd([
+          { nome: "Home", rotta: "home" },
+          { nome: "Magazine", rotta: "magazine" }
+        ])
+      ]
+    });
+  } else {
+    setJsonLd(null);
+  }
+
+  const pillar = arts.filter(a => a.tipo === "pillar");
+  const resto = arts.filter(a => a.tipo !== "pillar");
+
+  return `
+  <section class="section">
+    <div class="container">
+      <div class="section-head">
+        <span class="eyebrow">Magazine</span>
+        <h1 class="titolo-sezione">Capire le assicurazioni prima di comprarle</h1>
+        <p class="muted">Guide lunghe e approfondimenti scritti dalla redazione, con i riferimenti
+        normativi in chiaro. Niente promesse di risparmio: quello che serve per leggere una polizza
+        e capire cosa stai firmando.</p>
+      </div>
+
+      ${!m || !m.stato.caricata ? `
+        <div class="card"><p class="muted">${m && m.stato.errore
+          ? "Gli articoli non si sono caricati. Ricarica la pagina fra un momento."
+          : "Caricamento degli articoli…"}</p></div>`
+      : arts.length === 0 ? `
+        <div class="card">
+          <h2 style="margin-top:0;font-size:1.2rem">Il primo articolo sta arrivando</h2>
+          <p class="muted">Nel frattempo, in <a href="#/bacheca">bacheca</a> ci sono nove guide
+          già pubblicate e una domanda nuova ogni giorno.</p>
+        </div>`
+      : `
+        ${pillar.length ? `
+          <div class="mag-griglia mag-griglia-pillar">
+            ${pillar.map(a => magSchedaHtml(a, true)).join("")}
+          </div>` : ""}
+        ${resto.length ? `
+          <h2 class="mag-sezione-titolo">Approfondimenti</h2>
+          <div class="mag-griglia">
+            ${resto.map(a => magSchedaHtml(a, false)).join("")}
+          </div>` : ""}`}
+    </div>
+  </section>`;
+};
+
+/* Indice costruito dai titoli del testo. Non è un campo da
+   compilare: su un articolo da cinquemila parole nessuno lo
+   terrebbe aggiornato, e un indice sbagliato è peggio di nessun
+   indice. Gli identificativi nascono qui e sono gli stessi che
+   finiscono nell'HTML salvato dal deploy, quindi un link a una
+   sezione continua a funzionare. */
+function magIndice(html) {
+  const voci = [];
+  const visti = new Set();
+  String(html || "").replace(/<h([23])[^>]*>([\s\S]*?)<\/h\1>/gi, (tutto, liv, dentro) => {
+    const testo = dentro.replace(/<[^>]+>/g, "").trim();
+    if (!testo) return tutto;
+    let id = testo.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 70) || "sezione";
+    let unico = id, n = 1;
+    while (visti.has(unico)) unico = id + "-" + (++n);
+    visti.add(unico);
+    voci.push({ id: unico, testo, livello: +liv });
+    return tutto;
+  });
+  return voci;
+}
+
+function magConAncore(html, voci) {
+  let i = 0;
+  return String(html || "").replace(/<h([23])([^>]*)>/gi, (tutto, liv, attr) => {
+    const v = voci[i++];
+    return v ? `<h${liv} id="${v.id}"${attr}>` : tutto;
+  });
+}
+
+/* Le domande frequenti in fondo a un articolo sono già, nella
+   forma, quello che schema.org chiama FAQPage: una domanda e la
+   sua risposta. Dichiararlo cambia come i motori — di ricerca e
+   generativi — possono usarle: diventano citabili una per una.
+
+   Si leggono dal testo invece di essere un campo a parte per la
+   stessa ragione dell'indice: un campo che duplica il testo, dopo
+   la prima correzione, racconta una cosa diversa dal testo. */
+function magFaq(html) {
+  const testo = String(html || "");
+  const inizio = testo.search(/<h2[^>]*>\s*(domande frequenti|faq)\b/i);
+  if (inizio === -1) return [];
+  const coda = testo.slice(inizio);
+  const voci = [];
+  const re = /<h3[^>]*>([\s\S]*?)<\/h3>\s*<p[^>]*>([\s\S]*?)<\/p>/gi;
+  let m;
+  while ((m = re.exec(coda))) {
+    const d = m[1].replace(/<[^>]+>/g, "").trim();
+    const r = m[2].replace(/<[^>]+>/g, "").trim();
+    if (d && r) voci.push({ domanda: d, risposta: r });
+  }
+  return voci;
+}
+
+views.magazineArticolo = (slug) => {
+  const m = MAG();
+  const a = m ? m.articolo(slug) : undefined;
+
+  /* undefined = sta arrivando; null = chiesto, non esiste. */
+  if (a === undefined) {
+    /* Se questa pagina è il file che il deploy ha scritto per
+       questo articolo, il testo è già sotto gli occhi di chi
+       legge: si lascia stare finché i dati non arrivano, invece
+       di cancellarlo per riscriverlo identico. */
+    if (PERCORSO_PAGINA && ROTTA_PAGINA === "magazine/" + slug) return null;
+    return `<section class="section"><div class="container">
+      <p class="muted">Caricamento dell'articolo…</p></div></section>`;
+  }
+  if (!a) {
+    setJsonLd(null);
+    return `<section class="section"><div class="container" style="max-width:640px">
+      <h1 class="titolo-sezione">Questo articolo non c'è</h1>
+      <p class="lead">Può essere stato ritirato, o l'indirizzo può essere sbagliato.</p>
+      <p><a class="btn btn-primary" href="#/magazine">Vai al Magazine</a></p>
+    </div></section>`;
+  }
+
+  const voci = magIndice(a.corpo);
+  const corpo = magConAncore(a.corpo, voci);
+  const faq = magFaq(a.corpo);
+  const cat = magCategoria(a);
+  const url = urlArticolo(a);
+  const data = a.pubblicato_il || a.creato_il;
+  const aggiornato = a.aggiornato_il || data;
+
+  /* Un articolo dichiarato per quello che è. I campi sono tutti
+     veri: la data è quella della pubblicazione, l'editore è
+     quello delle note legali, il testo è quello visibile in
+     pagina. Dove un dato non c'è, il campo non compare. */
+  setJsonLd({
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "BlogPosting",
+        "@id": url + "#articolo",
+        "headline": String(a.titolo).slice(0, 110),
+        "description": a.meta_description || String(a.apertura || "").slice(0, 200),
+        "inLanguage": "it-IT",
+        "datePublished": data,
+        "dateModified": aggiornato,
+        "author": { "@id": SITO() + "#org" },
+        "publisher": { "@id": SITO() + "#org" },
+        "isPartOf": { "@id": SITO() + "magazine/#blog" },
+        "mainEntityOfPage": { "@type": "WebPage", "@id": url },
+        "articleSection": cat || undefined,
+        "image": a.cover_url || (SITO() + "assets/img/og-quotafacile.png"),
+        "wordCount": String(a.corpo || "").replace(/<[^>]+>/g, " ").trim().split(/\s+/).filter(Boolean).length,
+        "about": a.keyword ? { "@type": "Thing", "name": a.keyword } : undefined
+      },
+      breadcrumbJsonLd([
+        { nome: "Home", rotta: "home" },
+        { nome: "Magazine", rotta: "magazine" },
+        { nome: a.titolo, percorso: "magazine/" + a.slug + "/" }
+      ]),
+      ...(faq.length ? [{
+        "@type": "FAQPage",
+        "@id": url + "#faq",
+        "mainEntity": faq.map(v => ({
+          "@type": "Question",
+          "name": v.domanda,
+          "acceptedAnswer": { "@type": "Answer", "text": v.risposta }
+        }))
+      }] : [])
+    ]
+  });
+
+  const correlati = a.correlati || [];
+  const padre = correlati.find(x => x.tipo === "pillar" && x.id === a.pillar_id);
+  const fratelli = correlati.filter(x => x !== padre);
+
+  return `
+  <article class="section mag-articolo">
+    <div class="container" style="max-width:760px">
+      <nav class="mag-briciole" aria-label="Percorso">
+        <a href="#/">Home</a> <span aria-hidden="true">/</span>
+        <a href="#/magazine">Magazine</a>
+      </nav>
+
+      <div class="mag-testa-meta">
+        ${a.tipo === "pillar" ? `<span class="mag-pillar-tag">Guida completa</span>` : ""}
+        ${cat ? `<span class="mag-card-cat">${esc(cat)}</span>` : ""}
+        <span>${esc(magData(data))}</span>
+        <span>· ${magMinuti(a.corpo)} min di lettura</span>
+      </div>
+
+      <h1 class="mag-titolo-articolo">${esc(a.titolo)}</h1>
+      ${a.apertura ? `<p class="lead mag-apertura">${esc(a.apertura)}</p>` : ""}
+
+      ${a.cover_url ? `
+        <img class="mag-cover" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
+             width="1200" height="675" decoding="async">` : ""}
+
+      ${padre ? `
+        <p class="mag-risale">Questo approfondimento fa parte della guida
+        <a href="#/magazine/${esc(padre.slug)}">${esc(padre.titolo)}</a>.</p>` : ""}
+
+      ${voci.length >= 3 ? `
+        <nav class="mag-indice" aria-label="Indice dell'articolo">
+          <h2 class="mag-indice-titolo">In questo articolo</h2>
+          <ol>
+            ${voci.map(v => `<li class="${v.livello === 3 ? "mag-indice-sotto" : ""}">
+              <a href="#${v.id}">${esc(v.testo)}</a></li>`).join("")}
+          </ol>
+        </nav>` : ""}
+
+      <div class="prosa mag-prosa">${corpo}</div>
+
+      <p class="mag-firma">— ${esc(a.firma || "Redazione QuotaFacile")}</p>
+
+      <p class="privacy-hint mag-avvertenza">
+        Contenuto informativo di carattere generale: non è consulenza personalizzata e non sostituisce
+        il set informativo del prodotto. Verifica sempre condizioni, esclusioni e massimali sul
+        contratto. QuotaFacile non distribuisce polizze — <a href="#/note-legali">note legali</a>.
+      </p>
+
+      <div class="mag-cta">
+        <h2 style="margin:0 0 .4rem;font-size:1.2rem">Ti serve un preventivo su questo?</h2>
+        <p class="muted" style="margin:0 0 .9rem">Ti mettiamo in contatto con intermediari iscritti
+        al RUI specializzati nel ramo. Gratuito, senza registrazione.</p>
+        <a class="btn btn-primary" href="#/preventivo">Richiedi un preventivo</a>
+      </div>
+
+      ${fratelli.length ? `
+        <nav class="mag-correlati" aria-label="Articoli collegati">
+          <h2 class="mag-sezione-titolo">${padre ? "Altri approfondimenti della stessa guida" : "Approfondimenti collegati"}</h2>
+          <div class="mag-griglia">${fratelli.map(x => magSchedaHtml(x, false)).join("")}</div>
+        </nav>` : ""}
+    </div>
+  </article>`;
+};
+
 /* ----- DETTAGLIO FAQ ----- */
 views.faqDetail = (id) => {
   const f = getFaqById(id);
-  if (!f) return `<section class="section"><div class="container"><h2>Domanda non trovata</h2><a href="#/bacheca" class="btn btn-outline">← Torna alla bacheca</a></div></section>`;
+  if (!f) {
+    /* Le guide dell'area Admin arrivano dal database, e per
+       qualche istante dopo il caricamento non sono ancora qui.
+       Se però questa pagina è proprio il file che il deploy ha
+       scritto per questa guida, il testo è già sotto gli occhi
+       di chi legge: sostituirlo con "non trovata" vorrebbe dire
+       cancellare un contenuto giusto per riscriverlo identico
+       mezzo secondo dopo — e, se la bacheca non risponde,
+       cancellarlo e basta. Si restituisce null e render() lascia
+       la pagina com'è finché i dati non arrivano. */
+    if (PERCORSO_PAGINA && ROTTA_PAGINA === "faq/" + id &&
+        !window.QFBacheca?.stato.caricata) return null;
+    return `<section class="section"><div class="container"><h2>Domanda non trovata</h2><a href="#/bacheca" class="btn btn-outline">← Torna alla bacheca</a></div></section>`;
+  }
   const ld = faqJsonLd([f]);
+  /* Niente gradino per la categoria: non esiste una pagina di
+     categoria, e metterla porterebbe allo stesso indirizzo del
+     gradino precedente. Un percorso con due tappe identiche
+     descrive una struttura che il sito non ha. La categoria
+     resta dichiarata, al posto giusto, in articleSection. */
   ld["@graph"].push(breadcrumbJsonLd([
-    { nome: "Home", hash: "#/" },
-    { nome: "Bacheca Q&A", hash: "#/bacheca" },
-    { nome: f.cat, hash: "#/bacheca" },
-    { nome: f.domanda, hash: "#/faq/" + f.id }
+    { nome: "Home", rotta: "home" },
+    { nome: "Bacheca Q&A", rotta: "bacheca" },
+    { nome: f.titolo || f.domanda, percorso: (f.slug ? "guide/" + f.slug + "/" : "bacheca/") }
   ]));
+  /* Una guida e' un articolo, e dichiararlo cambia cosa i motori
+     — di ricerca e generativi — sanno farci: chi l'ha scritta,
+     quando, di cosa parla, quanto e' lunga. FAQPage da solo dice
+     che ci sono domande e risposte, non che c'e' un testo
+     redazionale con una data e una firma. */
+  if (f.staff) ld["@graph"].push(articoloJsonLd(f));
   setJsonLd(ld);
   const pro = DB.proProfile;
   return `
@@ -900,7 +1660,7 @@ views.preventivo = (query) => {
     <div class="container" style="max-width:680px">
       <div class="section-head">
         <span class="eyebrow">Gratis e senza impegno</span>
-        <h2>${dest ? `Richiesta a ${esc(dest.nome)}` : "Richiedi preventivo o consulenza"}</h2>
+        <h1 class="titolo-sezione">${dest ? `Richiesta a ${esc(dest.nome)}` : "Richiedi un preventivo assicurativo o una consulenza"}</h1>
         ${dest ? `<p class="muted">Stai contattando direttamente ${esc(dest.ruolo).toLowerCase()} ${esc(dest.nome)} (${esc(dest.azienda)}).</p>` : `<p class="muted">Compila in 2 minuti: gli intermediari specializzati ti ricontattano direttamente.</p>`}
       </div>
       <div class="card">
@@ -1093,10 +1853,10 @@ function proBoardHTML() {
   const staff = staffFaqs();
   const community = domandeCommunity().filter(f => !f.risposte.length);
   const row = f => `
-    <div class="lead-row" data-goto="#/faq/${f.id}" style="cursor:pointer">
+    <div class="lead-row lead-row-link" data-goto="#/faq/${f.id}">
       <span class="lead-icon">${f.staff ? "📌" : f.daily ? "☀️" : "🙋"}</span>
       <span class="leader-info">
-        <strong>${esc(f.domanda)}</strong>
+        <strong><a href="#/faq/${f.id}">${esc(f.domanda)}</a></strong>
         <span>${f.staff ? "Guida su keyword strategica · massima visibilità organica"
               : f.daily ? `Domanda del giorno #${f.num} · risposta automatica da integrare`
               : (f.risposte.length ? f.risposte.length + " risposte di altri intermediari" : "Ancora senza risposta")} · ${esc(f.cat)}</span>
@@ -1135,7 +1895,7 @@ views.areaPro = () => {
       <div class="container">
         <div class="section-head">
           <span class="eyebrow">Area professionisti</span>
-          <h2>Crea la tua QuotaPass</h2>
+          <h1 class="titolo-sezione">Crea la tua QuotaPass</h1>
           <p class="muted">Gratis, in 3 minuti. Subito dopo sblocchi dashboard, bacheca e statistiche.</p>
         </div>
         <div class="pro-layout">
@@ -1156,7 +1916,7 @@ views.areaPro = () => {
     <div class="container">
       <div class="section-head" style="margin-bottom:1.4rem">
         <span class="eyebrow">Area professionisti</span>
-        <h2>Ciao ${esc(p.nome.split(" ")[0])}, ecco la tua vetrina</h2>
+        <h1 class="titolo-sezione">Ciao ${esc(p.nome.split(" ")[0])}, ecco la tua vetrina</h1>
       </div>
 
       <div class="gami-banner">
@@ -1211,6 +1971,15 @@ const LEGAL_ROUTES = {
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, "") || "";
+  /* Senza frammento comanda la pagina: i file pre-renderizzati
+     stanno a un indirizzo vero e dichiarano quale rotta sono.
+     Chi arriva da Google su /guide/polizza-vita-pignorabile/
+     deve vedere quella guida, non la homepage — e deve vederla
+     senza un salto di redirect, che il motore leggerebbe come
+     "questa pagina non è quella giusta". */
+  if (!raw && ROTTA_PAGINA) {
+    return { path: ROTTA_PAGINA.split("/").filter(Boolean), query: {} };
+  }
   const [pathPart, queryPart] = raw.split("?");
   const query = {};
   if (queryPart) queryPart.split("&").forEach(kv => { const [k, v] = kv.split("="); query[k] = decodeURIComponent(v || ""); });
@@ -1224,12 +1993,15 @@ const SEO_PAGINE = {
   "preventivo": ["Richiedi un preventivo assicurativo gratuito | QuotaFacile", "Compila in due minuti e ricevi il contatto di intermediari specializzati nel ramo che ti serve. Gratuito, senza impegno, senza registrazione."],
   "area-pro": ["Area Pro — dashboard intermediari | QuotaFacile", "Gestisci la tua QuotaPass, rispondi alle domande della bacheca e monitora i contatti ricevuti."],
   "privacy": ["Privacy Policy | QuotaFacile", "Informativa sul trattamento dei dati personali ai sensi degli artt. 13-14 del Regolamento (UE) 2016/679."],
+  "privacy-imprese": ["Da dove abbiamo il tuo indirizzo — informativa per le aziende | QuotaFacile", "Hai ricevuto una nostra email? Qui trovi da dove viene il tuo recapito, perché ti scriviamo e come dirci di smettere: una riga, senza doverlo motivare."],
   "cookie-policy": ["Cookie Policy | QuotaFacile", "Cookie e strumenti di tracciamento usati su QuotaFacile, categorie, durate e come gestire il consenso."],
   "termini": ["Termini e Condizioni | QuotaFacile", "Condizioni generali di utilizzo della piattaforma QuotaFacile per utenti e intermediari assicurativi."],
   "note-legali": ["Note legali | QuotaFacile", "Informazioni sul gestore del sito, natura dell'attività e avvertenze IVASS. QuotaFacile non è un intermediario assicurativo."],
   "contatti": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."],
   "chi-siamo": ["Chi siamo e contatti | QuotaFacile", "Chi c'è dietro QuotaFacile e come raggiungerci: informazioni, privacy, segnalazioni."],
-  "admin": ["Area riservata | QuotaFacile", "Console di amministrazione."]
+  "magazine": ["Magazine QuotaFacile — guide e approfondimenti sulle assicurazioni", "Guide lunghe e approfondimenti scritti dalla redazione, con i riferimenti normativi in chiaro: come leggere una polizza e capire cosa stai firmando."],
+  "admin": ["Area riservata | QuotaFacile", "Console di amministrazione."],
+  "404": ["Pagina non trovata | QuotaFacile", "L'indirizzo cercato non esiste o è stato spostato. Da qui puoi tornare alla home, alla directory degli intermediari o alla bacheca."]
 };
 
 function applicaSeo(page, path) {
@@ -1244,6 +2016,23 @@ function applicaSeo(page, path) {
       return;
     }
   }
+  if (page === "magazine" && path[1]) {
+    const a = window.QFMagazine?.stato.corpi[path[1]]
+           || window.QFMagazine?.stato.articoli.find(x => x.slug === path[1]);
+    if (a) {
+      setSeo(
+        a.titolo.length > 55 ? a.titolo : a.titolo + " | QuotaFacile",
+        a.meta_description || String(a.apertura || "").slice(0, 155).replace(/\s+\S*$/, "") + "…"
+      );
+      return;
+    }
+    /* L'articolo non è ancora arrivato. Sulla pagina scritta dal
+       deploy il titolo giusto c'è già: riscriverlo con quello
+       dell'elenco vorrebbe dire farlo lampeggiare per mezzo
+       secondo, e per un crawler che legge a metà rendering
+       vorrebbe dire leggere il titolo sbagliato. */
+    if (PERCORSO_PAGINA && ROTTA_PAGINA === "magazine/" + path[1]) return;
+  }
   const s = SEO_PAGINE[page];
   setSeo(s ? s[0] : null, s ? s[1] : null);
 }
@@ -1254,6 +2043,14 @@ function render() {
   const { path, query } = parseHash();
   const page = path[0] || "home";
   let html, navKey = page || "home";
+
+  /* Va segnata prima di costruire le viste, non dopo: i dati
+     strutturati nascono dentro le viste e devono già sapere su
+     quale indirizzo pubblico si trovano. Segnarla dopo vorrebbe
+     dire che ogni pagina dichiara nel proprio grafo l'indirizzo
+     di quella precedente — un errore che si nota solo leggendo
+     il JSON-LD, cioè quasi mai. */
+  paginaCorrente = { page, path };
 
   /* Dopo un invio completato, qualunque nuova navigazione riporta il
      preventivo a un modulo vuoto: chi torna sulla pagina vuole fare
@@ -1270,19 +2067,104 @@ function render() {
   else if (page === "intermediari") html = views.intermediari();
   else if (page === "bacheca") html = views.bacheca();
   else if (page === "faq") { html = views.faqDetail(path[1]); navKey = "bacheca"; }
+  else if (page === "magazine") {
+    html = path[1] ? views.magazineArticolo(path[1]) : views.magazine();
+    navKey = "magazine";
+  }
   else if (page === "preventivo") html = views.preventivo(query);
   else if (page === "area-pro") html = views.areaPro();
   else if (LEGAL_ROUTES[page]) { setJsonLd(null); html = LEGAL_ROUTES[page](); navKey = ""; }
   /* L'area riservata riceve tutto il percorso, non solo il primo
      segmento: dentro ci sono due applicazioni con rotte proprie. */
-  else if (page === "admin") { setJsonLd(null); html = window.QF_ADMIN ? window.QF_ADMIN.view(path.slice(1)) : ""; navKey = ""; }
-  else { html = views.home(); navKey = "home"; }
+  else if (page === "admin") {
+    setJsonLd(null); navKey = "";
+    if (dentroCornice) {
+      /* Si prova anche a uscire dalla cornice: se chi incornicia
+         è della stessa origine funziona, se è di un'altra il
+         browser lo impedisce — e in quel caso resta il rifiuto
+         qui sotto, che è comunque la cosa importante. */
+      try { window.top.location = window.self.location.href; } catch (e) { /* atteso da altra origine */ }
+      html = `
+        <section class="section"><div class="container" style="max-width:34rem">
+          <h1 class="titolo-sezione">Questa pagina non si apre dentro un'altra</h1>
+          <p class="lead">L'area riservata di QuotaFacile funziona solo come pagina a sé.
+          Se ci sei arrivato da un link di qualcun altro, quel link non è nostro.</p>
+          <p><a class="btn btn-primary" href="https://www.quotafacile.net/">Vai su www.quotafacile.net</a></p>
+        </div></section>`;
+    }
+    else if (window.QF_ADMIN) {
+      html = window.QF_ADMIN.view(path.slice(1));
+    } else {
+      /* Primo ingresso: il codice dell'area riservata non è
+         ancora arrivato. Si dice che sta arrivando invece di
+         mostrare una pagina vuota, e appena c'è si ridisegna. */
+      html = `<div class="card"><p class="muted">Apertura dell'area riservata…</p></div>`;
+      caricaRiservata().then(render).catch(() => {
+        app.innerHTML = `<div class="legal-warning" role="alert">
+          <strong>L'area riservata non si è caricata.</strong>
+          Può essere la rete. Ricarica la pagina e riprova.
+        </div>`;
+      });
+    }
+  }
+  /* Rotta che non esiste. Mostrare la homepage sarebbe comodo e
+     sbagliato: chi ha sbagliato a scrivere l'indirizzo crede di
+     essere arrivato, e un motore di ricerca si ritrova la stessa
+     pagina a indirizzi diversi. Meglio dirlo. */
+  else { setJsonLd(null); html = views.nonTrovato(); navKey = ""; }
 
   applicaSeo(page, path);
-  app.innerHTML = html;
+  /* null non è "pagina vuota": è "quello che c'è va bene così".
+     Lo usa la guida pre-renderizzata che aspetta i propri dati. */
+  if (html !== null) app.innerHTML = html;
   document.querySelectorAll("[data-nav]").forEach(a => a.classList.toggle("active", a.dataset.nav === navKey));
   window.scrollTo({ top: 0 });
   bind();
+  annunciaPagina(path.join("/"));
+}
+
+/* Dopo un cambio di rotta il browser non fa niente: la pagina non
+   si è ricaricata, quindi il fuoco resta dov'era — di solito sul
+   link appena premuto, che nel frattempo è sparito. Chi naviga con
+   la tastiera si ritrova a ripartire dall'inizio del documento, e
+   chi usa uno screen reader non sa che è successo qualcosa.
+
+   Il fuoco va sul titolo della pagina nuova, e una riga invisibile
+   annuncia dove siamo. È il posto giusto dove ricominciare a
+   leggere e dove ricominciare a tabulare. */
+let rottaAnnunciata = null;
+function annunciaPagina(rotta) {
+  /* Solo quando la rotta cambia davvero. render() viene chiamata
+     anche per ridisegnare la stessa pagina — quando la bacheca
+     risponde, quando si cambia un filtro, quando si vota una
+     risposta — e spostare il fuoco in quei casi vorrebbe dire
+     strapparlo di mano a chi sta usando la tastiera proprio
+     mentre lo usa.
+
+     La prima volta è un'assegnazione, non un cambio: chi apre il
+     sito non ha ancora navigato da nessuna parte, e il fuoco
+     deve restare dove il browser l'ha messo. */
+  const prima = rottaAnnunciata;
+  rottaAnnunciata = rotta;
+  if (prima === null || prima === rotta) return;
+
+  const titolo = app.querySelector("h1");
+  const bersaglio = titolo || app;
+  if (!titolo) app.setAttribute("tabindex", "-1");
+  else if (!titolo.hasAttribute("tabindex")) titolo.setAttribute("tabindex", "-1");
+  /* preventScroll: la pagina è già stata riportata in cima poco
+     sopra, e un secondo salto la farebbe sobbalzare. */
+  try { bersaglio.focus({ preventScroll: true }); } catch (e) { bersaglio.focus(); }
+
+  const avviso = document.getElementById("annuncio-rotta");
+  if (avviso) {
+    /* Il titolo del documento, non quello visibile: è più corto e
+       dice anche di che sito si tratta. Svuotare prima costringe
+       la regione a rileggere anche se il testo è identico. */
+    const testo = (document.title || "").split("|")[0].trim();
+    avviso.textContent = "";
+    setTimeout(() => { avviso.textContent = testo + ". Pagina caricata."; }, 60);
+  }
 }
 
 /* ---------------- SEGNALAZIONE CONTENUTI (DSA) ----------------
@@ -1333,7 +2215,12 @@ function apriSegnalazione(target) {
     </div>
   </div>`;
   document.body.appendChild(host);
-  const chiudi = () => host.remove();
+  const chiudi = () => { document.removeEventListener("keydown", conEsc); host.remove(); };
+  /* Escape chiude, come in qualsiasi finestra di dialogo. Senza,
+     l'unica via d'uscita erano due bottoni da trovare col
+     tabulatore — e per chi usa la tastiera "annulla" è Escape. */
+  const conEsc = e => { if (e.key === "Escape") { e.stopPropagation(); chiudi(); } };
+  document.addEventListener("keydown", conEsc);
   host.querySelectorAll("[data-close-report]").forEach(el =>
     el.addEventListener("click", e => { if (e.target === el) chiudi(); }));
   host.querySelector("#report-form").addEventListener("submit", e => {
@@ -1604,10 +2491,71 @@ window.QF = {
   get DB() { return DB; },
   saveDB, render, toast, esc, initials, livello, qpass, broker,
   staffFaqs, publishedDaily, dailyPublishedCount, getFaqById,
-  contaRisposte, sincronizzaBrokers, campo, DA_COMPILARE, ruiLabel
+  contaRisposte, sincronizzaBrokers, campo, DA_COMPILARE, ruiLabel,
+  /* Serve a chi deve parlare con l'area riservata prima che il
+     router ci arrivi: l'uscita dall'Area Pro di un collaboratore
+     la rimanda lì, e senza aspettare il caricamento parlerebbe a
+     un oggetto che non esiste ancora. */
+  caricaRiservata
 };
 
 window.addEventListener("hashchange", render);
+
+/* Il link "salta al contenuto" punta a #app, che per un browser
+   senza JavaScript è esattamente il salto giusto. Ma qui il
+   frammento è il router: lasciarlo passare vorrebbe dire chiedere
+   la rotta "app", che non esiste, e finire sulla pagina 404.
+   Quindi si sposta il fuoco a mano e l'indirizzo non si tocca. */
+document.querySelector(".skip-link")?.addEventListener("click", e => {
+  e.preventDefault();
+  const m = document.getElementById("app");
+  const bersaglio = m.querySelector("h1") || m;
+  if (!bersaglio.hasAttribute("tabindex")) bersaglio.setAttribute("tabindex", "-1");
+  bersaglio.focus();
+  bersaglio.scrollIntoView({ block: "start" });
+});
+
+/* I link veri delle pagine pre-renderizzate, ripresi al volo.
+   Senza questo, ogni clic sul menu di una pagina arrivata da
+   Google ricaricherebbe l'intero sito — mezzo megabyte — per
+   cambiare sezione. Con questo, il motore di ricerca continua a
+   vedere link normali e la persona continua a navigare
+   nell'applicazione.
+
+   I guardrail contano quanto il resto: si interviene solo sul
+   tasto sinistro senza modificatori (chi apre in una scheda
+   nuova vuole una pagina vera), solo su link interni, e solo su
+   rotte che hanno un indirizzo pubblico. Tutto il resto —
+   area riservata compresa — passa e si comporta come sempre. */
+document.addEventListener("click", e => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest("a[href]");
+  if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+  if (a.origin !== location.origin) return;
+
+  /* Un link che è solo un frammento — href="#/faq/k1" — non
+     racconta niente nel suo percorso: per il browser quel
+     percorso è quello della pagina in cui si trova. Passarlo di
+     qui significherebbe leggere "sono su /bacheca/" e mandare a
+     /bacheca/ chiunque clicchi su una guida. Su una pagina
+     pre-renderizzata era esattamente quello che succedeva: tutti
+     i link interni riportavano alla pagina di partenza.
+     Questi link li gestisce il router, come ha sempre fatto. */
+  const href = a.getAttribute("href") || "";
+  if (href.startsWith("#")) return;
+
+  const rotta = rottaDaPercorso(a.pathname);
+  if (rotta === null) return;
+  e.preventDefault();
+  const nuovo = "#/" + rotta + (a.search || "");
+  /* Stesso indirizzo: cambiare l'hash non scatenerebbe niente,
+     quindi si ridisegna a mano. Capita tornando sulla home dalla
+     home, ed è il caso in cui azzerare il modulo del preventivo
+     serve davvero. */
+  if (location.hash === nuovo) { render(); return; }
+  location.hash = nuovo;
+});
+
 render();
 
 /* La bacheca è contenuto condiviso: si carica dal database e la
@@ -1615,4 +2563,8 @@ render();
    così guide e domanda del giorno — che vivono nel codice — sono
    visibili subito anche con una rete lenta. */
 window.QFBacheca?.onAggiorna(() => render());
+/* Il Magazine arriva dal database come la bacheca: quando
+   risponde, la pagina si ridisegna con gli articoli veri. */
+window.QFMagazine?.onAggiorna(() => render());
 window.QFBacheca?.carica();
+window.QFMagazine?.carica();

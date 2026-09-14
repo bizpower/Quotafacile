@@ -66,9 +66,17 @@ User-agent: MistralAI-User
 Allow: /
 
 # ---------------------------------------------------------------
-# Aree riservate: non c'è nulla di indicizzabile e la console di
-# amministrazione non deve comparire nei risultati.
+# Aree riservate.
+#
+# Non sono percorsi ma rotte dell'applicazione, e per un crawler
+# non esistono come indirizzi: non c'è nulla da vietare qui. La
+# loro esclusione è dichiarata dove serve davvero — un noindex
+# sulla pagina — e soprattutto non dipende da questo file:
+# l'accesso lo verifica il server a ogni richiesta.
+#
+# robots.txt non è un sistema di sicurezza, ed elencare qui le
+# aree private significherebbe soltanto pubblicarne l'elenco.
 # ---------------------------------------------------------------
-Disallow: /api/
 
+# Scritta dal deploy sull'host che sta davvero servendo il sito.
 Sitemap: https://www.quotafacile.net/sitemap.xml
