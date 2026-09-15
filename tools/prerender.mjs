@@ -51,7 +51,22 @@ const RADICE = process.argv[2] || "_sito";
    crawler non riesce a scaricare vale meno di nessuna sitemap. */
 const BASE_URL = new URL(process.argv[3] || "https://www.quotafacile.net/");
 const BASE = BASE_URL.pathname.replace(/\/*$/, "/");
-const ORIGINE = BASE_URL.origin;
+
+/* Lo schema si forza a https, e non è una preferenza estetica.
+   Finché "Enforce HTTPS" non è spuntato nelle impostazioni di
+   Pages, GitHub dichiara il sito su http://, e quell'indirizzo
+   finirebbe dentro ogni canonical, dentro la sitemap e dentro
+   llms.txt: staremmo dicendo ai motori che la versione preferita
+   del sito è quella in chiaro, cioè l'esatto contrario di quello
+   che vogliamo. Il certificato su Pages arriva comunque, e da
+   quel momento http non è che un redirect verso https.
+
+   L'eccezione è localhost: lì il certificato non c'è e non ci
+   sarà mai, e forzare https romperebbe qualunque prova in
+   locale. */
+const ORIGINE = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(BASE_URL.hostname)
+  ? BASE_URL.origin
+  : BASE_URL.origin.replace(/^http:/, "https:");
 const PORTA = 8099;
 
 const TIPI = {
