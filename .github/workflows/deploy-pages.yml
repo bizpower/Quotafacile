@@ -120,6 +120,49 @@ jobs:
           npx playwright install --with-deps chromium
           node tools/prerender.mjs _sito "${BASE%/}/"
 
+      # Gli indirizzi che il sito dichiara di sé sono la cosa più
+      # facile da sbagliare senza accorgersene: sono dentro l'HTML,
+      # non si vedono navigando, e se sono sbagliati il danno non è
+      # una pagina rotta ma mesi di indicizzazione buttati.
+      #
+      # È già successo: col dominio appena collegato e "Enforce
+      # HTTPS" non ancora spuntato, Pages ha dichiarato il sito su
+      # http:// e ogni canonical è stato scritto così. Il deploy era
+      # verde, i file c'erano tutti, e il sito diceva ai motori di
+      # preferire la versione in chiaro.
+      #
+      # Da qui in poi il deploy si ferma se ricapita.
+      - name: Controlla gli indirizzi dichiarati
+        run: |
+          set -euo pipefail
+
+          CANONICAL=$(grep -o '<link rel="canonical" href="[^"]*"' _sito/index.html | head -1 | sed 's/.*href="//;s/"$//')
+          PRIMA_LOC=$(grep -o '<loc>[^<]*</loc>' _sito/sitemap.xml | head -1 | sed 's/<[^>]*>//g')
+          RIGA_ROBOTS=$(grep -i '^Sitemap:' _sito/robots.txt || echo "(assente)")
+          QUANTE=$(grep -c '<loc>' _sito/sitemap.xml)
+
+          echo "Canonical della home : $CANONICAL"
+          echo "Prima voce in sitemap: $PRIMA_LOC"
+          echo "robots.txt           : $RIGA_ROBOTS"
+          echo "Indirizzi in sitemap : $QUANTE"
+
+          for VALORE in "$CANONICAL" "$PRIMA_LOC"; do
+            case "$VALORE" in
+              https://*) ;;
+              *)
+                echo "::error::Indirizzo dichiarato non in https: $VALORE — controlla che 'Enforce HTTPS' sia attivo in Settings → Pages."
+                exit 1
+                ;;
+            esac
+          done
+
+          if [ "$QUANTE" -lt 20 ]; then
+            echo "::error::La sitemap elenca solo $QUANTE indirizzi: il pre-render non ha scritto tutto."
+            exit 1
+          fi
+
+          echo "Indirizzi coerenti: si pubblica."
+
       - name: Prepara l'artefatto
         uses: actions/upload-pages-artifact@v3
         with:
