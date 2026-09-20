@@ -61,9 +61,24 @@ function uguali(a: string, b: string): boolean {
 
 let improntaDb: string | null | undefined;
 
+// La chiave sta in un posto solo: l'impronta in impostazioni_admin.
+//
+// Prima ce n'erano due, e il segreto QF_ADMIN_TOKEN vinceva sul
+// database. Sembrava prudente - la chiave non tocca il database -
+// ma nella pratica creava una situazione in cui nessuno sapeva
+// piu' quale delle due fosse attiva: cambiare l'impronta non
+// aveva alcun effetto finche' il segreto esisteva, e il segreto
+// non e' leggibile da nessuna schermata dell'applicazione.
+//
+// Una sola fonte, quindi. Nel database resta comunque soltanto
+// l'impronta SHA-256: la frase non e' conservata da nessuna
+// parte e non e' recuperabile. Per cambiarla:
+//
+//   update impostazioni_admin
+//      set token_hash = encode(digest('nuova-frase','sha256'),'hex'),
+//          aggiornato_il = now()
+//    where id = 1;
 async function improntaAttesa(): Promise<string | null> {
-  const segreto = Deno.env.get("QF_ADMIN_TOKEN");
-  if (segreto) return await impronta(segreto);
   if (improntaDb === undefined) {
     const { data } = await db.from("impostazioni_admin")
       .select("token_hash").eq("id", 1).maybeSingle();
