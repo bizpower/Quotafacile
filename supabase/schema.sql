@@ -1513,3 +1513,259 @@ insert into public.mag_categorie (nome, slug, ordine) values
   ('Salute',      'salute',      50),
   ('Normativa',   'normativa',   60)
 on conflict (slug) do nothing;
+
+
+-- ============================================================
+-- 11. Professionisti: account veri e abbonamenti
+-- ------------------------------------------------------------
+-- PERCHÉ ESISTE QUESTA SEZIONE
+--
+-- Fino a qui il "profilo professionista" non era un account: era
+-- un oggetto JSON nel localStorage del visitatore, salvato da
+-- app.js insieme al resto dello stato del sito. Andava benissimo
+-- finché l'Area Pro era una vetrina da compilare. Non va più bene
+-- dal momento in cui si vende un abbonamento, per tre motivi che
+-- non si aggirano scrivendo più codice nel browser:
+--
+--   - un cliente Stripe va agganciato a un'identità stabile, e un
+--     JSON in un browser sparisce svuotando la cache;
+--   - il webhook di Stripe arriva al server e deve poter scrivere
+--     "questo qui ha pagato" da qualche parte che il sito sappia
+--     rileggere domani, da un altro dispositivo;
+--   - soprattutto: se lo stato "abbonato" stesse nel localStorage
+--     come il resto del profilo, chiunque se lo concederebbe da
+--     solo dalla console. Una funzione a pagamento sbloccabile
+--     gratis riscrivendo una riga non è una funzione a pagamento.
+--
+-- Da qui in avanti l'identità di un professionista è una riga con
+-- un'utenza vera dietro, e lo stato dell'abbonamento è un dato che
+-- solo il server scrive.
+--
+-- NOTA: queste tabelle nascono vuote e non sono ancora collegate a
+-- nessuna schermata. Il sito continua a funzionare esattamente
+-- come prima finché non le si aggancia.
+-- ============================================================
+
+create table if not exists public.pro_profili (
+  id         uuid primary key default gen_random_uuid(),
+  utente_id  uuid not null unique,
+
+  -- La domanda di iscrizione da cui nasce il profilo, quando c'è.
+  -- Serve a non perdere il filo fra chi ha compilato il modulo e
+  -- chi poi si è davvero registrato.
+  iscrizione_id uuid references public.iscrizioni_pro(id) on delete set null,
+
+  nome             text not null,
+  ruolo            text,
+  azienda          text,
+  rui_numero       text,
+  rui_sezione      text,
+  citta            text,
+  telefono         text,
+  email            text not null,
+  bio              text,
+  specializzazioni text[],
+
+  -- Il badge non si autocertifica: lo concede la redazione dopo il
+  -- riscontro sul registro pubblico IVASS. Per questo la colonna
+  -- esiste qui ma più sotto viene tolta dai campi aggiornabili
+  -- dall'interessato.
+  stato_verifica text not null default 'in_attesa'
+                   check (stato_verifica in ('in_attesa','verificato','respinto')),
+  verificato_il  timestamptz,
+
+  -- I punti della bacheca. Stavano nel browser e si incrementavano
+  -- da soli: valevano quanto chi li contava. Ora sono un dato del
+  -- server e il professionista non può scriverli.
+  punti    smallint not null default 0 check (punti >= 0),
+  risposte smallint not null default 0 check (risposte >= 0),
+
+  -- Un profilo si pubblica in vetrina solo se l'interessato lo
+  -- vuole: la registrazione non è consenso alla pubblicazione.
+  pubblico boolean not null default false,
+
+  creato_il     timestamptz not null default now(),
+  aggiornato_il timestamptz not null default now()
+);
+
+alter table public.pro_profili
+  drop constraint if exists pro_profili_utente_id_fkey;
+alter table public.pro_profili
+  add constraint pro_profili_utente_id_fkey
+  foreign key (utente_id) references auth.users(id) on delete cascade;
+
+comment on table public.pro_profili is
+  'La QuotaPass di un intermediario, legata a un''utenza vera. Sostituisce DB.proProfile, che viveva nel localStorage del visitatore.';
+comment on column public.pro_profili.punti is
+  'Assegnati dal server. L''interessato non ha il permesso di scrivere questa colonna: vedi la grant più sotto.';
+
+create index if not exists pro_profili_pubblici_idx
+  on public.pro_profili (pubblico, punti desc) where pubblico;
+
+-- ------------------------------------------------------------
+-- Gli abbonamenti
+--
+-- Questa tabella è il riflesso di ciò che dice Stripe, non la
+-- fonte: la verità sta là, qui c'è la copia che serve al sito per
+-- rispondere a "costui può?" senza interrogare Stripe ad ogni
+-- pagina. La riallinea il webhook, e nessun altro.
+--
+-- Gli stati sono quelli di Stripe, scritti come li scrive Stripe:
+-- tradurli in italiano avrebbe voluto dire mantenere a mano una
+-- tabella di corrispondenze che si rompe al primo stato nuovo.
+create table if not exists public.pro_abbonamenti (
+  id         uuid primary key default gen_random_uuid(),
+  profilo_id uuid not null references public.pro_profili(id) on delete cascade,
+
+  stripe_customer_id     text not null,
+  stripe_subscription_id text not null unique,
+  stripe_price_id        text not null,
+
+  stato text not null
+          check (stato in ('trialing','active','past_due','unpaid',
+                           'canceled','incomplete','incomplete_expired','paused')),
+
+  periodo_fine             timestamptz,
+  annulla_a_fine_periodo   boolean not null default false,
+
+  creato_il     timestamptz not null default now(),
+  aggiornato_il timestamptz not null default now()
+);
+
+comment on table public.pro_abbonamenti is
+  'Copia locale dello stato di un abbonamento Stripe. La scrive solo il webhook, mai il browser.';
+
+create index if not exists pro_abbonamenti_profilo_idx
+  on public.pro_abbonamenti (profilo_id, stato);
+
+-- ------------------------------------------------------------
+-- Gli eventi già visti
+--
+-- Stripe riconsegna un evento finché non riceve una conferma, e
+-- può consegnarlo due volte anche quando la prima è andata bene.
+-- Senza questa tabella lo stesso pagamento verrebbe lavorato più
+-- volte: l'id dell'evento come chiave primaria rende la seconda
+-- consegna un no-op invece di un doppione.
+create table if not exists public.pro_eventi_stripe (
+  id          text primary key,
+  tipo        text not null,
+  ricevuto_il timestamptz not null default now()
+);
+
+comment on table public.pro_eventi_stripe is
+  'Id degli eventi Stripe già lavorati. Esiste solo per rendere il webhook idempotente.';
+
+-- ------------------------------------------------------------
+-- "Io sono abbonato?"
+--
+-- La domanda non prende un argomento, ed è una scelta. La prima
+-- versione era pro_abbonamento_attivo(profilo uuid) in SECURITY
+-- DEFINER: il linter di Supabase ha fatto notare che così è
+-- chiamabile via /rest/v1/rpc/ da chiunque sia entrato, che
+-- passando l'id di un collega scopriva se quel collega paga. È un
+-- dato commerciale che non lo riguarda. Senza argomento la
+-- funzione può rispondere solo su chi la chiama, e a quel punto
+-- SECURITY INVOKER basta: le policy fanno già il loro lavoro.
+--
+-- 'trialing' conta come attivo: chi è in prova sta usando il
+-- prodotto. 'past_due' no: il pagamento è saltato.
+create or replace function public.pro_abbonamento_attivo()
+returns boolean language sql stable security invoker set search_path = '' as $$
+  select exists (
+    select 1
+      from public.pro_abbonamenti a
+      join public.pro_profili p on p.id = a.profilo_id
+     where p.utente_id = auth.uid()
+       and a.stato in ('trialing','active')
+       and (a.periodo_fine is null or a.periodo_fine > now())
+  );
+$$;
+
+revoke execute on function public.pro_abbonamento_attivo() from public, anon;
+grant  execute on function public.pro_abbonamento_attivo() to authenticated;
+
+create or replace function public.pro_tocca_aggiornato()
+returns trigger language plpgsql set search_path = '' as $$
+begin new.aggiornato_il := now(); return new; end $$;
+
+revoke execute on function public.pro_tocca_aggiornato() from public, anon, authenticated;
+
+drop trigger if exists pro_profili_tocca on public.pro_profili;
+create trigger pro_profili_tocca before update on public.pro_profili
+for each row execute function public.pro_tocca_aggiornato();
+
+drop trigger if exists pro_abbonamenti_tocca on public.pro_abbonamenti;
+create trigger pro_abbonamenti_tocca before update on public.pro_abbonamenti
+for each row execute function public.pro_tocca_aggiornato();
+
+-- ------------------------------------------------------------
+-- Chi vede cosa, chi scrive cosa
+alter table public.pro_profili       enable row level security;
+alter table public.pro_abbonamenti   enable row level security;
+alter table public.pro_eventi_stripe enable row level security;
+
+-- In vetrina finisce solo chi ha chiesto di esserci, e solo dopo
+-- il riscontro sul RUI: un profilo non verificato pubblicato in
+-- una directory di intermediari è un'attestazione che nessuno ha
+-- controllato.
+drop policy if exists "profili in vetrina visibili a tutti" on public.pro_profili;
+create policy "profili in vetrina visibili a tutti"
+  on public.pro_profili for select
+  using (pubblico and stato_verifica = 'verificato');
+
+drop policy if exists "ognuno vede il proprio profilo" on public.pro_profili;
+create policy "ognuno vede il proprio profilo"
+  on public.pro_profili for select to authenticated
+  using (utente_id = auth.uid());
+
+drop policy if exists "ognuno aggiorna il proprio profilo" on public.pro_profili;
+create policy "ognuno aggiorna il proprio profilo"
+  on public.pro_profili for update to authenticated
+  using (utente_id = auth.uid()) with check (utente_id = auth.uid());
+
+-- La policy dice *quali righe*; la grant dice *quali colonne*.
+-- Servono tutt'e due: senza la seconda, chi può aggiornare la
+-- propria riga potrebbe assegnarsi punti, dichiararsi verificato
+-- e spostare il profilo sotto un'altra utenza.
+--
+-- L'INSERT invece non si concede affatto, ed è il punto che al
+-- primo giro mi era sfuggito: proteggere le colonne in UPDATE e
+-- lasciare libero l'INSERT non protegge niente, perché chi si
+-- inserisce da solo si inserisce già verificato e con i punti che
+-- preferisce. Il profilo lo crea la Edge Function.
+--
+-- Supabase concede da sola insert/update/delete ad anon e
+-- authenticated su tutto lo schema public: oggi la RLS li ferma,
+-- ma basterebbe una policy permissiva aggiunta domani perché
+-- diventassero veri. Si tolgono e non ci si pensa più.
+revoke all on public.pro_profili     from anon, authenticated;
+revoke all on public.pro_abbonamenti from anon, authenticated;
+revoke all on public.pro_eventi_stripe from anon, authenticated;
+
+-- Dalla vetrina pubblica si legge quello che sta su una QuotaPass
+-- e nient'altro: utente_id è l'identificativo dell'utenza Supabase
+-- e fuori non serve a nessuno.
+grant select (id, nome, ruolo, azienda, rui_numero, rui_sezione, citta,
+              telefono, email, bio, specializzazioni, punti, risposte,
+              stato_verifica, verificato_il, pubblico, creato_il)
+  on public.pro_profili to anon;
+
+grant select on public.pro_profili to authenticated;
+grant update (nome, ruolo, azienda, rui_numero, rui_sezione, citta,
+              telefono, email, bio, specializzazioni, pubblico)
+  on public.pro_profili to authenticated;
+
+-- L'abbonamento si legge, non si scrive: la verità sta su Stripe e
+-- la riallinea il webhook con la service role.
+grant select on public.pro_abbonamenti to authenticated;
+
+-- Il proprio abbonamento si legge (serve a mostrare "attivo fino
+-- al..."), non si scrive. Nessuna policy di insert/update/delete:
+-- resta solo la Edge Function, che passa con la service role.
+drop policy if exists "ognuno vede il proprio abbonamento" on public.pro_abbonamenti;
+create policy "ognuno vede il proprio abbonamento"
+  on public.pro_abbonamenti for select to authenticated
+  using (profilo_id in (select id from public.pro_profili where utente_id = auth.uid()));
+
+-- pro_eventi_stripe non ha policy di alcun tipo: è contabilità
+-- interna del webhook e dal browser non si legge né si scrive.
