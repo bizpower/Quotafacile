@@ -131,18 +131,36 @@ $$;
 
 -- Taglia a 70 caratteri ma non a metà di una parola: l'ultimo
 -- troncone incompleto viene buttato via.
+-- Lo slug perdeva sempre l'ultima parola.
+--
+-- La versione precedente troncava a 70 caratteri e poi toglieva
+-- l'ultimo segmento per eliminare la parola spezzata a metà.
+-- Giusto in linea di principio, sbagliato nell'esecuzione: il
+-- taglio avveniva anche quando il titolo stava comodamente sotto
+-- i 70 caratteri e non c'era nessuna parola spezzata. Di qui gli
+-- indirizzi che finiscono su una preposizione:
+--   ...-la-guida-completa-per-le
+--   ...-quanto-resta-davvero-a
+--   ...-il-danno-che-la-catastrofale-non
+--
+-- Ora la parola finale si toglie solo se il troncamento è
+-- avvenuto davvero. Gli slug già assegnati non cambiano: il
+-- trigger scrive solo quando slug è nullo, e quella regola resta,
+-- perché un indirizzo pubblicato che cambia è un indirizzo che si
+-- rompe.
 create or replace function public.slug_da_titolo(p_titolo text)
 returns text language sql immutable set search_path = '' as $$
+  with pulito as (
+    select trim(both '-' from
+             regexp_replace(
+               lower(public.unaccent_semplice(coalesce(p_titolo, ''))),
+               '[^a-z0-9]+', '-', 'g')) as s
+  )
   select nullif(
-    regexp_replace(
-      left(
-        trim(both '-' from
-          regexp_replace(
-            lower(public.unaccent_semplice(coalesce(p_titolo, ''))),
-            '[^a-z0-9]+', '-', 'g')),
-        70),
-      '-[^-]*$', '')
-    , '');
+           case when length(s) <= 70 then s
+                else regexp_replace(left(s, 70), '-[^-]*$', '')
+           end, '')
+    from pulito;
 $$;
 
 create or replace function public.domande_assegna_slug()
