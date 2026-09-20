@@ -393,7 +393,7 @@ function urlCanonico(page, path) {
   return location.origin + BASE_SITO + rel;
 }
 
-function setSeo(title, desc) {
+function setSeo(title, desc, immagine) {
   document.title = title || SEO_BASE.title;
   const m = document.querySelector('meta[name="description"]');
   if (m) m.content = desc || SEO_BASE.desc;
@@ -413,8 +413,16 @@ function setSeo(title, desc) {
   /* L'immagine di condivisione vuole un indirizzo assoluto:
      LinkedIn, WhatsApp e X un percorso relativo non lo leggono.
      Si costruisce sull'origine reale come il canonical, così
-     vale anche mentre il sito è servito da un host diverso. */
-  const img = location.origin + BASE_SITO + "assets/img/og-quotafacile.png";
+     vale anche mentre il sito è servito da un host diverso.
+
+     Se la pagina ha un'immagine propria — la copertina di un
+     articolo del Magazine — si usa quella: condividere cinque
+     articoli diversi e vederli uscire tutti con la stessa
+     tessera generica vuol dire sprecare l'unica anteprima che
+     il lettore vede prima di decidere se cliccare. Vale per le
+     condivisioni umane e per i motori generativi, che leggono
+     og:image come immagine rappresentativa del documento. */
+  const img = immagine || location.origin + BASE_SITO + "assets/img/og-quotafacile.png";
   const ogi = document.querySelector('meta[property="og:image"]');
   if (ogi) ogi.content = img;
   const twi = document.querySelector('meta[name="twitter:image"]');
@@ -1255,6 +1263,23 @@ const magData = s => s
 const magMinuti = html => Math.max(1, Math.round(
   String(html || "").replace(/<[^>]+>/g, " ").trim().split(/\s+/).filter(Boolean).length / 220));
 
+/* Cloudinary serve la stessa immagine a qualunque misura: basta
+   cambiare il w_ dentro la trasformazione. Senza srcset un
+   telefono da 390 punti scarica comunque il file da 1200, cioè
+   circa nove volte i pixel che gli servono — su rete mobile è la
+   differenza fra una pagina che appare e una che si fa aspettare.
+
+   Se l'indirizzo non ha la forma attesa non si inventa niente e
+   si torna stringa vuota: meglio nessun srcset che un srcset che
+   punta a indirizzi che non esistono. */
+const magSrcset = url => {
+  const u = String(url || "");
+  if (!/\/upload\/[^/]*w_\d+/.test(u)) return "";
+  return [400, 800, 1200]
+    .map(w => u.replace(/(\/upload\/[^/]*?)w_\d+/, "$1w_" + w) + " " + w + "w")
+    .join(", ");
+};
+
 function magSchedaHtml(a, grande) {
   const cat = magCategoria(a);
   return `
@@ -1262,6 +1287,9 @@ function magSchedaHtml(a, grande) {
      href="#/magazine/${esc(a.slug)}">
     ${a.cover_url ? `
       <img class="mag-card-cover" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
+           srcset="${esc(magSrcset(a.cover_url))}"
+           sizes="(max-width: 700px) 100vw, 380px"
+           width="1200" height="675"
            loading="lazy" decoding="async">` : `<span class="mag-card-cover mag-card-vuota" aria-hidden="true"></span>`}
     <span class="mag-card-corpo">
       <span class="mag-card-meta">
@@ -1503,7 +1531,10 @@ views.magazineArticolo = (slug) => {
 
       ${a.cover_url ? `
         <img class="mag-cover" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
-             width="1200" height="675" decoding="async">` : ""}
+             srcset="${esc(magSrcset(a.cover_url))}"
+             sizes="(max-width: 860px) 100vw, 800px"
+             width="1200" height="675"
+             fetchpriority="high" decoding="async">` : ""}
 
       ${padre ? `
         <p class="mag-risale">Questo approfondimento fa parte della guida
@@ -2022,7 +2053,8 @@ function applicaSeo(page, path) {
     if (a) {
       setSeo(
         a.titolo.length > 55 ? a.titolo : a.titolo + " | QuotaFacile",
-        a.meta_description || String(a.apertura || "").slice(0, 155).replace(/\s+\S*$/, "") + "…"
+        a.meta_description || String(a.apertura || "").slice(0, 155).replace(/\s+\S*$/, "") + "…",
+        a.cover_url || null
       );
       return;
     }
