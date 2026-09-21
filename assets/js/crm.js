@@ -359,6 +359,7 @@
     categorie: ["ristorazione"],
     raggio: 2000,
     soloQualita: true,
+    soloConEmail: false,
     inCorso: false,
     esito: null,       // { risultati, centro, query, avvisi }
     errore: null,
@@ -379,7 +380,7 @@
     const modulo = `
       <div class="card">
         <h3>🔎 Cerca attività</h3>
-        <p class="muted" style="font-size:.85rem">Dati d'impresa dalle API ufficiali Google, non da pagine raschiate. Di ogni contatto salvato resta scritto da dove viene e con quale ricerca è stato trovato: è la risposta a «dove avete preso il mio recapito», ed è ciò che tiene la raccolta dentro il legittimo interesse.</p>
+        <p class="muted" style="font-size:.85rem">Anagrafica d'impresa dalle API ufficiali di Google, non da pagine raschiate. L'email fa eccezione — Google non la fornisce — e quando la chiedi viene letta sul sito che l'attività pubblica da sé: è una delle fonti già dichiarate nell'informativa alle imprese. Di ogni contatto salvato resta scritto da dove viene, email compresa: è la risposta a «dove avete preso il mio recapito», ed è ciò che tiene la raccolta dentro il legittimo interesse.</p>
 
         <div class="filterbar" style="margin:.9rem 0 .6rem">
           <button class="chip ${!precisa ? "active" : ""}" data-lead-modalita="rapida">Ricerca rapida</button>
@@ -426,6 +427,10 @@
                 <input type="checkbox" id="ld-qualita" ${R.soloQualita ? "checked" : ""}>
                 <span>Solo attività con valutazione ≥ 3,5 e almeno 5 recensioni</span>
               </label>
+              <label class="checkline" style="margin-top:.5rem">
+                <input type="checkbox" id="ld-email" ${R.soloConEmail ? "checked" : ""}>
+                <span>Solo con email pubblica <em class="muted" style="font-style:normal">— pronti per il mail marketing</em></span>
+              </label>
             </div>
           </div>
 
@@ -466,6 +471,7 @@
               <span>${esc(x.indirizzo || "—")}</span>
               <span class="lead-meta">
                 ${x.telefono ? `📞 ${esc(x.telefono)}` : `<span class="muted">senza telefono</span>`}
+                ${x.email ? ` · ✉️ ${esc(x.email)}` : ""}
                 ${x.sito ? ` · 🌐 <a href="${esc(x.sito)}" target="_blank" rel="noopener">sito</a>` : ""}
                 ${x.valutazione ? ` · ⭐ ${x.valutazione} (${x.recensioni})` : ""}
                 ${x.tipo_google ? ` · ${esc(x.tipo_google)}` : ""}
@@ -1103,6 +1109,8 @@
       if (raggio) R.raggio = Number(raggio);
       const q = document.querySelector("#ld-qualita");
       if (q) R.soloQualita = q.checked;
+      const em = document.querySelector("#ld-email");
+      if (em) R.soloConEmail = em.checked;
     }
 
     $("#lead-form")?.addEventListener("submit", async e => {
@@ -1115,7 +1123,8 @@
         modalita: R.modalita,
         zona: R.campi.zona, via: R.campi.via, citta: R.campi.citta,
         provincia: R.campi.provincia, cap: R.campi.cap,
-        categorie: R.categorie, raggio: R.raggio, soloQualita: R.soloQualita
+        categorie: R.categorie, raggio: R.raggio, soloQualita: R.soloQualita,
+        soloConEmail: R.soloConEmail
       });
       R.inCorso = false;
       if (esito.ok) { R.esito = esito; R.errore = null; }
