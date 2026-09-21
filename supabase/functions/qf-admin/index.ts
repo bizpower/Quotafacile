@@ -5,14 +5,9 @@
 // chiave arriva nell'intestazione x-qf-admin e viene confrontata
 // lato server. Nel sito e nel repository non compare mai.
 //
-// Due modi di configurarla, in quest'ordine:
-//  1. il segreto QF_ADMIN_TOKEN del progetto Supabase — la via
-//     preferita, perché la chiave non tocca il database;
-//  2. l'impronta SHA-256 conservata in impostazioni_admin —
-//     ripiego che permette alla console di funzionare senza
-//     passaggi manuali nel pannello.
-// Se manca anche quella, ogni azione viene rifiutata: meglio una
-// console inattiva che una aperta a chiunque.
+// Si configura in un posto solo: l'impronta SHA-256 conservata
+// in impostazioni_admin. Se manca, ogni azione viene rifiutata:
+// meglio una console inattiva che una aperta a chiunque.
 // ============================================================
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -60,9 +55,24 @@ function uguali(a: string, b: string): boolean {
 // per richiesta.
 let improntaDb: string | null | undefined;
 
+// La chiave sta in un posto solo: l'impronta in impostazioni_admin.
+//
+// Prima ce n'erano due, e il segreto QF_ADMIN_TOKEN vinceva sul
+// database. Sembrava prudente - la chiave non tocca il database -
+// ma nella pratica creava una situazione in cui nessuno sapeva
+// piu' quale delle due fosse attiva: cambiare l'impronta non
+// aveva alcun effetto finche' il segreto esisteva, e il segreto
+// non e' leggibile da nessuna schermata dell'applicazione.
+//
+// Una sola fonte, quindi. Nel database resta comunque soltanto
+// l'impronta SHA-256: la frase non e' conservata da nessuna
+// parte e non e' recuperabile. Per cambiarla:
+//
+//   update impostazioni_admin
+//      set token_hash = encode(digest('nuova-frase','sha256'),'hex'),
+//          aggiornato_il = now()
+//    where id = 1;
 async function improntaAttesa(): Promise<string | null> {
-  const segreto = Deno.env.get("QF_ADMIN_TOKEN");
-  if (segreto) return await impronta(segreto);
   if (improntaDb === undefined) {
     const { data } = await db.from("impostazioni_admin")
       .select("token_hash").eq("id", 1).maybeSingle();

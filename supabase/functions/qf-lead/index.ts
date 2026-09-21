@@ -5,10 +5,21 @@
 // Google: Geocoding per trasformare un indirizzo in coordinate,
 // Places (New) per trovare le attività in un raggio.
 //
-// NIENTE SCRAPING. Non è prudenza formale: raccogliere dati
-// d'impresa da fonti ufficiali, conservandone la provenienza, è
-// ciò che tiene la raccolta dentro il perimetro del legittimo
-// interesse. Prenderli raschiando pagine altrui, no.
+// L'ANAGRAFICA VIENE DALLE API UFFICIALI, NON DA PAGINE RASCHIATE.
+// Non è prudenza formale: raccogliere dati d'impresa da fonti
+// ufficiali, conservandone la provenienza, è ciò che tiene la
+// raccolta dentro il perimetro del legittimo interesse.
+//
+// C'è una sola eccezione, ed è dichiarata: l'email. Google non la
+// restituisce, e quando l'operatore la chiede esplicitamente
+// viene letta sul sito che l'attività pubblica da sé — una delle
+// tre fonti già elencate nell'informativa alle imprese. Si apre
+// la homepage e al massimo due pagine di contatti, con un tetto
+// di tempo e di byte e presentandosi con un User-Agent che
+// rimanda all'informativa. Leggere la pagina dei contatti di
+// un'azienda non è scandagliare un sito, e deve restare tale:
+// l'email salvata porta con sé email_fonte, così la scheda può
+// dire da dove viene.
 //
 // LA CHIAVE GOOGLE STA SOLO QUI
 // Mai nella pagina. Una chiave Places in un file JavaScript è
@@ -61,9 +72,24 @@ function uguali(a: string, b: string): boolean {
 
 let improntaDb: string | null | undefined;
 
+// La chiave sta in un posto solo: l'impronta in impostazioni_admin.
+//
+// Prima ce n'erano due, e il segreto QF_ADMIN_TOKEN vinceva sul
+// database. Sembrava prudente - la chiave non tocca il database -
+// ma nella pratica creava una situazione in cui nessuno sapeva
+// piu' quale delle due fosse attiva: cambiare l'impronta non
+// aveva alcun effetto finche' il segreto esisteva, e il segreto
+// non e' leggibile da nessuna schermata dell'applicazione.
+//
+// Una sola fonte, quindi. Nel database resta comunque soltanto
+// l'impronta SHA-256: la frase non e' conservata da nessuna
+// parte e non e' recuperabile. Per cambiarla:
+//
+//   update impostazioni_admin
+//      set token_hash = encode(digest('nuova-frase','sha256'),'hex'),
+//          aggiornato_il = now()
+//    where id = 1;
 async function improntaAttesa(): Promise<string | null> {
-  const segreto = Deno.env.get("QF_ADMIN_TOKEN");
-  if (segreto) return await impronta(segreto);
   if (improntaDb === undefined) {
     const { data } = await db.from("impostazioni_admin")
       .select("token_hash").eq("id", 1).maybeSingle();
@@ -195,6 +221,132 @@ const componente = (p: Record<string, unknown>, tipo: string) => {
   return (c?.shortText as string | undefined) ?? (c?.longText as string | undefined) ?? null;
 };
 
+// ---------------- L'email pubblica ----------------
+//
+// Google Places non restituisce indirizzi email, e non e' una
+// dimenticanza: non fanno parte della scheda. L'unica fonte
+// lecita e' il sito che l'attivita' pubblica da se', dove il
+// recapito e' scritto proprio per essere usato.
+//
+// E' anche una delle tre fonti gia' dichiarate nell'informativa
+// alle imprese ("Dal tuo sito o da un registro pubblico, quando
+// l'indirizzo email e' pubblicato per essere contattati"), quindi
+// qui non si sta aprendo una strada nuova: si sta rendendo
+// concreta una che era gia' prevista. Per questo il lead salva
+// anche email_fonte: la scheda deve poter dire da dove viene.
+//
+// Cosa NON fa, deliberatamente: non scandaglia il sito. Apre la
+// homepage e al massimo due pagine di contatti, con un tetto di
+// tempo e di byte. Leggere la pagina dei contatti di un'azienda
+// non e' una scansione del sito, ed e' bene che resti tale.
+
+const RE_EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}/g;
+
+// Caselle che non sono un contatto commerciale, segnaposto dei
+// temi grafici, e "indirizzi" che in realta' sono nomi di file
+// (logo@2x.png e' la trappola piu' comune).
+const NON_CONTATTI = /^(no-?reply|donotreply|postmaster|abuse|mailer-daemon|webmaster|hostmaster|nome|tuonome|esempio|example|email|indirizzo|user|utente)$/i;
+const DOMINI_FINTI = /(example\.(com|org|net|it)|dominio\.|tuosito|tuodominio|wixpress\.com|sentry\.io|schema\.org|w3\.org|godaddy|squarespace)/i;
+const PARE_UN_FILE = /\.(png|jpe?g|gif|webp|svg|ico|css|js|woff2?|ttf)$/i;
+
+const PAGINE_CONTATTI = ["/", "/contatti", "/contatti.html", "/contact", "/chi-siamo"];
+
+async function scaricaTesto(url: string, ms = 6000): Promise<string> {
+  const stop = new AbortController();
+  const t = setTimeout(() => stop.abort(), ms);
+  try {
+    const r = await fetch(url, {
+      signal: stop.signal,
+      redirect: "follow",
+      headers: {
+        // Ci si presenta. Chi vuole escluderci puo' farlo, ed e'
+        // giusto che possa: l'indirizzo rimanda all'informativa.
+        "User-Agent": "QuotaFacileBot/1.0 (+https://www.quotafacile.net/privacy-imprese/)",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+    });
+    if (!r.ok) return "";
+    if (!/text\/html|text\/plain/i.test(r.headers.get("content-type") ?? "")) return "";
+    const buf = await r.arrayBuffer();
+    // trecento kilobyte bastano: oltre c'e' solo il corpo della
+    // pagina, non i contatti
+    return new TextDecoder("utf-8", { fatal: false }).decode(buf.slice(0, 300_000));
+  } catch (_e) {
+    return "";
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// info@ e contatti@ valgono piu' di una casella personale trovata
+// in fondo a una pagina: sono quelle pubblicate per essere usate,
+// e scrivere alla casella generica e' anche piu' corretto.
+function preferito(lista: string[]): string {
+  for (const p of ["info@", "contatti@", "contatto@", "commerciale@", "amministrazione@", "segreteria@", "direzione@"]) {
+    const t = lista.find((e) => e.startsWith(p));
+    if (t) return t;
+  }
+  return lista[0];
+}
+
+function emailDa(html: string, dominio: string | null): string | null {
+  const grezzi = new Set<string>();
+  // I mailto: valgono piu' del testo libero: sono un contatto
+  // dichiarato, non una stringa che somiglia a un indirizzo.
+  for (const m of html.matchAll(/mailto:([^"'?>\s]+)/gi)) {
+    try { grezzi.add(decodeURIComponent(m[1])); } catch (_e) { grezzi.add(m[1]); }
+  }
+  for (const m of html.matchAll(RE_EMAIL)) grezzi.add(m[0]);
+
+  const buone = [...grezzi]
+    .map((e) => e.trim().toLowerCase().replace(/^[.,;:<>()]+|[.,;:<>()]+$/g, ""))
+    .filter((e) => e.length <= 120 && (e.match(/@/g) ?? []).length === 1)
+    .filter((e) => !PARE_UN_FILE.test(e))
+    .filter((e) => !DOMINI_FINTI.test(e))
+    .filter((e) => !NON_CONTATTI.test(e.split("@")[0]));
+
+  if (!buone.length) return null;
+  if (dominio) {
+    const propri = buone.filter((e) => e.split("@")[1] === dominio || e.split("@")[1]?.endsWith("." + dominio));
+    if (propri.length) return preferito(propri);
+  }
+  return preferito(buone);
+}
+
+async function emailDelSito(sito: string): Promise<string | null> {
+  let base: URL;
+  try { base = new URL(sito); } catch (_e) { return null; }
+  if (base.protocol !== "http:" && base.protocol !== "https:") return null;
+  const dominio = base.hostname.replace(/^www\./, "");
+
+  let aperte = 0;
+  for (const p of PAGINE_CONTATTI) {
+    if (aperte >= 3) break;
+    aperte++;
+    const html = await scaricaTesto(new URL(p, base).toString());
+    if (!html) continue;
+    const e = emailDa(html, dominio);
+    if (e) return e;
+  }
+  return null;
+}
+
+// Sei alla volta: abbastanza per non far aspettare mezzo minuto,
+// poco per non sembrare un attacco a nessuno.
+async function aggiungiEmail(righe: Record<string, unknown>[], paralleli = 6) {
+  const coda = righe.filter((r) => r.sito);
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(paralleli, coda.length) }, async () => {
+      while (i < coda.length) {
+        const r = coda[i++];
+        const e = await emailDelSito(String(r.sito));
+        if (e) { r.email = e; r.email_fonte = "sito_web"; }
+      }
+    }),
+  );
+}
+
 async function cerca(d: Record<string, unknown>) {
   const categorie = Array.isArray(d.categorie)
     ? d.categorie.map(String).filter((c) => CATEGORIE[c]).slice(0, 4)
@@ -254,16 +406,35 @@ async function cerca(d: Record<string, unknown>) {
     }
   }
 
+  // L'email pubblica, solo se richiesta. Aprire il sito di ogni
+  // risultato costa secondi, e non serve a chi sta esplorando una
+  // zona per capire chi c'è: serve a chi sta preparando una lista
+  // per il mail marketing, e a quello servono solo i contatti che
+  // può davvero usare. Per questo è una scelta e non un
+  // comportamento predefinito.
+  let righe = [...trovate.values()];
+  if (d.soloConEmail === true) {
+    await aggiungiEmail(righe);
+    const prima = righe.length;
+    righe = righe.filter((r) => r.email);
+    const scartate = prima - righe.length;
+    if (scartate > 0) {
+      avvisi.push(
+        `${scartate} attività su ${prima} sono state escluse: sul loro sito non risulta un indirizzo email pubblicato.`,
+      );
+    }
+  }
+
   // Quali sono già in archivio: mostrarlo evita di riproporre
   // come nuovo un contatto che qualcuno sta già lavorando.
-  const ids = [...trovate.keys()];
+  const ids = righe.map((r) => r.place_id as string);
   const { data: gia } = ids.length
     ? await db.from("crm_lead").select("place_id").in("place_id", ids)
     : { data: [] };
   const giaPresenti = new Set((gia ?? []).map((x: { place_id: string }) => x.place_id));
 
   return {
-    risultati: [...trovate.values()].map((r) => ({ ...r, gia: giaPresenti.has(r.place_id as string) })),
+    risultati: righe.map((r) => ({ ...r, gia: giaPresenti.has(r.place_id as string) })),
     centro: { lat: centro.lat, lng: centro.lng, indirizzo: centro.indirizzoTrovato },
     query: indirizzo,
     avvisi,
@@ -293,6 +464,11 @@ async function salva(d: Record<string, unknown>) {
     lng: r.lng ?? null,
     fonte: "google_places",
     query_origine: query,
+    // L'email non viene da Google: quando c'è, è stata letta sul
+    // sito dell'attività. La scheda deve dirlo.
+    email: testo(r.email, 200),
+    email_fonte: r.email ? "sito_web" : null,
+    email_trovata_il: r.email ? new Date().toISOString() : null,
   }));
 
   // ignoreDuplicates: chi è già in archivio resta com'è, con la
