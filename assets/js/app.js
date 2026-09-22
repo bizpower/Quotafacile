@@ -1272,36 +1272,111 @@ const magMinuti = html => Math.max(1, Math.round(
    Se l'indirizzo non ha la forma attesa non si inventa niente e
    si torna stringa vuota: meglio nessun srcset che un srcset che
    punta a indirizzi che non esistono. */
+const MAG_LARGHEZZE = [320, 480, 768, 1120, 1600];
+
 const magSrcset = url => {
   const u = String(url || "");
   if (!/\/upload\/[^/]*w_\d+/.test(u)) return "";
-  return [400, 800, 1200]
+  return MAG_LARGHEZZE
     .map(w => u.replace(/(\/upload\/[^/]*?)w_\d+/, "$1w_" + w) + " " + w + "w")
     .join(", ");
 };
 
-function magSchedaHtml(a, grande) {
+/* Quanto spazio occuperà davvero l'immagine, per ogni larghezza di
+   finestra. Senza questa riga il browser assume 100vw e scarica il
+   file più grande anche per una scheda da 210 punti: è la
+   differenza fra una copertina nitida e mezzo megabyte sprecato.
+   I valori seguono i punti di rottura della griglia nel CSS: se si
+   cambiano là, vanno cambiati qui. */
+const MAG_SIZES_SCHEDA =
+  "(min-width: 1180px) 210px, (min-width: 992px) 22vw, (min-width: 768px) 30vw, (min-width: 520px) 45vw, 90vw";
+const MAG_SIZES_APERTURA = "(min-width: 1180px) 1120px, 92vw";
+
+const magCoverHtml = (a, classe, sizes, priorita) =>
+  a.cover_url
+    ? `<img class="${classe}" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
+            srcset="${esc(magSrcset(a.cover_url))}" sizes="${esc(sizes)}"
+            width="1200" height="675" decoding="async"
+            ${priorita ? 'fetchpriority="high"' : 'loading="lazy"'}>`
+    : `<span class="${classe} mag-card-vuota" aria-hidden="true"></span>`;
+
+const magTempo = a => a.pubblicato_il
+  ? `<time datetime="${esc(String(a.pubblicato_il).slice(0, 10))}">${esc(magData(a.pubblicato_il))}</time>`
+  : "";
+
+/* L'apertura di un articolo può essere lunga: nella scheda si
+   taglia a una lunghezza che non manda a capo la griglia. Il
+   taglio è sull'ultima parola intera, non a metà sillaba. */
+const magStringa = (s, max) => {
+  const t = String(s || "").trim();
+  if (t.length <= max) return t;
+  return t.slice(0, t.lastIndexOf(" ", max) > 0 ? t.lastIndexOf(" ", max) : max).trim() + "…";
+};
+
+/* La scheda non è più un <a> che avvolge tutto: dentro doveva
+   starci il bottone «Leggi tutto l'articolo», e un link dentro un
+   link non è HTML valido — il browser lo sfascia e la tastiera ci
+   si perde.
+
+   Quindi il link è uno solo, sul titolo, e si allarga su tutta la
+   scheda con un ::after. Chi naviga a tastiera o con uno screen
+   reader sente un collegamento per scheda, e il suo nome è il
+   titolo dell'articolo: cinque link chiamati tutti «Leggi tutto
+   l'articolo» sarebbero cinque voci identiche in un elenco di
+   collegamenti. Per questo il bottone è decorativo. */
+function magSchedaHtml(a, livello) {
   const cat = magCategoria(a);
+  const h = livello === 2 ? "h2" : "h3";
   return `
-  <a class="mag-card ${grande ? "mag-card-grande" : ""} ${a.tipo === "pillar" ? "mag-card-pillar" : ""}"
-     href="#/magazine/${esc(a.slug)}">
-    ${a.cover_url ? `
-      <img class="mag-card-cover" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
-           srcset="${esc(magSrcset(a.cover_url))}"
-           sizes="(max-width: 700px) 100vw, 380px"
-           width="1200" height="675"
-           loading="lazy" decoding="async">` : `<span class="mag-card-cover mag-card-vuota" aria-hidden="true"></span>`}
-    <span class="mag-card-corpo">
-      <span class="mag-card-meta">
+  <article class="mag-card ${a.tipo === "pillar" ? "mag-card-pillar" : ""}">
+    ${magCoverHtml(a, "mag-card-cover", MAG_SIZES_SCHEDA, false)}
+    <div class="mag-card-corpo">
+      <div class="mag-card-meta">
         ${a.tipo === "pillar" ? `<span class="mag-pillar-tag">Guida completa</span>` : ""}
         ${cat ? `<span class="mag-card-cat">${esc(cat)}</span>` : ""}
-        <span>${esc(magData(a.pubblicato_il))}</span>
-      </span>
-      <span class="mag-card-titolo">${esc(a.titolo)}</span>
-      ${a.apertura ? `<span class="mag-card-apertura">${esc(a.apertura)}</span>` : ""}
-    </span>
-  </a>`;
+      </div>
+      <${h} class="mag-card-titolo">
+        <a class="mag-card-link" href="#/magazine/${esc(a.slug)}">${esc(a.titolo)}</a>
+      </${h}>
+      ${a.apertura ? `<p class="mag-card-apertura">${esc(magStringa(a.apertura, 120))}</p>` : ""}
+      <div class="mag-card-piede">
+        ${magTempo(a)}
+        <span class="mag-card-cta" aria-hidden="true">Leggi tutto l'articolo</span>
+      </div>
+    </div>
+  </article>`;
 }
+
+/* L'articolo più recente in apertura. È la prima cosa che si vede
+   e l'unica immagine sopra la piega, quindi la sua copertina si
+   carica con priorità invece che pigramente: è quella che decide
+   quanto la pagina *sembra* veloce. */
+function magAperturaHtml(a) {
+  const cat = magCategoria(a);
+  return `
+  <article class="mag-apertura">
+    ${magCoverHtml(a, "mag-apertura-cover", MAG_SIZES_APERTURA, true)}
+    <div class="mag-apertura-testo">
+      <div class="mag-card-meta">
+        <span class="mag-apertura-tag">Ultimo pubblicato</span>
+        ${a.tipo === "pillar" ? `<span class="mag-pillar-tag">Guida completa</span>` : ""}
+        ${cat ? `<span class="mag-card-cat">${esc(cat)}</span>` : ""}
+      </div>
+      <h2 class="mag-apertura-titolo">${esc(a.titolo)}</h2>
+      ${a.apertura ? `<p class="mag-apertura-occhiello">${esc(magStringa(a.apertura, 260))}</p>` : ""}
+      <div class="mag-apertura-piede">
+        <span class="mag-apertura-firma">${esc(a.firma || "Redazione QuotaFacile")} · ${magTempo(a)}</span>
+        <a class="btn btn-primary" href="#/magazine/${esc(a.slug)}">Leggi tutto l'articolo</a>
+      </div>
+    </div>
+  </article>`;
+}
+
+/* Le categorie selezionate. Vive fuori dalla vista perché render()
+   ricostruisce l'HTML da capo a ogni giro: una variabile dentro la
+   funzione si azzererebbe al primo clic. Vuoto = tutte, che è
+   anche lo stato che il pre-render salva nell'HTML pubblicato. */
+let magFiltro = [];
 
 views.magazine = () => {
   const m = MAG();
@@ -1327,9 +1402,26 @@ views.magazine = () => {
           "@type": "ItemList",
           "itemListOrder": "https://schema.org/ItemListOrderDescending",
           "numberOfItems": arts.length,
+          /* Ogni voce porta con sé copertina e descrizione, non
+             solo titolo e indirizzo: è quello che un motore
+             generativo legge per decidere se citare l'articolo
+             senza doverlo aprire. La descrizione è quella vera
+             dell'articolo, mai inventata qui. */
           "itemListElement": arts.slice(0, 30).map((a, i) => ({
             "@type": "ListItem", "position": i + 1,
-            "url": urlArticolo(a), "name": a.titolo
+            "url": urlArticolo(a),
+            "item": {
+              "@type": "BlogPosting",
+              "@id": urlArticolo(a) + "#articolo",
+              "headline": a.titolo,
+              "url": urlArticolo(a),
+              ...(a.meta_description || a.apertura
+                ? { "description": a.meta_description || a.apertura } : {}),
+              ...(a.cover_url ? { "image": a.cover_url } : {}),
+              ...(a.pubblicato_il ? { "datePublished": a.pubblicato_il } : {}),
+              ...(magCategoria(a) ? { "articleSection": magCategoria(a) } : {}),
+              "isPartOf": { "@id": SITO() + "magazine/#blog" }
+            }
           }))
         },
         breadcrumbJsonLd([
@@ -1342,8 +1434,27 @@ views.magazine = () => {
     setJsonLd(null);
   }
 
-  const pillar = arts.filter(a => a.tipo === "pillar");
-  const resto = arts.filter(a => a.tipo !== "pillar");
+  /* Si filtra solo su categorie che esistono davvero: se una
+     categoria viene rinominata o tolta mentre qualcuno ha la
+     pagina aperta, il filtro si svuota da solo invece di mostrare
+     un elenco vuoto senza spiegazione. */
+  const cats = (m ? m.stato.categorie : [])
+    .filter(c => arts.some(a => a.categoria_id === c.id));
+  const attivi = magFiltro.filter(id => cats.some(c => c.id === id));
+  const scelti = attivi.length
+    ? arts.filter(a => attivi.includes(a.categoria_id))
+    : arts;
+
+  /* L'apertura è l'ultimo pubblicato fra quelli che passano il
+     filtro, e non compare due volte: sotto c'è tutto il resto. */
+  const apertura = scelti[0] || null;
+  const restanti = apertura ? scelti.slice(1) : [];
+  const pillar = restanti.filter(a => a.tipo === "pillar");
+  const resto = restanti.filter(a => a.tipo !== "pillar");
+
+  const chip = (id, testo, acceso) => `
+    <button type="button" class="mag-chip ${acceso ? "acceso" : ""}"
+            data-magcat="${esc(id)}" aria-pressed="${acceso ? "true" : "false"}">${esc(testo)}</button>`;
 
   return `
   <section class="section">
@@ -1367,15 +1478,31 @@ views.magazine = () => {
           già pubblicate e una domanda nuova ogni giorno.</p>
         </div>`
       : `
-        ${pillar.length ? `
-          <div class="mag-griglia mag-griglia-pillar">
-            ${pillar.map(a => magSchedaHtml(a, true)).join("")}
+        ${cats.length > 1 ? `
+          <div class="mag-filtri">
+            <h2 class="mag-filtri-titolo" id="mag-categorie">Scegli le categorie</h2>
+            <div class="mag-chips" role="group" aria-labelledby="mag-categorie">
+              ${chip("", "Tutte", attivi.length === 0)}
+              ${cats.map(c => chip(c.id, c.nome, attivi.includes(c.id))).join("")}
+            </div>
           </div>` : ""}
-        ${resto.length ? `
-          <h2 class="mag-sezione-titolo">Approfondimenti</h2>
-          <div class="mag-griglia">
-            ${resto.map(a => magSchedaHtml(a, false)).join("")}
-          </div>` : ""}`}
+
+        ${scelti.length === 0 ? `
+          <div class="card"><p class="muted">Nessun articolo in questa categoria.
+          <button type="button" class="link-btn" data-magcat="">Mostra tutti</button></p></div>`
+        : `
+          ${apertura ? magAperturaHtml(apertura) : ""}
+
+          ${pillar.length ? `
+            <h2 class="mag-sezione-titolo">Guide complete</h2>
+            <div class="mag-griglia">
+              ${pillar.map(a => magSchedaHtml(a, 3)).join("")}
+            </div>` : ""}
+          ${resto.length ? `
+            <h2 class="mag-sezione-titolo">Approfondimenti</h2>
+            <div class="mag-griglia">
+              ${resto.map(a => magSchedaHtml(a, 3)).join("")}
+            </div>` : ""}`}`}
     </div>
   </section>`;
 };
@@ -1569,7 +1696,7 @@ views.magazineArticolo = (slug) => {
       ${fratelli.length ? `
         <nav class="mag-correlati" aria-label="Articoli collegati">
           <h2 class="mag-sezione-titolo">${padre ? "Altri approfondimenti della stessa guida" : "Approfondimenti collegati"}</h2>
-          <div class="mag-griglia">${fratelli.map(x => magSchedaHtml(x, false)).join("")}</div>
+          <div class="mag-griglia">${fratelli.map(x => magSchedaHtml(x, 3)).join("")}</div>
         </nav>` : ""}
     </div>
   </article>`;
@@ -2283,6 +2410,18 @@ function bind() {
     b.addEventListener("click", () => { boardFilter = b.dataset.boardfilter; render(); }));
   document.querySelectorAll("[data-protab]").forEach(b =>
     b.addEventListener("click", () => { proTab = b.dataset.protab; render(); }));
+
+  /* Categorie del Magazine: si sommano invece di sostituirsi —
+     «Auto» e «Imprese» insieme mostrano entrambe. Il pulsante
+     senza valore è «Tutte» e azzera. */
+  document.querySelectorAll("[data-magcat]").forEach(b =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.magcat;
+      if (!id) magFiltro = [];
+      else if (magFiltro.includes(id)) magFiltro = magFiltro.filter(x => x !== id);
+      else magFiltro = magFiltro.concat(id);
+      render();
+    }));
 
   /* preventivo: scelte e step */
   document.querySelectorAll("[data-tipo]").forEach(b =>

@@ -1369,11 +1369,69 @@ a.chip { display: inline-block; text-decoration: none; }
 
 /* ---------- Magazine (pubblico) ---------- */
 
-.mag-griglia {
-  display: grid; gap: 1.1rem; margin-bottom: 2.2rem;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+/* ----- il filtro per categoria ----- */
+
+.mag-filtri { margin-bottom: 1.6rem; }
+.mag-filtri-titolo {
+  font-family: var(--font-display); font-size: 1rem; font-weight: 700;
+  margin: 0 0 .6rem; color: var(--green-800);
 }
-.mag-griglia-pillar { grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
+.mag-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+.mag-chip {
+  font: inherit; font-size: .82rem; font-weight: 600;
+  padding: .35rem .85rem; border-radius: 999px; cursor: pointer;
+  background: var(--card); color: var(--green-800);
+  border: 1px solid var(--line);
+  transition: background .18s var(--ease), border-color .18s var(--ease), color .18s var(--ease);
+}
+.mag-chip:hover { border-color: var(--green-600); }
+.mag-chip.acceso { background: var(--green-800); border-color: var(--green-800); color: #fff; }
+
+/* ----- l'articolo in apertura ----- */
+
+.mag-apertura {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: stretch; gap: 0; margin-bottom: 2.4rem;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+.mag-apertura-cover { display: block; width: 100%; height: 100%; min-height: 15rem; object-fit: cover; }
+.mag-apertura-testo {
+  display: flex; flex-direction: column; gap: .7rem;
+  padding: 1.8rem 1.9rem; justify-content: center;
+}
+.mag-apertura-tag {
+  background: var(--green-800); color: #fff;
+  padding: .12rem .55rem; border-radius: 999px; font-weight: 700;
+}
+.mag-apertura-titolo {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.5rem, 2.6vw, 2.1rem); line-height: 1.15;
+  margin: 0; text-wrap: balance;
+}
+.mag-apertura-occhiello { font-size: .95rem; line-height: 1.55; color: var(--ink-soft); margin: 0; }
+.mag-apertura-piede {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: .8rem; margin-top: .4rem;
+}
+.mag-apertura-firma { font-size: .8rem; color: var(--ink-soft); }
+
+@media (max-width: 800px) {
+  .mag-apertura { grid-template-columns: 1fr; }
+  .mag-apertura-cover { aspect-ratio: 16 / 9; height: auto; min-height: 0; }
+  .mag-apertura-testo { padding: 1.3rem 1.2rem 1.5rem; }
+}
+
+/* ----- la griglia: cinque per riga, e scende a gradini ----- */
+
+.mag-griglia {
+  display: grid; gap: 1rem; margin-bottom: 2.2rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media (max-width: 1180px) { .mag-griglia { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 992px)  { .mag-griglia { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 768px)  { .mag-griglia { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px)  { .mag-griglia { grid-template-columns: 1fr; } }
 
 .mag-sezione-titolo {
   font-size: 1.15rem; font-weight: 700; margin: 0 0 .9rem;
@@ -1381,41 +1439,83 @@ a.chip { display: inline-block; text-decoration: none; }
 }
 
 .mag-card {
+  position: relative;
   display: flex; flex-direction: column;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-  overflow: hidden; text-decoration: none; color: inherit;
+  overflow: hidden; color: inherit;
   transition: border-color .2s var(--ease), transform .2s var(--ease), box-shadow .2s var(--ease);
 }
 .mag-card:hover { border-color: var(--green-600); transform: translateY(-2px); box-shadow: var(--shadow-med); }
-/* Il fuoco si vede sulla scheda intera, non sul testo dentro:
-   è la scheda che si sta per aprire. */
-.mag-card:focus-visible { outline: 3px solid var(--green-600); outline-offset: 2px; }
 
-.mag-card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+/* Il link sta sul titolo ma si allarga su tutta la scheda: un
+   solo collegamento nell'albero di accessibilità, e il suo nome è
+   il titolo dell'articolo. Il fuoco però si disegna sulla scheda
+   intera, perché è quella che si sta per aprire. */
+.mag-card-link { color: inherit; text-decoration: none; }
+.mag-card-link::after { content: ""; position: absolute; inset: 0; }
+.mag-card:has(.mag-card-link:focus-visible) { outline: 3px solid var(--green-600); outline-offset: 2px; }
+.mag-card-link:focus-visible { outline: none; }
+
+/* height:auto e flex:none non sono decorazioni.
+
+   L'immagine porta width="1200" height="675", che servono al
+   browser per riservare lo spazio prima di scaricarla — senza, la
+   pagina sobbalza quando arriva. Ma dentro un contenitore flex in
+   colonna quell'altezza diventa la dimensione di base dell'
+   elemento, e vince sull'aspect-ratio: la copertina veniva alta
+   675px dentro una scheda larga 211. Con height:auto l'altezza
+   torna a dipendere dalla proporzione, e flex:none impedisce al
+   flex di ricalcolarla per conto suo. */
+.mag-card-cover {
+  display: block; width: 100%; height: auto; flex: none;
+  aspect-ratio: 16 / 9; object-fit: cover;
+  background: var(--bg);
+}
 .mag-card-vuota { background: linear-gradient(135deg, var(--green-50), var(--gold-100)); }
-.mag-card-grande .mag-card-cover { aspect-ratio: 21 / 9; }
 
-.mag-card-corpo { display: flex; flex-direction: column; gap: .4rem; padding: 1rem 1.1rem 1.2rem; }
+.mag-card-corpo {
+  display: flex; flex-direction: column; gap: .4rem;
+  padding: .75rem .8rem .85rem; flex: 1;
+}
 .mag-card-meta {
-  display: flex; flex-wrap: wrap; align-items: center; gap: .45rem;
-  font-size: .74rem; color: var(--ink-soft);
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
+  font-size: .68rem; color: var(--ink-soft);
 }
 .mag-card-cat {
   background: var(--green-50); color: var(--green-800);
-  padding: .1rem .5rem; border-radius: 999px; font-weight: 600;
+  padding: .08rem .45rem; border-radius: 999px; font-weight: 600;
 }
 .mag-pillar-tag {
   background: var(--gold-100); color: #8A5F11;
-  padding: .1rem .5rem; border-radius: 999px; font-weight: 700;
+  padding: .08rem .45rem; border-radius: 999px; font-weight: 700;
 }
 .mag-card-titolo {
-  font-family: var(--font-display); font-weight: 700; font-size: 1.05rem;
-  line-height: 1.25; text-wrap: balance;
+  font-family: var(--font-display); font-weight: 700; font-size: .95rem;
+  line-height: 1.25; margin: 0; text-wrap: balance;
 }
-.mag-card-grande .mag-card-titolo { font-size: 1.3rem; }
 .mag-card:hover .mag-card-titolo { color: var(--green-800); }
-.mag-card-apertura { font-size: .88rem; line-height: 1.5; color: var(--ink-soft); }
+.mag-card-apertura {
+  font-size: .8rem; line-height: 1.45; color: var(--ink-soft); margin: 0;
+  /* Tre righe al massimo: in una griglia da cinque, una scheda più
+     alta delle altre sfalsa la riga intera. */
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.mag-card-piede {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem;
+  justify-content: space-between; margin-top: auto; padding-top: .5rem;
+  font-size: .7rem; color: var(--ink-soft);
+}
+.mag-card-cta {
+  font-weight: 700; color: var(--green-800); white-space: nowrap;
+}
+.mag-card-cta::after { content: " →"; }
+.mag-card:hover .mag-card-cta { text-decoration: underline; text-underline-offset: .2em; }
 .mag-card-pillar { border-left: 3px solid var(--gold-500); }
+
+.link-btn {
+  font: inherit; background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--green-800); font-weight: 600; text-decoration: underline;
+}
 
 /* ----- la pagina di un articolo ----- */
 
@@ -1515,9 +1615,10 @@ a.chip { display: inline-block; text-decoration: none; }
 
 .mag-correlati { margin-top: 2.8rem; }
 
-@media (max-width: 560px) {
-  .mag-griglia, .mag-griglia-pillar { grid-template-columns: 1fr; }
-}
+/* I punti di rottura della griglia stanno tutti insieme più
+   sopra, accanto alla griglia stessa: averne un altro quaggiù
+   voleva dire due posti da tenere d'accordo, e infatti dichiarava
+   ancora una classe che non esiste più. */
 
 /* Il rimando al pillar in testa a un cluster: si legge prima del
    testo, perché serve a chi è arrivato qui da una ricerca stretta
