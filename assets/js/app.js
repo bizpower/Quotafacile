@@ -3002,6 +3002,53 @@ window.QF = {
 
 window.addEventListener("hashchange", render);
 
+/* L'intestazione che si ritrae scorrendo in giù.
+
+   Tre cose che sembrano dettagli e non lo sono:
+
+   - la soglia. Senza, l'intestazione sfarfalla a ogni micro
+     movimento del dito, e il rimbalzo di iOS a fine pagina la fa
+     sparire e riapparire da sola;
+   - il ritorno immediato appena si scorre in su. Se tornasse solo
+     in cima alla pagina, per cambiare sezione bisognerebbe
+     risalire tutto;
+   - non si ritrae mai nei primi 80 punti, perché lassù non sta
+     rubando spazio a nessuno.
+
+   Il calcolo sta dentro requestAnimationFrame: leggere scrollY a
+   ogni evento di scorrimento significa chiedere al browser di
+   ricalcolare il layout decine di volte al secondo. */
+(() => {
+  const barra = document.querySelector(".topbar");
+  if (!barra) return;
+
+  let ultimo = window.scrollY;
+  let inCoda = false;
+
+  const valuta = () => {
+    inCoda = false;
+    const y = Math.max(0, window.scrollY);
+    const delta = y - ultimo;
+    if (Math.abs(delta) < 6) return;
+    /* In cima si mostra sempre; più giù comanda la direzione. */
+    barra.classList.toggle("ritratta", y > 80 && delta > 0);
+    ultimo = y;
+  };
+
+  window.addEventListener("scroll", () => {
+    if (inCoda) return;
+    inCoda = true;
+    requestAnimationFrame(valuta);
+  }, { passive: true });
+
+  /* Cambiando schermata l'intestazione deve esserci: si arriva in
+     cima alla pagina nuova, ed è il momento in cui serve di più. */
+  window.addEventListener("hashchange", () => {
+    barra.classList.remove("ritratta");
+    ultimo = 0;
+  });
+})();
+
 /* Il link "salta al contenuto" punta a #app, che per un browser
    senza JavaScript è esattamente il salto giusto. Ma qui il
    frammento è il router: lasciarlo passare vorrebbe dire chiedere

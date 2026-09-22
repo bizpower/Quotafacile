@@ -476,11 +476,11 @@ a.chip { display: inline-block; text-decoration: none; }
 @media (max-width: 760px) {
   .topnav, .topbar-cta .btn-ghost { display: none; }
   .tabbar { display: flex; }
-  body { padding-bottom: 76px; }
+  body { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
   .footer { padding-bottom: 7rem; }
   .form-grid { grid-template-columns: 1fr; }
   .section { padding: 3rem 0; }
-  .toast { bottom: 108px; }
+  .toast { bottom: calc(108px + env(safe-area-inset-bottom)); }
 }
 
 /* ============================================================
@@ -1696,3 +1696,107 @@ a.chip { display: inline-block; text-decoration: none; }
   font-size: .9rem; margin: 0 0 1.6rem;
 }
 .mag-da-pillar a { color: #8A5F11; font-weight: 600; }
+
+/* ============================================================
+   RIFINITURA PER TELEFONO
+   ------------------------------------------------------------
+   Il sito era già responsive: le colonne scendevano, la tab bar
+   compariva. Quello che mancava è la differenza fra "si legge" e
+   "si usa con il pollice".
+   ============================================================ */
+
+/* ---------- 1. Niente scroll laterale ----------
+   Una colonna di griglia ha min-width:auto, quindi non si
+   stringe sotto la larghezza minima del suo contenuto: un modulo
+   in riga o una parola lunga allargano la colonna oltre lo
+   schermo, e la pagina scorre di lato. Su una griglia a colonna
+   singola quel comportamento non serve mai.
+
+   Si sistema la causa invece di mettere overflow-x:hidden sul
+   body: nascondere lo scroll non toglie il contenuto da fuori
+   schermo, lo rende solo irraggiungibile. */
+@media (max-width: 960px) {
+  .appsoon > *, .hero-inner > *, .grid-2 > *, .grid-3 > *,
+  .form-grid > *, .piani-griglia > *, .board-layout > *, .pro-layout > * { min-width: 0; }
+}
+
+@media (max-width: 560px) {
+  /* Il modulo dell'avviso app: input e bottone in riga non si
+     stringono sotto una certa misura, e quella misura era più
+     larga dello schermo. A capo. */
+  .notify-form { flex-wrap: wrap; }
+  .notify-form .btn { width: 100%; }
+  .store-badges { gap: .5rem; }
+  .store-badge { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ---------- 2. Bersagli da toccare ----------
+   44 punti è la misura sotto la quale un dito sbaglia. Vale per
+   i comandi — bottoni, filtri, voci della tab bar — non per i
+   link dentro un paragrafo: allargare quelli spezzerebbe le
+   righe del testo senza rendere niente più facile. */
+@media (max-width: 760px) {
+  .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .btn-sm { min-height: 40px; }
+  .chip { min-height: 40px; display: inline-flex; align-items: center; }
+  .mag-chip { min-height: 40px; }
+  .tabbar a { min-height: 52px; justify-content: center; }
+  /* La ✕ che chiude una finestra è un comando come gli altri, e
+     stava a 24 punti: su un banner che copre mezzo schermo è
+     proprio quella che si deve poter centrare al primo colpo. */
+  .cc-x { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+  /* 16px non è una scelta estetica: sotto quella misura iOS
+     ingrandisce la pagina da solo quando si tocca un campo, e da
+     lì non torna indietro da sé — si resta con il sito zoomato e
+     la colonna tagliata a metà.
+
+     I campi sono elencati per classe e non solo come elementi
+     perché ognuna di queste regole li rimpiccioliva: .field li
+     mette a 15,2 punti, il calcolatore a 14,4. Una regola sul
+     solo elemento perderebbe contro tutte. */
+  input, select, textarea,
+  .field input, .field select, .field textarea,
+  .calc-riga input, .notify-form input, .mm-mittente select,
+  .mag-slug-riga input {
+    min-height: 44px; font-size: 16px;
+  }
+  textarea, .field textarea { min-height: 96px; }
+  .filterbar { gap: .45rem; }
+}
+
+/* ---------- 3. Il notch e la barra di sistema ---------- */
+.topbar { padding-top: env(safe-area-inset-top); }
+@media (max-width: 760px) {
+  .container { width: min(1120px, 100% - 2rem); }
+  .cc-overlay { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+}
+
+/* ---------- 4. L'intestazione si ritrae ----------
+   Su uno schermo alto 844 punti, 64 di intestazione fissa sono
+   l'8% dello spazio occupato da qualcosa che serve solo quando
+   si vuole cambiare pagina. Scorrendo in giù si toglie di mezzo,
+   scorrendo in su torna: è il gesto che ci si aspetta. */
+@media (max-width: 760px) {
+  .topbar { transition: transform .25s var(--ease); will-change: transform; }
+  .topbar.ritratta { transform: translateY(-100%); }
+}
+
+/* ---------- 5. Il passaggio fra le schermate ----------
+   Un'applicazione non sostituisce la pagina di colpo. Basta una
+   dissolvenza breve perché il cambio si legga come un passaggio
+   invece che come un salto.
+
+   Chi ha chiesto meno animazioni al sistema operativo non la
+   vede: prefers-reduced-motion non è una preferenza estetica,
+   per qualcuno è quello che evita la nausea. */
+@media (max-width: 760px) {
+  .app-main > * { animation: entra .22s var(--ease) both; }
+}
+@keyframes entra {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-main > *, .rise, .rise-2, .rise-3 { animation: none; }
+  .topbar { transition: none; }
+}
