@@ -1370,6 +1370,70 @@ a.chip { display: inline-block; text-decoration: none; }
 
 .mag-bottoni { display: flex; flex-direction: column; gap: .5rem; }
 
+/* ---------- Piani e calcolatore (professionisti) ---------- */
+
+.piani-griglia {
+  display: grid; gap: 1rem; align-items: start;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 1080px) { .piani-griglia { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px)  { .piani-griglia { grid-template-columns: 1fr; } }
+
+.piano {
+  position: relative; display: flex; flex-direction: column; height: 100%;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.3rem 1.2rem 1.2rem;
+}
+/* Il piano consigliato si distingue con il bordo e un nastro, non
+   ingrandendosi: una scheda più alta delle altre rompe la riga e
+   costringe a leggere in diagonale. */
+.piano-consigliato { border: 2px solid var(--green-600); box-shadow: var(--shadow-med); }
+.piano-nastro {
+  position: absolute; top: -.7rem; left: 1.2rem;
+  background: var(--green-800); color: #fff; font-size: .68rem; font-weight: 700;
+  padding: .2rem .6rem; border-radius: 999px; letter-spacing: .03em;
+}
+.piano-enterprise { border-left: 3px solid var(--gold-500); }
+
+.piano-nome {
+  font-family: var(--font-display); font-size: 1.15rem; margin: 0 0 .3rem;
+}
+.piano-prezzo { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; margin: 0 0 .6rem; }
+.piano-prezzo strong { font-size: 1.9rem; font-family: var(--font-display); line-height: 1; }
+.piano-prezzo span { font-size: .75rem; color: var(--ink-soft); }
+.piano-sommario { font-size: .86rem; color: var(--ink-soft); margin: 0 0 .8rem; line-height: 1.5; }
+
+.piano-voci { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .45rem; }
+.piano-voci li {
+  position: relative; padding-left: 1.4rem; font-size: .85rem; line-height: 1.45;
+}
+.piano-voci li::before {
+  content: "✓"; position: absolute; left: 0; top: 0;
+  color: var(--green-600); font-weight: 700;
+}
+.piano-btn { margin-top: auto; width: 100%; text-align: center; justify-content: center; }
+
+.calc-riga {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem;
+  margin: 1rem 0 .8rem; padding: .8rem 1rem;
+  background: var(--bg); border-radius: 10px;
+}
+.calc-riga label { font-size: .78rem; font-weight: 600; color: var(--ink-soft); }
+.calc-riga input {
+  width: 7rem; padding: .35rem .5rem; font: inherit; font-size: .9rem;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+  font-variant-numeric: tabular-nums;
+}
+
+.calc-tabella { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.calc-tabella th {
+  text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--ink-soft); padding: .5rem .6rem; border-bottom: 1px solid var(--line);
+}
+.calc-tabella td { padding: .55rem .6rem; border-bottom: 1px solid var(--line); }
+.calc-tabella tr:last-child td { border-bottom: 0; }
+.calc-tabella .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 /* ---------- Magazine (pubblico) ---------- */
 
 /* ----- il filtro per categoria ----- */
