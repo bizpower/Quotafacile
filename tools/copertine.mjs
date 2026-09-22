@@ -112,6 +112,27 @@ const DISEGNI = {
       <path d="M250 60 a58 58 0 0 1 0 116 Z" fill="${V.oro}"/>
       <path d="M250 60 a58 58 0 0 0 0 116 Z" fill="${V.salvia}"/>
     </g>`,
+  monopattino: `
+    <g transform="translate(40,150)">
+      <path d="M60 200 L110 200 M40 250 L100 250" stroke="${V.salvia}" stroke-width="9" stroke-linecap="round" opacity=".7"/>
+      <rect x="130" y="248" width="220" height="20" rx="10" fill="${V.chiaro}"/>
+      <circle cx="152" cy="302" r="32" fill="none" stroke="${V.chiaro}" stroke-width="13"/>
+      <circle cx="336" cy="302" r="32" fill="none" stroke="${V.chiaro}" stroke-width="13"/>
+      <path d="M336 268 L356 118" stroke="${V.chiaro}" stroke-width="14" stroke-linecap="round"/>
+      <path d="M310 112 L406 112" stroke="${V.chiaro}" stroke-width="14" stroke-linecap="round"/>
+      <rect x="126" y="184" width="82" height="50" rx="11" fill="${V.oro}"/>
+    </g>`,
+  risparmio: `
+    <g transform="translate(40,140)">
+      ${[0, 1, 2, 3].map(i => {
+        const h = 240 - i * 54;
+        return `<rect x="${58 + i * 90}" y="${330 - h}" width="64" height="${h}" rx="10"
+                      fill="${i === 3 ? V.oro : V.chiaro}" opacity="${i === 3 ? 1 : 0.5 + i * 0.16}"/>`;
+      }).join("")}
+      <rect x="44" y="342" width="400" height="10" rx="5" fill="${V.salvia}"/>
+      <path d="M452 120 L452 256 M452 256 L428 224 M452 256 L476 224"
+            stroke="${V.salvia}" stroke-width="11" fill="none" stroke-linecap="round"/>
+    </g>`,
   neopatentati: `
     <g transform="translate(40,140)">
       ${[0,1,2,3].map(i => `<rect x="${40+i*30}" y="${400-i*62}" width="${340-i*30}" height="20" rx="10" fill="${V.salvia}" opacity="${0.32+i*0.2}"/>`).join("")}
@@ -159,6 +180,8 @@ export const COPERTINE = [
   { id: "attestato-di-rischio",  eyebrow: "Auto",      titolo: "Attestato<br>di rischio",         disegno: "attestato" },
   { id: "concorso-di-colpa",     eyebrow: "Auto",      titolo: "Concorso<br>di colpa",            disegno: "colpa" },
   { id: "neopatentati",          eyebrow: "Auto",      titolo: "Neopatentati",                    disegno: "neopatentati" },
+  { id: "monopattino",           eyebrow: "Auto",      titolo: "Monopattino<br>elettrico",        disegno: "monopattino" },
+  { id: "risparmio-auto",        eyebrow: "Auto",      titolo: "Risparmiare<br>sulla polizza",    disegno: "risparmio" },
 ];
 
 // La cartella di destinazione è accanto a questo file e non alla
