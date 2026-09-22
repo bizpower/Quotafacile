@@ -350,12 +350,44 @@
     in_trattativa: "🟠 In trattativa", cliente: "🟢 Cliente", scartato: "⚪ Scartato"
   };
 
+  /* ---- Regioni, province e comuni ----
+     L'elenco sta in assets/data/comuni.json (lo rigenera
+     tools/comuni.mjs dai dati ISTAT) ed è 190 KB: troppi per
+     farli scaricare a chi apre il CRM per guardare la
+     produzione. Si caricano quando servono davvero, cioè la
+     prima volta che si apre la ricerca precisa, e una volta
+     sola. Se non arrivano, i campi tornano a essere di testo
+     libero invece di lasciare tre tendine vuote. */
+  const geo = { dati: null, inCorso: false, fallita: false };
+
+  function caricaGeo() {
+    if (geo.dati || geo.inCorso || geo.fallita) return;
+    geo.inCorso = true;
+    fetch((QF().base || "/") + "assets/data/comuni.json")
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+      .then(d => { geo.dati = d; })
+      .catch(() => { geo.fallita = true; })
+      .finally(() => { geo.inCorso = false; QF().render(); });
+  }
+
+  /* La provincia è la chiave di tutto: la sigla è quella che il
+     server riceve, ed è anche quella con cui si trovano i comuni.
+     La regione serve solo ad accorciare la tendina delle
+     province, quindi se manca non blocca niente. */
+  const provinceDi = regione => {
+    if (!geo.dati) return [];
+    if (regione && geo.dati.regioni[regione]) return geo.dati.regioni[regione];
+    return Object.keys(geo.dati.province)
+      .sort((a, b) => geo.dati.province[a].nome.localeCompare(geo.dati.province[b].nome, "it"));
+  };
+  const comuniDi = sigla => (geo.dati && geo.dati.comuni[sigla]) || [];
+
   /* Stato della ricerca. Vive solo finché la scheda è aperta: i
      risultati non salvati non sono un archivio, sono una lista
      della spesa. */
   const ricerca = {
     modalita: "rapida",
-    campi: { zona: "", via: "", citta: "Milano", provincia: "MI", cap: "" },
+    campi: { zona: "", via: "", citta: "Milano", provincia: "MI", cap: "", regione: "Lombardia" },
     categorie: ["ristorazione"],
     raggio: 2000,
     soloQualita: true,
@@ -366,6 +398,86 @@
     scelti: new Set(),
     filtroStato: "tutti"
   };
+
+  /* I tre menu a tendina della ricerca precisa.
+
+     Prima erano campi di testo, e il testo libero qui è una
+     trappola silenziosa: «Reggio Emilia» invece di «Reggio
+     nell'Emilia», o una sigla di provincia che non esiste,
+     centrano la ricerca da un'altra parte senza dire niente. Si
+     scopre dai risultati sbagliati, quando si è già consumata una
+     chiamata a Google.
+
+     Regione → Provincia → Comune: ogni tendina restringe la
+     successiva, così la terza ha al massimo trecento voci invece
+     di ottomila. La regione è facoltativa e serve solo a
+     accorciare l'elenco delle province. */
+  function zoneHtml(R) {
+    if (geo.fallita) {
+      return `
+        <div class="legal-warning" style="margin-bottom:.7rem">
+          L'elenco dei comuni non si è caricato: i campi qui sotto restano liberi.
+          Scrivi il nome del comune come lo scrive l'anagrafe.
+        </div>
+        <div class="grid-2" style="gap:.6rem">
+          <div class="field"><label for="ld-citta">Città *</label>
+            <input id="ld-citta" required value="${esc(R.campi.citta)}" placeholder="Milano"></div>
+          <div class="field"><label for="ld-prov">Provincia</label>
+            <input id="ld-prov" maxlength="2" value="${esc(R.campi.provincia)}" placeholder="MI"
+                   style="text-transform:uppercase"></div>
+        </div>
+        <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
+          <div class="field"><label for="ld-via">Via e civico</label>
+            <input id="ld-via" value="${esc(R.campi.via)}" placeholder="Corso Lodi 10"></div>
+          <div class="field"><label for="ld-cap">CAP</label>
+            <input id="ld-cap" value="${esc(R.campi.cap)}" placeholder="20139"></div>
+        </div>`;
+    }
+
+    if (!geo.dati) {
+      return `<p class="muted" style="margin:.4rem 0 .8rem">Carico l'elenco dei comuni…</p>`;
+    }
+
+    const prov = provinceDi(R.campi.regione);
+    const sigla = prov.includes(R.campi.provincia) ? R.campi.provincia : (prov[0] || "");
+    const elenco = comuniDi(sigla);
+    const citta = elenco.some(c => c[0] === R.campi.citta) ? R.campi.citta : (elenco[0] ? elenco[0][0] : "");
+    /* Il CAP mostrato: quello scritto a mano se c'è, altrimenti
+       quello del comune selezionato quando ne ha uno solo. Si
+       calcola qui e non si scrive nello stato, perché questa
+       funzione disegna e basta. */
+    const capMostrato = R.campi.cap || (elenco.find(c => c[0] === citta) || [])[1] || "";
+
+    return `
+      <div class="grid-3" style="gap:.6rem">
+        <div class="field"><label for="ld-regione">Regione</label>
+          <select id="ld-regione">
+            <option value="">Tutte le regioni</option>
+            ${Object.keys(geo.dati.regioni).map(r =>
+              `<option value="${esc(r)}" ${R.campi.regione === r ? "selected" : ""}>${esc(r)}</option>`).join("")}
+          </select></div>
+        <div class="field"><label for="ld-prov">Provincia *</label>
+          <select id="ld-prov" required>
+            ${prov.map(s =>
+              `<option value="${esc(s)}" ${sigla === s ? "selected" : ""}>${esc(geo.dati.province[s].nome)} (${esc(s)})</option>`).join("")}
+          </select></div>
+        <div class="field"><label for="ld-citta">Comune *</label>
+          <select id="ld-citta" required>
+            ${elenco.map(([n]) =>
+              `<option value="${esc(n)}" ${citta === n ? "selected" : ""}>${esc(n)}</option>`).join("")}
+          </select>
+          <p class="privacy-hint">${elenco.length} comuni in questa provincia. Scrivi le prime lettere per arrivarci.</p>
+        </div>
+      </div>
+      <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
+        <div class="field"><label for="ld-via">Via e civico <span class="muted">(facoltativo)</span></label>
+          <input id="ld-via" value="${esc(R.campi.via)}" placeholder="Corso Lodi 10"></div>
+        <div class="field"><label for="ld-cap">CAP <span class="muted">(facoltativo)</span></label>
+          <input id="ld-cap" inputmode="numeric" maxlength="5" value="${esc(capMostrato)}" placeholder="20139">
+          <p class="privacy-hint">Si compila da solo per i comuni che ne hanno uno solo; per le città grandi scegli tu la zona.</p>
+        </div>
+      </div>`;
+  }
 
   function leadView() {
     const salvati = D().lead || [];
@@ -388,21 +500,7 @@
         </div>
 
         <form id="lead-form">
-          ${precisa ? `
-            <div class="grid-2" style="gap:.6rem">
-              <div class="field"><label for="ld-via">Via e civico</label>
-                <input id="ld-via" value="${esc(R.campi.via)}" placeholder="Corso Lodi 10"></div>
-              <div class="field"><label for="ld-cap">CAP</label>
-                <input id="ld-cap" value="${esc(R.campi.cap)}" placeholder="20139"></div>
-            </div>
-            <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
-              <div class="field"><label for="ld-citta">Città *</label>
-                <input id="ld-citta" required value="${esc(R.campi.citta)}" placeholder="Milano"></div>
-              <div class="field"><label for="ld-prov">Provincia</label>
-                <input id="ld-prov" maxlength="2" value="${esc(R.campi.provincia)}" placeholder="MI"
-                       style="text-transform:uppercase"></div>
-            </div>`
-          : `
+          ${precisa ? zoneHtml(R) : `
             <div class="field"><label for="ld-zona">Zona *</label>
               <input id="ld-zona" required value="${esc(R.campi.zona)}" placeholder="Opera, Milano — oppure un CAP, un quartiere, una via">
               <p class="privacy-hint">Più è precisa la zona, più i risultati sono nel posto giusto: «Milano» centra il cerchio in Duomo.</p>
@@ -1078,8 +1176,60 @@
       b.addEventListener("click", () => {
         leggiCampiRicerca();
         R.modalita = b.dataset.leadModalita;
+        if (R.modalita === "precisa") caricaGeo();
         QF().render();
       }));
+
+    /* La ricerca precisa può essere già aperta quando la sezione
+       viene ridisegnata per un altro motivo: l'elenco va chiesto
+       anche qui, e caricaGeo() sa già di non ripetersi. */
+    if (R.modalita === "precisa") caricaGeo();
+
+    /* Le tre tendine sono a cascata: cambiare regione svuota la
+       provincia scelta se non le appartiene piu', e cambiare
+       provincia svuota il comune. Il valore vecchio non si
+       "ripulisce": si lascia che zoneHtml ricada sul primo
+       elemento valido, cosi' il modulo non resta mai in uno stato
+       che il server rifiuterebbe.
+
+       Si agganciano solo quando le tendine ci sono davvero: se
+       l'elenco dei comuni non si e' caricato gli stessi
+       identificativi appartengono a campi di testo, e un gestore
+       che azzera il comune a ogni uscita dal campo cancellerebbe
+       quello che si sta scrivendo. */
+    if (geo.dati && R.modalita === "precisa") {
+      $("#ld-regione")?.addEventListener("change", e => {
+        leggiCampiRicerca();
+        R.campi.regione = e.target.value;
+        const prov = provinceDi(R.campi.regione);
+        if (!prov.includes(R.campi.provincia)) {
+          R.campi.provincia = prov[0] || "";
+          R.campi.citta = "";
+          R.campi.cap = "";
+        }
+        QF().render();
+      });
+
+      $("#ld-prov")?.addEventListener("change", e => {
+        leggiCampiRicerca();
+        R.campi.provincia = e.target.value;
+        R.campi.citta = "";
+        R.campi.cap = "";
+        QF().render();
+      });
+
+      /* Scegliendo il comune si compila il CAP, ma solo se quel
+         comune ne ha uno solo: Milano ne ha decine e sceglierne
+         uno a caso vorrebbe dire centrare la ricerca su un
+         quartiere qualunque senza che nessuno se ne accorga. */
+      $("#ld-citta")?.addEventListener("change", e => {
+        leggiCampiRicerca();
+        R.campi.citta = e.target.value;
+        const trovato = comuniDi(R.campi.provincia).find(c => c[0] === R.campi.citta);
+        R.campi.cap = trovato && trovato[1] ? trovato[1] : "";
+        QF().render();
+      });
+    }
 
     document.querySelectorAll("[data-lead-cat]").forEach(b =>
       b.addEventListener("click", () => {
@@ -1102,6 +1252,7 @@
         R.campi.cap = g("#ld-cap") ?? R.campi.cap;
         R.campi.citta = g("#ld-citta") ?? R.campi.citta;
         R.campi.provincia = (g("#ld-prov") ?? R.campi.provincia).toUpperCase();
+        R.campi.regione = g("#ld-regione") ?? R.campi.regione;
       } else {
         R.campi.zona = g("#ld-zona") ?? R.campi.zona;
       }

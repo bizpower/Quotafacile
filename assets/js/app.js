@@ -2663,6 +2663,12 @@ window.QF = {
   saveDB, render, toast, esc, initials, livello, qpass, broker,
   staffFaqs, publishedDaily, dailyPublishedCount, getFaqById,
   contaRisposte, sincronizzaBrokers, campo, DA_COMPILARE, ruiLabel,
+  /* La radice del sito. Serve a chi carica un file da assets/ e
+     non può scrivere un percorso assoluto: in locale il sito sta
+     in "/", su GitHub Pages può stare sotto una sottocartella, e
+     un "/assets/..." scritto a mano funzionerebbe solo in uno dei
+     due posti. */
+  base: BASE_SITO,
   /* Serve a chi deve parlare con l'area riservata prima che il
      router ci arrivi: l'uscita dall'Area Pro di un collaboratore
      la rimanda lì, e senza aspettare il caricamento parlerebbe a
