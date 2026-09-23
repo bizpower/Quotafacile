@@ -2714,6 +2714,22 @@ function bind() {
   /* ---- pagina professionisti ---- */
   $("[data-apri-enterprise]")?.addEventListener("click", apriEnterprise);
 
+  /* Le file di sezioni che su telefono scorrono di lato devono
+     aprirsi mostrando dov'è che ci si trova. Senza questo,
+     entrando nel CRM su "Produzione" la striscia parte da
+     "Panoramica" e la voce attiva è fuori schermo: si vede una
+     fila di sezioni e nessuna sembra selezionata.
+
+     Solo se serve davvero: se la fila ci sta tutta, spostarla
+     sarebbe un movimento senza motivo. */
+  document.querySelectorAll(".filterbar, .mm-voci").forEach(fila => {
+    if (fila.scrollWidth <= fila.clientWidth + 2) return;
+    const attiva = fila.querySelector(".active, .attiva, [aria-selected='true']");
+    if (!attiva) return;
+    const centro = attiva.offsetLeft - (fila.clientWidth - attiva.offsetWidth) / 2;
+    fila.scrollTo({ left: Math.max(0, centro), behavior: "instant" });
+  });
+
   /* Il calcolatore dei contatti. Ricalcola le stesse righe che il
      pre-render ha già scritto nell'HTML: chi arriva senza
      JavaScript — un crawler, per esempio — vede comunque numeri

@@ -642,6 +642,21 @@ a.chip { display: inline-block; text-decoration: none; }
    ============================================================ */
 .admin-shell { background: var(--bg); }
 .admin-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.4rem; flex-wrap: wrap; }
+/* Spazio fra l'occhiello e il titolo, per via dell'anello di
+   fuoco.
+
+   A ogni cambio di rotta il fuoco va sull'h1: serve a chi naviga
+   da tastiera o con uno screen reader per sapere dov'e' finito.
+   L'anello pero' sporge di cinque punti sopra il titolo, e con
+   line-height 1.08 il titolo e' incollato alla riga di sopra: il
+   risultato era una riga che sembrava barrata sopra
+   "AMMINISTRAZIONE SOCIETA'".
+
+   L'occhiello e' uno <span> in linea, quindi non aveva margini
+   propri. Diventa un blocco con un po' di spazio sotto: si
+   risolve li', senza toccare il fuoco - che e' corretto - ne' il
+   line-height di tutti i titoli del sito. */
+.admin-top .eyebrow { display: block; margin-bottom: .4rem; }
 .admin-hint { font-size: .88rem; line-height: 1.6; color: var(--ink-soft); background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--green-600); border-radius: var(--radius); padding: .9rem 1.1rem; margin: 0 0 1.2rem; }
 .admin-hint a { text-decoration: underline; }
 .notif { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 .3rem; border-radius: 999px; background: var(--danger); color: #fff; font-size: .68rem; font-weight: 700; margin-left: .25rem; }
@@ -1799,4 +1814,118 @@ a.chip { display: inline-block; text-decoration: none; }
 @media (prefers-reduced-motion: reduce) {
   .app-main > *, .rise, .rise-2, .rise-3 { animation: none; }
   .topbar { transition: none; }
+}
+
+/* ============================================================
+   AREA RISERVATA DA TELEFONO
+   ------------------------------------------------------------
+   Nessuna delle schermate sbordava: il problema era un altro, e
+   si vede solo misurandolo. Nel CRM la fila delle sezioni
+   occupava quattro righe e 380 punti prima di qualunque
+   contenuto — il 45% di uno schermo da 844 speso per scegliere
+   dove andare. Nel Mail Marketing il menu di undici voci ne
+   prendeva quasi 500.
+
+   La risposta e' sempre la stessa: una fila che scorre di lato
+   invece di andare a capo. E' il modo in cui le applicazioni
+   risolvono questo problema da anni, e costa una riga di
+   contenuto invece di cinque.
+   ============================================================ */
+
+@media (max-width: 760px) {
+
+  /* ---------- Le file di sezioni scorrono ----------
+     Il margine negativo fa arrivare la striscia ai bordi dello
+     schermo: serve a far capire che continua, altrimenti
+     sembra tagliata. La barra di scorrimento si nasconde perche'
+     su telefono non si usa comunque, e occupa spazio verticale. */
+  .filterbar, .lead-categorie {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .filterbar::-webkit-scrollbar, .lead-categorie::-webkit-scrollbar { display: none; }
+  .filterbar > *, .lead-categorie > * { flex: 0 0 auto; scroll-snap-align: start; }
+
+  /* La sezione aperta resta visibile anche se sta a meta' della
+     striscia: senza, aprendo il CRM su "Produzione" la fila
+     parte da "Panoramica" e non si capisce dove si e'. */
+  .filterbar .chip.active, .filterbar .chip[aria-selected="true"] { scroll-snap-align: center; }
+
+  /* ---------- L'intestazione della console ----------
+     Titolo, occhiello, link di ritorno e bottone "Aggiorna"
+     occupavano 150 punti. Su telefono il titolo e' piu' piccolo e
+     il bottone sta sulla stessa riga. */
+  .admin-top { flex-wrap: wrap; gap: .4rem; align-items: center; }
+  .admin-top h1 { font-size: 1.35rem !important; }
+  .admin-top .eyebrow { font-size: .62rem; }
+  .crm-indietro { margin-bottom: .1rem; }
+
+  /* ---------- Le tabelle chiave-valore ----------
+     Due colonne con l'etichetta a larghezza fissa di 8,5rem
+     lasciano al valore meno di metà schermo: un indirizzo email
+     ci va a capo tre volte. Etichetta sopra, valore sotto. */
+  .admin-kv, .admin-kv tbody, .admin-kv tr, .admin-kv th, .admin-kv td { display: block; width: auto; }
+  .admin-kv tr { padding: .45rem 0; border-bottom: 1px solid var(--line); }
+  .admin-kv tr:last-child { border-bottom: 0; }
+  .admin-kv th { width: auto; padding: 0 0 .1rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+  .admin-kv td { padding: 0; word-break: break-word; }
+
+  /* ---------- Le righe di lavorazione ----------
+     Nome a sinistra e comandi a destra su 390 punti vuol dire
+     due colonne da 160: i menu a tendina diventano illeggibili.
+     I comandi vanno sotto, a tutta larghezza. */
+  .lead-scheda { grid-template-columns: 1fr; gap: .5rem; }
+  .lead-lavorazione { flex-wrap: wrap; gap: .4rem; }
+  .lead-lavorazione select { flex: 1 1 100%; }
+  .admin-actions .btn { flex: 1 1 auto; }
+
+  /* ---------- Mail Marketing ----------
+     Undici voci in colonna sono mezzo schermo. Diventano una
+     striscia orizzontale come le altre, e il menu perde la
+     posizione appiccicata: su telefono non serve, ruba solo
+     spazio quando si scorre. */
+  /* La striscia orizzontale va contenuta, o allarga la griglia
+     che la ospita invece di scorrere: .mm-shell e' una griglia e
+     le sue colonne hanno min-width:auto, quindi si adattano alla
+     larghezza del contenuto - 1428 punti di voci in fila. Lo
+     stesso difetto della home, in un altro punto. */
+  .mm-shell, .mm-shell > * { min-width: 0; }
+  .mm-menu, .mm-menu.ridotta { position: static; padding: .5rem; min-width: 0; }
+  .mm-voci {
+    flex-direction: row; flex-wrap: nowrap;
+    overflow-x: auto; scroll-snap-type: x proximity;
+    margin-inline: -.5rem; padding-inline: .5rem;
+    scrollbar-width: none;
+  }
+  .mm-voci::-webkit-scrollbar { display: none; }
+  .mm-voce { flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap; }
+  .mm-voce.attiva { scroll-snap-align: center; }
+  .mm-menu-testa { margin-bottom: .35rem; }
+
+  /* ---------- I riquadri dei numeri ----------
+     Quattro per riga diventano due: quattro su 390 punti danno
+     colonne da 85, e un numero a quattro cifre non ci sta. */
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+  .kpi-tile { padding: .7rem .8rem; }
+  .kpi-tile strong { font-size: 1.4rem; }
+
+  /* ---------- L'editor del Magazine ----------
+     Scrivere cinquemila parole da telefono non e' una cosa che
+     succede, e fingere che si possa non aiuta nessuno. Quello
+     che ha senso da telefono e' rileggere e correggere: il corpo
+     resta modificabile ma parte piu' basso, e la colonna di
+     destra va sotto invece di stringersi a 150 punti. */
+  .mag-editor { grid-template-columns: 1fr; }
+  .mag-fianco { order: 2; }
+  .mag-colonna { order: 1; }
+  #mag-corpo { min-height: 18rem; }
+  .mag-barra { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .mag-barra::-webkit-scrollbar { display: none; }
+  .mag-barra-b { flex: 0 0 auto; min-height: 40px; }
 }
