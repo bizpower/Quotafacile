@@ -169,7 +169,10 @@ function dailyFaq(i) {
     { autore: "qf", testo: src.rispostaAuto, voti: DB.autoVotes[id] || 0, accettata: true, auto: true },
     ...(window.QFBacheca?.risposteDi(id, true) || [])
   ];
-  return { id, daily: true, num: i + 1, cat: src.cat, keyword: src.keyword, autore: "qf", data: d.toISOString().slice(0, 10), domanda: src.domanda, risposte };
+  /* Lo slug ce l'hanno solo le domande scritte a mano: le altre
+     nascono da quattro modelli e non meritano un indirizzo
+     proprio. Restano leggibili qui dentro, fuori dall'indice. */
+  return { id, daily: true, num: i + 1, cat: src.cat, keyword: src.keyword, slug: src.slug || null, curata: !!src.curata, autore: "qf", data: d.toISOString().slice(0, 10), domanda: src.domanda, risposte };
 }
 function publishedDaily() {
   const n = dailyPublishedCount();
@@ -252,6 +255,26 @@ function getFaqById(id) {
   if (/^q/.test(id)) return domandeCommunity().find(x => x.id === id) || null;
   return DB.faqs.find(x => x.id === id) || null;
 }
+/* Le domande che hanno un indirizzo pubblico, per il pre-render
+   e per la sitemap.
+
+   La regola sta qui e non nello script del deploy: chi ha uno
+   slug e chi no è una decisione sola — le domande scritte a mano
+   e quelle degli utenti che hanno ricevuto una risposta — e
+   duplicarla in due posti vuol dire tenerne allineate due. È la
+   stessa scelta già fatta per le guide e per il Magazine. */
+function domandeIndicizzabili() {
+  const migliore = f => f.risposte.find(r => r.accettata) || f.risposte[0];
+  return [...publishedDaily(), ...domandeCommunity()]
+    .filter(f => f.slug && f.risposte.length)
+    .map(f => ({
+      id: f.id,
+      slug: f.slug,
+      titolo: f.domanda,
+      meta: String(migliore(f)?.testo || "").slice(0, 155).replace(/\s+\S*$/, "")
+    }));
+}
+
 function hoursToNextDaily() {
   const next = new Date(new Date(DAILY_EPOCH + "T00:00:00").getTime() + (dayIndex() + 1) * 86400000);
   return Math.max(1, Math.ceil((next - Date.now()) / 3600000));
@@ -343,7 +366,7 @@ function indirizzoPubblico(page, path) {
   }
   if (page === "faq") {
     const f = getFaqById(path && path[1]);
-    if (f && f.slug) return "guide/" + f.slug + "/";
+    if (f && f.slug) return percorsoDomanda(f);
     return null;
   }
   const v = INDIRIZZI[page];
@@ -545,7 +568,18 @@ const SITO = () => location.origin + BASE_SITO;
    Deve coincidere con il canonical: se il grafo dichiara un URL
    e il canonical un altro, Google ha due risposte alla stessa
    domanda e ne sceglie una da sé. */
-const urlGuida = f => SITO() + (f && f.slug ? "guide/" + f.slug + "/" : "bacheca/");
+/* Le guide della redazione stanno sotto /guide/, le domande
+   sotto /bacheca/. Non è cosmesi: sono due cose diverse — una
+   guida è un testo che scriviamo noi, una domanda è di chi l'ha
+   posta e la risposta di chi l'ha firmata — e tenerle in due
+   rami dice a un motore quale dei due sta leggendo prima ancora
+   di aprire la pagina.
+
+   Senza slug non c'è indirizzo pubblico: la pagina esiste dentro
+   l'applicazione ma dichiara noindex, e qui si ricade
+   sull'elenco. */
+const percorsoDomanda = f => f && f.slug ? (f.staff ? "guide/" : "bacheca/") + f.slug + "/" : "bacheca/";
+const urlGuida = f => SITO() + percorsoDomanda(f);
 
 /* Identità dell'editore: dichiarata una volta e richiamata per
    riferimento da tutti gli altri nodi del grafo. */
@@ -623,6 +657,119 @@ function faqJsonLd(faqs) {
             }
           };
         })
+      }
+    ]
+  };
+}
+
+/* Chi firma una risposta, in forma di dato strutturato. */
+function autoreJsonLd(best) {
+  const base = SITO();
+  const a = best ? autoreDi(best) : null;
+  if (!a || a.auto) {
+    return { "@type": "Organization", "name": "Redazione QuotaFacile", "@id": base + "#org" };
+  }
+  const p = { "@type": "Person", "name": a.nome, "jobTitle": a.ruolo };
+  if (a.azienda && !DA_COMPILARE(a.azienda)) p.worksFor = { "@type": "Organization", "name": a.azienda };
+  /* Il numero RUI e' cio' che rende verificabile chi risponde:
+     identifier lo dichiara come identificativo rilasciato da un
+     registro pubblico, non come una stringa qualunque. */
+  if (a.rui && !DA_COMPILARE(a.rui)) {
+    p.identifier = {
+      "@type": "PropertyValue",
+      "propertyID": "Registro Unico degli Intermediari assicurativi (IVASS)",
+      "value": a.rui
+    };
+  }
+  return p;
+}
+
+/* QAPage, non FAQPage.
+   Sono due tipi per due cose diverse, e finora la bacheca usava
+   il secondo per entrambe. FAQPage descrive una pagina in cui e'
+   il sito a scrivere sia la domanda sia la risposta - una guida,
+   appunto. QAPage descrive una domanda posta da qualcuno a cui
+   rispondono altri, con una risposta accettata ed eventuali
+   altre proposte: e' esattamente la bacheca.
+   Non e' pignoleria: da settembre 2023 Google mostra i risultati
+   arricchiti di FAQPage quasi solo a siti governativi e sanitari,
+   mentre quelli di QAPage restano attivi per i siti di domande e
+   risposte. Dichiarare il tipo sbagliato vuol dire rinunciarvi. */
+function qaPageJsonLd(f) {
+  const base = SITO();
+  const url = urlGuida(f);
+  const best = f.risposte.find(r => r.accettata) || f.risposte[0];
+  const altre = f.risposte.filter(r => r !== best);
+
+  const risposta = r => ({
+    "@type": "Answer",
+    "text": r.testo,
+    "url": url,
+    "datePublished": f.data,
+    "upvoteCount": r.voti || 0,
+    "author": autoreJsonLd(r)
+  });
+
+  const domanda = {
+    "@type": "Question",
+    "@id": url + "#domanda",
+    "name": f.domanda,
+    "text": f.domanda,
+    "answerCount": f.risposte.length,
+    "datePublished": f.data,
+    "author": f.daily || f.staff
+      ? { "@type": "Organization", "name": "Redazione QuotaFacile", "@id": base + "#org" }
+      /* Chi scrive in bacheca non lascia un nome, e inventarne uno
+         sarebbe una firma falsa su un contenuto pubblico. */
+      : { "@type": "Person", "name": "Utente QuotaFacile" }
+  };
+  if (best) domanda.acceptedAnswer = risposta(best);
+  if (altre.length) domanda.suggestedAnswer = altre.map(risposta);
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      editoreJsonLd(),
+      {
+        "@type": "QAPage",
+        "@id": url + "#pagina",
+        "inLanguage": "it-IT",
+        "isPartOf": { "@id": base + "#org" },
+        "publisher": { "@id": base + "#org" },
+        "mainEntity": domanda
+      }
+    ]
+  };
+}
+
+/* L'elenco della bacheca non è una FAQPage: è un indice.
+   Dichiararlo per quello che è — una raccolta ordinata di pagine
+   che stanno altrove — evita di promettere a un motore domande e
+   risposte che su questa pagina ci sono solo in anteprima. */
+function elencoJsonLd(faqs) {
+  const base = SITO();
+  const conIndirizzo = faqs.filter(f => f.slug).slice(0, 50);
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      editoreJsonLd(),
+      {
+        "@type": "CollectionPage",
+        "@id": base + "bacheca/#elenco",
+        "name": "Bacheca Q&A — domande e risposte sulle assicurazioni",
+        "inLanguage": "it-IT",
+        "isPartOf": { "@id": base + "#org" },
+        "publisher": { "@id": base + "#org" },
+        "mainEntity": {
+          "@type": "ItemList",
+          "numberOfItems": conIndirizzo.length,
+          "itemListElement": conIndirizzo.map((f, i) => ({
+            "@type": "ListItem",
+            "position": i + 1,
+            "url": urlGuida(f),
+            "name": f.titolo || f.domanda
+          }))
+        }
       }
     ]
   };
@@ -1398,7 +1545,7 @@ views.bacheca = () => {
   const list = merged.filter(f => boardFilter === "Tutte" || f.cat === boardFilter);
   const leaders = [...DB.brokers, ...(DB.proProfile ? [DB.proProfile] : [])].sort((a, b) => b.punti - a.punti).slice(0, 5);
   const nDaily = dailyPublishedCount();
-  setJsonLd(faqJsonLd(list));
+  setJsonLd(elencoJsonLd(merged));
   return `
   <section class="section">
     <div class="container">
@@ -1988,7 +2135,10 @@ views.faqDetail = (id) => {
         !window.QFBacheca?.stato.caricata) return null;
     return `<section class="section"><div class="container"><h2>Domanda non trovata</h2><a href="#/bacheca" class="btn btn-outline">← Torna alla bacheca</a></div></section>`;
   }
-  const ld = faqJsonLd([f]);
+  /* Una guida è scritta da noi, domanda compresa: FAQPage, più
+     l'Article che dice chi l'ha scritta e quando. Una domanda
+     della bacheca è di chi l'ha posta: QAPage. */
+  const ld = f.staff ? faqJsonLd([f]) : qaPageJsonLd(f);
   /* Niente gradino per la categoria: non esiste una pagina di
      categoria, e metterla porterebbe allo stesso indirizzo del
      gradino precedente. Un percorso con due tappe identiche
@@ -1997,7 +2147,7 @@ views.faqDetail = (id) => {
   ld["@graph"].push(breadcrumbJsonLd([
     { nome: "Home", rotta: "home" },
     { nome: "Bacheca Q&A", rotta: "bacheca" },
-    { nome: f.titolo || f.domanda, percorso: (f.slug ? "guide/" + f.slug + "/" : "bacheca/") }
+    { nome: f.titolo || f.domanda, percorso: percorsoDomanda(f) }
   ]));
   /* Una guida e' un articolo, e dichiararlo cambia cosa i motori
      — di ricerca e generativi — sanno farci: chi l'ha scritta,
@@ -3067,6 +3217,7 @@ window.QF = {
   get DB() { return DB; },
   saveDB, render, toast, esc, initials, livello, qpass, broker,
   staffFaqs, publishedDaily, dailyPublishedCount, getFaqById,
+  domandeIndicizzabili,
   contaRisposte, sincronizzaBrokers, campo, DA_COMPILARE, ruiLabel,
   /* La radice del sito. Serve a chi carica un file da assets/ e
      non può scrivere un percorso assoluto: in locale il sito sta

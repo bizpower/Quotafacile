@@ -183,6 +183,57 @@ async function guideRemote(page, porta) {
   }
 }
 
+/* Le domande della bacheca che hanno un indirizzo pubblico.
+   Sono di due specie e arrivano da due posti — le quindici
+   domande del giorno scritte a mano, che stanno nel repository, e
+   quelle poste dagli utenti che hanno ricevuto una risposta, che
+   stanno nel database — ma chi decide quali sono indicizzabili è
+   la pagina, con una funzione sola.
+
+   Le altre centottantacinque domande del giorno nascono da
+   quattro modelli riempiti con un nome diverso: hanno la stessa
+   risposta parola per parola. Restano leggibili in bacheca e
+   fuori da qui, perché pubblicarle come pagine separate sarebbe
+   contenuto generato in serie, e Google lo conta contro tutto il
+   dominio — Magazine e guide compresi. */
+async function domandeBacheca(page, porta) {
+  try {
+    await page.goto(`http://localhost:${porta}/#/bacheca`, { waitUntil: "load" });
+
+    /* Si aspetta il database, ma non se ne dipende: le quindici
+       domande scritte a mano stanno nel repository e non hanno
+       bisogno di rete. Aspettare "caricata" e arrendersi al
+       timeout le farebbe sparire dalla sitemap ogni volta che il
+       servizio è lento — cioè proprio quando il deploy avrebbe
+       più bisogno di lasciare il sito com'era. */
+    try {
+      await page.waitForFunction(
+        () => window.QFBacheca?.stato.caricata && window.QF?.domandeIndicizzabili,
+        null, { timeout: 20000 });
+    } catch {
+      console.warn(
+        "  ! La bacheca remota non ha risposto: vanno online le sole\n" +
+        "    domande del repository, senza quelle degli utenti.");
+    }
+
+    const elenco = await page.evaluate(() => window.QF?.domandeIndicizzabili?.() || []);
+
+    return elenco.map(d => ({
+      rotta: "faq/" + d.id,
+      percorso: "bacheca/" + d.slug + "/",
+      priorita: "0.7",
+      freq: "monthly",
+      bacheca: true,
+      remota: true, titolo: d.titolo, meta: d.meta
+    }));
+  } catch (e) {
+    console.warn(
+      "  ! Domande della bacheca non lette (" + String(e.message || e).split("\n")[0] + ").\n" +
+      "    Il deploy prosegue senza.");
+    return [];
+  }
+}
+
 /* Gli articoli del Magazine, come le guide dell'area Admin, non
    stanno nel repository: nascono fra un deploy e l'altro. Stessa
    regola — li chiede alla pagina, che sa già parlare con il
@@ -332,6 +383,7 @@ const pagine = [
   ...FISSE,
   ...(await guide(radice)),
   ...(await guideRemote(page, PORTA)),
+  ...(await domandeBacheca(page, PORTA)),
   ...(await articoliMagazine(page, PORTA))
 ];
 const mappa = new Map(pagine.map(p => [p.rotta, p.percorso]));
@@ -402,12 +454,25 @@ async function aggiornaLlms(radice, pagine, origine, base) {
      sono la stessa cosa, e non lo sono: una guida risponde a una
      domanda, un pillar copre un argomento intero. */
   const nuoviArticoli = pagine.filter(x => inedita(x) && x.percorso.startsWith("magazine/")).map(voce);
-  const nuove = pagine.filter(x => inedita(x) && !x.percorso.startsWith("magazine/")).map(voce);
+  /* Le domande della bacheca hanno una sezione loro, per la
+     stessa ragione del Magazine: una guida è un testo che
+     scriviamo noi, una domanda è di chi l'ha posta con la
+     risposta di chi l'ha firmata. Mescolarle direbbe a un motore
+     generativo che sono la stessa cosa. */
+  const nuoveDomande = pagine.filter(x => inedita(x) && x.bacheca).map(voce);
+  const nuove = pagine.filter(x => inedita(x) && !x.bacheca && !x.percorso.startsWith("magazine/")).map(voce);
 
   if (nuoviArticoli.length) {
     const blocco = "\n## Magazine\n\n" + nuoviArticoli.join("\n") + "\n";
     txt = /\n## Magazine\n/.test(txt)
       ? txt.replace(/\n## Magazine\n/, blocco.replace(/\n$/, "\n"))
+      : txt.replace(/\n## Sezioni/, blocco + "\n## Sezioni");
+  }
+
+  if (nuoveDomande.length) {
+    const blocco = "\n## Bacheca Q&A\n\n" + nuoveDomande.join("\n") + "\n";
+    txt = /\n## Bacheca Q&A\n/.test(txt)
+      ? txt.replace(/\n## Bacheca Q&A\n/, blocco.replace(/\n$/, "\n"))
       : txt.replace(/\n## Sezioni/, blocco + "\n## Sezioni");
   }
 
