@@ -1633,21 +1633,42 @@ views.bacheca = () => {
    distribuiscono autorità fra le pagine e danno ai motori il
    contesto tematico che una pagina isolata non ha. Prima le
    guide della stessa categoria, poi le altre. */
-function guideCorrelate(f, quante = 3) {
-  const tutte = staffFaqs().filter(g => g.id !== f.id);
+function guideCorrelate(f, quante = 4) {
+  /* Prima portava solo alle guide. Ora porta anche alle domande
+     che hanno un indirizzo pubblico, e il motivo è che senza
+     quelle ogni pagina della bacheca era un ramo che finisce:
+     chi arrivava da Google leggeva la risposta e usciva, e le
+     quindici pagine nuove non si passavano niente l'una con
+     l'altra.
+
+     Si escludono le pagine senza slug. Non è pignoleria: sono
+     pagine che dichiarano "noindex", e mandarci dei link da una
+     pagina indicizzata sparpaglia autorità verso indirizzi che
+     abbiamo chiesto di ignorare. Restano raggiungibili dalla
+     bacheca, che è il posto giusto per loro. */
+  const candidati = [...staffFaqs(), ...publishedDaily(), ...domandeCommunity()]
+    .filter(g => g.id !== f.id && g.slug && (g.risposte || []).length);
+
   const ordinate = [
-    ...tutte.filter(g => g.cat === f.cat),
-    ...tutte.filter(g => g.cat !== f.cat)
+    ...candidati.filter(g => g.cat === f.cat),
+    ...candidati.filter(g => g.cat !== f.cat)
   ].slice(0, quante);
   if (!ordinate.length) return "";
+
+  const estratto = g => {
+    if (g.meta) return g.meta;
+    const best = g.risposte.find(r => r.accettata) || g.risposte[0];
+    return best ? String(best.testo || "").slice(0, 110).replace(/\s+\S*$/, "") + "…" : "";
+  };
+
   return `
-  <nav class="correlate" aria-label="Guide correlate">
+  <nav class="correlate" aria-label="Contenuti correlati">
     <h3>Continua a leggere</h3>
     ${ordinate.map(g => `
       <a href="#/faq/${g.id}" class="correlata">
-        <span class="correlata-cat">${esc(g.cat)}</span>
+        <span class="correlata-cat">${g.staff ? "📌 Guida" : "💬 Bacheca"} · ${esc(g.cat)}</span>
         <span class="correlata-titolo">${esc(g.titolo || g.domanda)}</span>
-        ${g.meta ? `<span class="correlata-meta">${esc(g.meta)}</span>` : ""}
+        ${estratto(g) ? `<span class="correlata-meta">${esc(estratto(g))}</span>` : ""}
       </a>`).join("")}
   </nav>`;
 }
@@ -2590,8 +2611,14 @@ function applicaSeo(page, path) {
     const f = getFaqById(path[1]);
     if (f) {
       const best = f.risposte.find(r => r.accettata) || f.risposte[0];
+      /* Il suffisso si aggiunge solo se ci sta: un titolo scritto
+         a mano che arriva a sessanta caratteri è già stato pensato
+         per la SERP, e appiccicargli " | QuotaFacile" lo porta
+         oltre il punto in cui Google taglia — cioè butta via
+         proprio le parole che qualcuno aveva scelto. */
+      const titoloBase = f.titolo || f.domanda;
       setSeo(
-        f.titolo ? f.titolo + " | QuotaFacile" : (f.domanda.length > 60 ? f.domanda : f.domanda + " | QuotaFacile"),
+        titoloBase.length > 60 ? titoloBase : titoloBase + " | QuotaFacile",
         f.meta || (best ? best.testo.slice(0, 155).replace(/\s+\S*$/, "") + "…" : SEO_BASE.desc)
       );
       return;

@@ -728,6 +728,15 @@ a.chip { display: inline-block; text-decoration: none; }
 
 /* Moderazione */
 .admin-q { margin-bottom: 1rem; }
+/* L'editor di titolo e descrizione di una domanda: sta dentro la
+   scheda della domanda e deve leggersi come un pannello che si
+   apre, non come un secondo riquadro accanto al primo. */
+.admin-seo {
+  margin: .8rem 0 .2rem; padding: .9rem 1rem;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+}
+.admin-seo .mag-serp { margin-bottom: .4rem; }
+.admin-seo textarea { min-height: 3.4rem; resize: vertical; }
 /* Ciò che è stato rimosso resta visibile in console, in secondo
    piano: serve a ricostruire una decisione, non a riproporla. */
 .admin-rimossa { opacity: .68; border-left: 3px solid var(--line); }

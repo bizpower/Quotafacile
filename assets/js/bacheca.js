@@ -138,6 +138,13 @@
            Google lo conta contro tutto il sito, non solo contro
            quella pagina. */
         slug: d.slug || null,
+        /* Titolo e descrizione scritti a mano dalla console. Se
+           mancano, applicaSeo() ricade sulla domanda e sui primi
+           155 caratteri della risposta: un ripiego onesto, non un
+           campo vuoto. */
+        titolo: d.titolo_seo || null,
+        meta: d.meta_seo || null,
+        keyword: d.keyword || null,
         data: (d.creato_il || "").slice(0, 10),
         domanda: d.domanda,
         remota: true,
