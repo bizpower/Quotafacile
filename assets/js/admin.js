@@ -11,11 +11,13 @@
    ACCESSO — la chiave di amministrazione non è confrontata qui:
    viaggia nell'intestazione x-qf-admin verso la funzione
    qf-admin, che ne calcola l'impronta SHA-256 e la confronta a
-   tempo costante con quella configurata (il segreto
-   QF_ADMIN_TOKEN del progetto, o in mancanza l'impronta in
-   impostazioni_admin). La chiave non compare nel sito né nel
-   repository, e senza di essa nessuna azione va a buon fine —
-   nemmeno leggendo questo file. È un controllo vero.
+   tempo costante con l'unica configurata, in impostazioni_admin.
+   Una sola, riletta a ogni richiesta: non c'è un segreto del
+   progetto che la scavalca, e non c'è una copia in memoria che
+   tenga in vita quella vecchia dopo un cambio. Si cambia dalla
+   scheda "Chiave" della console. La chiave non compare nel sito
+   né nel repository, e senza di essa nessuna azione va a buon
+   fine — nemmeno leggendo questo file. È un controllo vero.
 
    DATI — tutto ciò che vedi arriva dal database: richieste,
    iscrizioni, bacheca, segnalazioni. Ciò che invece vive nel
@@ -584,13 +586,101 @@ Usa **grassetto** per i numeri che contano."></textarea>
   }
 
   /* ---------------- SHELL ---------------- */
+  /* ---------------- TAB 7 · LA CHIAVE ----------------
+     Una sola chiave, e un posto solo da cui cambiarla.
+
+     Prima ce n'erano due configurazioni possibili - un segreto
+     del progetto e un'impronta nel database - e il segreto
+     vinceva. Il risultato non era "più sicuro": era che nessuno
+     sapeva quale delle due fosse attiva, perché il segreto non
+     si legge da nessuna schermata e l'impronta non si può
+     invertire. Ora la fonte è una, e la si cambia da qui invece
+     che scrivendo una query a mano.
+
+     Quello che questa scheda NON fa è mostrare la chiave in
+     corso: nel database c'è solo la sua impronta SHA-256, e non
+     esiste modo di risalire alla frase. Se non la si ha più,
+     l'unica strada è sceglierne un'altra — ed è per questo che
+     il bottone sta qui e non in un file di appunti. */
+  function chiaveGenerata() {
+    const alfabeto = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+    const b = new Uint8Array(40);
+    crypto.getRandomValues(b);
+    return "qf_" + Array.from(b, x => alfabeto[x % alfabeto.length]).join("");
+  }
+
+  function chiaveView() {
+    const q = D().chiaveAggiornataIl;
+    return `
+    <div class="card">
+      <h3>🔑 La chiave di amministrazione</h3>
+      <p class="muted">Ce n'è <strong>una sola</strong>, ed è quella con cui sei entrato adesso.
+      Vale per questa console, per il CRM, per il Magazine, per la posta e per l'assistente:
+      leggono tutte la stessa riga, e la rileggono a ogni richiesta. Cambiandola qui, dal clic
+      successivo vale solo la nuova.</p>
+
+      <table class="admin-kv">
+        <tr><th>Dove vive</th><td>Solo la sua impronta SHA-256, nella riga <code>impostazioni_admin</code>.
+          La frase non è conservata da nessuna parte.</td></tr>
+        <tr><th>Decisa il</th><td>${q ? esc(dataOra(q)) : "—"}</td></tr>
+        <tr><th>Chi può rileggerla</th><td>Nessuno. Né questa schermata, né il server, né chi ha
+          accesso al database: da un'impronta non si torna indietro.</td></tr>
+      </table>
+
+      <div class="legal-warning" style="margin-top:1rem">
+        <strong>Prima di cambiarla, copiala dove la ritrovi.</strong> Non c'è un «chiave
+        dimenticata» da nessuna parte, e non arriva nessuna email: questa frase è l'unica cosa
+        che separa il CRM da chiunque altro. Se la perdi, si riparte scrivendo una query sul
+        database.
+      </div>
+
+      <div class="card crm-inarrivo" style="margin-top:1rem;box-shadow:none">
+        <span class="pill">Una cosa da fare a mano, una volta sola</span>
+        <h4 style="margin:.6rem 0 .4rem">Il vecchio segreto <code>QF_ADMIN_TOKEN</code></h4>
+        <p class="muted" style="font-size:.88rem">Prima di questa riga la chiave si poteva
+        configurare anche come segreto del progetto Supabase, e quel segreto vinceva sul
+        database. È stato tolto dal codice, ma il <strong>Mail Marketing</strong> gira ancora su
+        una versione precedente della sua funzione: finché quel segreto esiste, lì continua a
+        valere. È l'ultimo punto in cui «le chiavi sono due» è ancora vero.</p>
+        <p class="muted" style="font-size:.88rem">Si chiude in dieci secondi: nel pannello
+        Supabase, <em>Project settings → Edge Functions → Secrets</em>, cancella
+        <code>QF_ADMIN_TOKEN</code>. Da quel momento anche il Mail Marketing legge questa riga e
+        basta. Non serve ripubblicare niente.</p>
+      </div>
+
+      <form id="chiave-form" style="margin-top:1rem">
+        <div class="field">
+          <label for="chiave-nuova">Nuova chiave</label>
+          <input id="chiave-nuova" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="almeno 16 caratteri" required>
+        </div>
+        <div class="field" style="margin-top:.6rem">
+          <label for="chiave-ripeti">Ripetila</label>
+          <input id="chiave-ripeti" type="text" autocomplete="off" spellcheck="false"
+                 placeholder="per sicurezza, di nuovo" required>
+        </div>
+        <div style="display:flex;gap:.5rem;margin-top:1rem;flex-wrap:wrap">
+          <button class="btn btn-primary" type="submit">Cambia la chiave</button>
+          <button class="btn btn-outline" type="button" id="chiave-genera">Generane una forte</button>
+        </div>
+      </form>
+
+      <p class="privacy-hint" style="margin-top:.9rem">
+        La chiave in chiaro si vede mentre la scrivi — di proposito: una frase che stai per
+        rendere l'unica via d'accesso va riletta, non digitata alla cieca dietro dei pallini.
+        Appena cambiata resta in memoria fino alla chiusura della scheda, come prima.
+      </p>
+    </div>`;
+  }
+
   const TABS = {
     kpi: ["📊 KPI", kpiView],
     richieste: ["📥 Richieste", richiesteView],
     professionisti: ["🪪 Professionisti", proView],
     bacheca: ["💬 Bacheca", bachecaView],
     keyword: ["🎯 Keyword → Guida", keywordView],
-    segnalazioni: ["🚩 Segnalazioni", segnalazioniView]
+    segnalazioni: ["🚩 Segnalazioni", segnalazioniView],
+    chiave: ["🔑 Chiave", chiaveView]
   };
 
   const NOTIFICHE = {
@@ -798,6 +888,42 @@ Usa **grassetto** per i numeri che contano."></textarea>
     /* Se si entra nella console con la chiave già in sessione, la
        panoramica si carica da sola. */
     if (fase === "vuoto") carica();
+
+    /* ---- cambio della chiave ----
+       L'ordine conta: la nuova chiave va in sessione PRIMA di
+       ricaricare la panoramica, altrimenti la richiesta
+       successiva parte con quella vecchia, riceve 401 e la
+       console butta fuori il titolare un secondo dopo avergli
+       fatto cambiare la chiave. */
+    $("#chiave-genera")?.addEventListener("click", () => {
+      const g = chiaveGenerata();
+      $("#chiave-nuova").value = g;
+      $("#chiave-ripeti").value = g;
+      $("#chiave-nuova").focus();
+      $("#chiave-nuova").select();
+      QF().toast("Chiave generata: copiala prima di confermare.");
+    });
+
+    $("#chiave-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      const nuova = $("#chiave-nuova").value.trim();
+      const ripeti = $("#chiave-ripeti").value.trim();
+      if (nuova !== ripeti) { QF().toast("Le due chiavi non coincidono."); return; }
+      if (nuova.length < 16) { QF().toast("Servono almeno 16 caratteri."); return; }
+
+      const btn = e.target.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.textContent = "Cambio…"; }
+
+      const esito = await chiama("cambia-chiave", { nuova });
+      if (!esito.ok) {
+        QF().toast(esito.errore || "Non sono riuscito a cambiarla.");
+        if (btn) { btn.disabled = false; btn.textContent = "Cambia la chiave"; }
+        return;
+      }
+      try { sessionStorage.setItem(SESSION_KEY, nuova); } catch (_) { /* no-op */ }
+      QF().toast("Fatto: da adesso vale solo questa.");
+      await carica();
+    });
 
     document.querySelectorAll("[data-modfiltro]").forEach(b =>
       b.addEventListener("click", () => { modFiltro = b.dataset.modfiltro; QF().render(); }));

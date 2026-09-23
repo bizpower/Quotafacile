@@ -69,32 +69,35 @@ function uguali(a: string, b: string): boolean {
   return diff === 0;
 }
 
-let improntaDb: string | null | undefined;
-
-// La chiave sta in un posto solo: l'impronta in impostazioni_admin.
+// La chiave sta in un posto solo, e si rilegge a ogni richiesta.
 //
-// Prima ce n'erano due, e il segreto QF_ADMIN_TOKEN vinceva sul
-// database. Sembrava prudente - la chiave non tocca il database -
-// ma nella pratica creava una situazione in cui nessuno sapeva
-// piu' quale delle due fosse attiva: cambiare l'impronta non
-// aveva alcun effetto finche' il segreto esisteva, e il segreto
-// non e' leggibile da nessuna schermata dell'applicazione.
+// Prima ce n'erano due: il segreto QF_ADMIN_TOKEN vinceva sul
+// database, cambiare l'impronta non aveva alcun effetto finche'
+// il segreto esisteva, e il segreto non e' leggibile da nessuna
+// schermata dell'applicazione. Ora la fonte e' una sola:
+// l'impronta SHA-256 in impostazioni_admin.
 //
-// Una sola fonte, quindi. Nel database resta comunque soltanto
-// l'impronta SHA-256: la frase non e' conservata da nessuna
-// parte e non e' recuperabile. Per cambiarla:
+// E non viene tenuta in memoria fra una richiesta e l'altra.
+// Costa la lettura di una riga su chiave primaria - niente,
+// accanto a quello che la funzione fa comunque - e in cambio un
+// cambio di chiave vale subito, dappertutto. Con la copia in
+// memoria un'istanza gia' avviata avrebbe continuato ad
+// accettare la chiave vecchia finche' non veniva spenta: e'
+// esattamente il "quale delle due e' attiva?" che si voleva
+// togliere di mezzo.
+//
+// Nel database resta soltanto l'impronta: la frase non e'
+// conservata da nessuna parte e non e' recuperabile. Si cambia
+// dalla console, oppure a mano:
 //
 //   update impostazioni_admin
 //      set token_hash = encode(digest('nuova-frase','sha256'),'hex'),
 //          aggiornato_il = now()
 //    where id = 1;
 async function improntaAttesa(): Promise<string | null> {
-  if (improntaDb === undefined) {
-    const { data } = await db.from("impostazioni_admin")
-      .select("token_hash").eq("id", 1).maybeSingle();
-    improntaDb = data?.token_hash ?? null;
-  }
-  return improntaDb;
+  const { data } = await db.from("impostazioni_admin")
+    .select("token_hash").eq("id", 1).maybeSingle();
+  return data?.token_hash ?? null;
 }
 
 // ---------------- Posta ----------------
