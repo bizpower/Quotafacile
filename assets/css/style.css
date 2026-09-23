@@ -732,6 +732,65 @@ a.chip { display: inline-block; text-decoration: none; }
    non una pagina rotta. */
 .crm-inarrivo { border-left: 3px solid var(--gold-500); }
 
+/* ---- Assistente ----
+   Una conversazione, non un modulo travestito: quello che hai
+   detto sta a destra, quello che il sistema risponde a sinistra,
+   e in mezzo la proposta da confermare si distingue da entrambi
+   perché non e' una risposta — e' la cosa che sta per essere
+   scritta. */
+.chat-storia {
+  display: flex; flex-direction: column; gap: .5rem; align-items: flex-start;
+  max-height: 380px; overflow-y: auto;
+  margin: .9rem 0; padding: .9rem;
+  background: var(--bg); border-radius: 12px;
+}
+.chat-riga { display: flex; max-width: 85%; }
+.chat-riga > span {
+  padding: .55rem .8rem; border-radius: 14px;
+  font-size: .9rem; line-height: 1.45; white-space: pre-wrap;
+}
+.chat-io { align-self: flex-end; }
+.chat-io > span { background: var(--green-800); color: #fff; border-bottom-right-radius: 4px; }
+.chat-qf > span { background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.chat-attesa > span { color: var(--ink-soft); font-style: italic; }
+.chat-esempio { margin: .3rem .3rem 0 0; cursor: pointer; font-size: .82rem; }
+
+.chat-barra { display: flex; gap: .5rem; align-items: center; }
+.chat-barra input {
+  flex: 1; min-width: 0;
+  padding: .7rem .9rem; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); font: inherit; font-size: .95rem;
+}
+.chat-barra input:focus-visible { outline: 2px solid var(--green-600); outline-offset: 1px; }
+
+.chat-mic { flex: none; width: 44px; height: 44px; padding: 0; font-size: 1.1rem; line-height: 1; }
+/* Quando ascolta deve vedersi da lontano: un microfono aperto
+   senza che nessuno se ne accorga e' la cosa da non fare. */
+.chat-mic-attivo {
+  background: #FDECEC; border-color: #C0392B; color: #C0392B;
+  animation: chat-pulsa 1.2s ease-in-out infinite;
+}
+@keyframes chat-pulsa { 50% { box-shadow: 0 0 0 6px rgba(192, 57, 43, .14); } }
+@media (prefers-reduced-motion: reduce) { .chat-mic-attivo { animation: none; } }
+
+.chat-proposta {
+  margin: 0 0 .9rem; padding: .9rem 1rem;
+  background: #FFFDF8; border: 1px solid var(--gold-500); border-radius: 12px;
+}
+.chat-campi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+@media (max-width: 620px) { .chat-campi { grid-template-columns: 1fr; } }
+.chat-campo { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.chat-campo-largo { grid-column: 1 / -1; }
+.chat-campo span {
+  font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+.chat-campo input, .chat-campo select {
+  width: 100%; min-width: 0;
+  padding: .5rem .6rem; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); font: inherit; font-size: .9rem;
+}
+
 /* Credenziali appena generate: si vedono una volta sola, quindi
    devono saltare all'occhio e la password dev'essere leggibile
    carattere per carattere. */
@@ -1783,7 +1842,8 @@ a.chip { display: inline-block; text-decoration: none; }
   input, select, textarea,
   .field input, .field select, .field textarea,
   .calc-riga input, .notify-form input, .mm-mittente select,
-  .mag-slug-riga input {
+  .mag-slug-riga input,
+  .chat-barra input, .chat-campo input, .chat-campo select {
     min-height: 44px; font-size: 16px;
   }
   textarea, .field textarea { min-height: 96px; }

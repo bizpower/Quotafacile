@@ -80,9 +80,14 @@
     }
   }
 
-  async function carica() {
-    fase = "caricamento";
-    QF().render();
+  /* Silenzioso: rilegge i dati senza far sparire la schermata
+     dietro un "caricamento". Serve dopo una scrittura fatta
+     dall'assistente, dove la conversazione deve restare dov'è. */
+  async function carica(silenzioso = false) {
+    if (!silenzioso) {
+      fase = "caricamento";
+      QF().render();
+    }
     /* I lead stanno in una funzione a parte: se quella non
        risponde il resto del CRM deve funzionare lo stesso, invece
        di bloccarsi tutto per una sezione sola. */
@@ -813,6 +818,274 @@
     </div>`;
   }
 
+  /* ---------------- ASSISTENTE ---------------- */
+  /* Salvare un contatto o creare una lista parlando, invece di
+     compilare un modulo.
+
+     Due cose da sapere su come è fatto, perché cambiano cosa ci
+     si può aspettare:
+
+     1. AL MODELLO ARRIVA SOLO LA TUA FRASE. Non l'archivio, non
+        i lead, non le liste. Il suo lavoro è tradurre quella
+        frase in un comando; a scrivere sul database è il server,
+        che il comando lo ricontrolla da capo. Quindi non puoi
+        chiedergli "quanti lead ho a Milano": non lo sa, e non ha
+        modo di saperlo.
+
+     2. NON SCRIVE NIENTE SENZA CONFERMA. Fra la frase e la
+        scrittura c'è un bottone. Il dettato sbaglia i nomi
+        propri più spesso di quanto sembri, e una riga sbagliata
+        entrata in silenzio nell'archivio non la ritrova più
+        nessuno.
+
+     La voce usa il riconoscimento già dentro al browser: nessuna
+     libreria in più, nessun servizio in mezzo oltre a quello che
+     Chrome usa comunque. Dove non c'è, il microfono non compare
+     e si scrive. */
+
+  const VOCE = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+  let chat = [];           // { da: "io" | "qf", testo }
+  let proposta = null;     // la proposta in attesa di conferma
+  let bozza = "";          // quel che c'è nella casella, fra un disegno e l'altro
+  let chatInCorso = false;
+  let ultimoLead = null;   // per "aggiungilo alla lista X"
+  let ascolto = null;      // il riconoscimento vocale attivo
+
+  const API_CHAT = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-chat";
+
+  const ESEMPI = [
+    "Salva Autofficina Bianchi, info@bianchi.it, telefono 02 1234567, Milano",
+    "Crea una lista che si chiama Carrozzerie Lombardia",
+    "Aggiungi Autofficina Bianchi alla lista Carrozzerie Lombardia"
+  ];
+
+  function dice(da, testo) { chat.push({ da, testo }); }
+
+  async function chiediAssistente(frase) {
+    dice("io", frase);
+    proposta = null;
+    chatInCorso = true;
+    bozza = "";
+    QF().render();
+
+    const e = await chiama("interpreta", { frase, ultimoLead }, API_CHAT, 30000);
+    chatInCorso = false;
+
+    if (!e.ok) {
+      dice("qf", e.errore || "Non sono riuscito a interpretare la frase.");
+    } else if (e.proposta) {
+      proposta = e.proposta;
+      dice("qf", e.proposta.titolo);
+    } else {
+      dice("qf", e.messaggio || "Non ho capito.");
+    }
+    QF().render();
+  }
+
+  async function confermaProposta() {
+    if (!proposta) return;
+    const $ = s => document.querySelector(s);
+    const val = k => {
+      const c = $(`[data-chat-campo="${k}"]`);
+      return c ? c.value.trim() : null;
+    };
+
+    /* I campi si rileggono dallo schermo, non dalla proposta: se
+       il dettato ha sbagliato il nome e tu l'hai corretto a mano,
+       deve finire nell'archivio la tua correzione. */
+    let campi;
+    if (proposta.azione === "salva_lead") {
+      campi = {
+        nome: val("nome"), email: val("email"), telefono: val("telefono"),
+        citta: val("citta"), provincia: val("provincia"),
+        categoria: val("categoria"), note: val("note")
+      };
+    } else if (proposta.azione === "crea_lista") {
+      campi = { nome: val("nome"), descrizione: val("descrizione") };
+    } else {
+      campi = { lead_id: val("lead_id"), lista_id: val("lista_id") };
+    }
+
+    chatInCorso = true;
+    QF().render();
+    const e = await chiama("esegui", { azione: proposta.azione, campi, frase: proposta.frase }, API_CHAT, 25000);
+    chatInCorso = false;
+
+    if (!e.ok) {
+      dice("qf", e.errore || "Non sono riuscito a salvare.");
+      QF().render();
+      return;
+    }
+    proposta = null;
+    if (e.leadId) ultimoLead = e.leadId;
+    dice("qf", e.messaggio || "Fatto.");
+    QF().render();
+    /* L'archivio a schermo deve corrispondere a quello vero, ma
+       senza far sparire la conversazione dietro un "caricamento". */
+    carica(true);
+  }
+
+  function propostaHtml(p) {
+    /* Note e descrizione sono testo libero: una colonna sola le
+       taglia a metà parola mentre si rilegge quello che sta per
+       essere scritto. */
+    const campo = (k, etichetta, v, tipo = "text") => `
+      <label class="chat-campo ${k === "note" || k === "descrizione" ? "chat-campo-largo" : ""}">
+        <span>${etichetta}</span>
+        <input type="${tipo}" data-chat-campo="${k}" value="${esc(v || "")}" placeholder="—">
+      </label>`;
+
+    let corpo;
+    if (p.azione === "salva_lead") {
+      const c = p.campi;
+      corpo = `
+        ${campo("nome", "Nome", c.nome)}
+        ${campo("email", "Email", c.email, "email")}
+        ${campo("telefono", "Telefono", c.telefono, "tel")}
+        ${campo("citta", "Città", c.citta)}
+        ${campo("provincia", "Provincia", c.provincia)}
+        ${campo("categoria", "Categoria", c.categoria)}
+        ${campo("note", "Note", c.note)}`;
+    } else if (p.azione === "crea_lista") {
+      corpo = `
+        ${campo("nome", "Nome della lista", p.campi.nome)}
+        ${campo("descrizione", "Descrizione", p.campi.descrizione)}`;
+    } else {
+      const s = p.scelte || { lead: [], liste: [] };
+      corpo = `
+        <label class="chat-campo"><span>Contatto</span>
+          <select data-chat-campo="lead_id">
+            ${s.lead.map(l => `<option value="${esc(l.id)}">${esc(l.nome)}${l.citta ? " — " + esc(l.citta) : ""}${l.email ? " · " + esc(l.email) : ""}</option>`).join("")}
+          </select></label>
+        <label class="chat-campo"><span>Lista</span>
+          <select data-chat-campo="lista_id">
+            ${s.liste.map(l => `<option value="${esc(l.id)}">${esc(l.nome)}</option>`).join("")}
+          </select></label>`;
+    }
+
+    return `
+    <div class="chat-proposta">
+      <strong>${esc(p.titolo)}</strong>
+      <p class="muted" style="font-size:.82rem;margin:.2rem 0 .6rem">Controlla i campi: quello che vedi qui è quello che verrà scritto.</p>
+      ${(p.avvisi || []).map(a => `<div class="legal-warning" style="margin:.4rem 0;padding:.5rem .7rem;font-size:.85rem">${esc(a)}</div>`).join("")}
+      <div class="chat-campi">${corpo}</div>
+      <div style="display:flex;gap:.5rem;margin-top:.8rem;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" data-chat-conferma>Conferma e salva</button>
+        <button class="btn btn-ghost btn-sm" data-chat-annulla>Annulla</button>
+      </div>
+    </div>`;
+  }
+
+  function assistenteView() {
+    return `
+    <div class="card">
+      <h3>🎙️ Assistente</h3>
+      <p class="muted">Dimmi cosa devo registrare e lo preparo. Salvo un contatto,
+      creo una lista, metto un contatto dentro una lista. Prima di scrivere ti faccio
+      sempre vedere cosa sto per scrivere.</p>
+
+      <div class="chat-storia" id="chat-storia">
+        ${chat.length ? chat.map(m => `
+          <div class="chat-riga chat-${m.da}"><span>${esc(m.testo)}</span></div>`).join("")
+        : `<p class="muted" style="font-size:.88rem">Per cominciare, prova con una di queste:</p>
+           ${ESEMPI.map(e => `<button type="button" class="chip chat-esempio" data-chat-esempio="${esc(e)}">${esc(e)}</button>`).join(" ")}`}
+        ${chatInCorso ? `<div class="chat-riga chat-qf chat-attesa"><span>Sto leggendo…</span></div>` : ""}
+      </div>
+
+      ${proposta ? propostaHtml(proposta) : ""}
+
+      <div class="chat-barra">
+        ${VOCE ? `<button type="button" class="btn btn-ghost chat-mic" id="chat-mic" title="Detta" aria-label="Detta con la voce">🎤</button>` : ""}
+        <input type="text" id="chat-testo" placeholder="Salva Mario Rossi, mario@rossi.it, Milano"
+               value="${esc(bozza)}" autocomplete="off" ${chatInCorso ? "disabled" : ""}>
+        <button class="btn btn-primary" id="chat-invia" ${chatInCorso ? "disabled" : ""}>Invia</button>
+      </div>
+
+      <p class="privacy-hint" style="margin-top:.9rem">
+        <strong>Dove va quello che scrivi.</strong> La frase che digiti o detti viene
+        inviata a Google (Gemini) per essere tradotta in un comando: se dentro c'è il
+        nome e l'email di una persona, quel nome e quell'email passano da Google. Con il
+        microfono, l'audio passa dal riconoscimento vocale di Chrome, che è anch'esso di
+        Google. Quello che è già in archivio invece non esce mai da qui: al modello non
+        viene mandato nulla del CRM.
+      </p>
+    </div>`;
+  }
+
+  /* ---- il microfono ---- */
+  function micAggiorna() {
+    const b = document.querySelector("#chat-mic");
+    if (b) b.classList.toggle("chat-mic-attivo", !!ascolto);
+  }
+
+  const ERRORI_VOCE = {
+    "not-allowed": "Il browser non mi dà il microfono: va concesso dal lucchetto accanto all'indirizzo.",
+    "service-not-allowed": "Il browser non mi dà il microfono: va concesso dal lucchetto accanto all'indirizzo.",
+    "no-speech": "Non ho sentito niente.",
+    "audio-capture": "Non trovo un microfono collegato.",
+    network: "Il riconoscimento vocale ha bisogno della rete e non è riuscito a raggiungerla."
+  };
+
+  function ascolta() {
+    if (!VOCE) return;
+    if (ascolto) { ascolto.stop(); return; }
+
+    const r = new VOCE();
+    r.lang = "it-IT";
+    r.interimResults = true;
+    r.continuous = false;
+    /* Il testo va nella casella, non parte da solo: è il momento
+       in cui ti accorgi che ha capito "Grossi" invece di "Rossi". */
+    r.onresult = ev => {
+      let s = "";
+      for (let i = 0; i < ev.results.length; i++) s += ev.results[i][0].transcript;
+      bozza = s;
+      const c = document.querySelector("#chat-testo");
+      if (c) c.value = s;
+    };
+    r.onerror = ev => {
+      ascolto = null; micAggiorna();
+      QF().toast(ERRORI_VOCE[ev.error] || "Il riconoscimento vocale non ha funzionato.");
+    };
+    r.onend = () => { ascolto = null; micAggiorna(); };
+
+    ascolto = r;
+    try { r.start(); micAggiorna(); } catch { ascolto = null; micAggiorna(); }
+  }
+
+  function bindAssistente() {
+    const $ = s => document.querySelector(s);
+    const casella = $("#chat-testo");
+    if (!casella) return;
+
+    const invia = () => {
+      const t = casella.value.trim();
+      if (!t || chatInCorso) return;
+      if (ascolto) { ascolto.stop(); ascolto = null; }
+      chiediAssistente(t);
+    };
+
+    casella.addEventListener("input", () => { bozza = casella.value; });
+    casella.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); invia(); } });
+    $("#chat-invia")?.addEventListener("click", invia);
+    $("#chat-mic")?.addEventListener("click", ascolta);
+
+    document.querySelectorAll("[data-chat-esempio]").forEach(b =>
+      b.addEventListener("click", () => chiediAssistente(b.dataset.chatEsempio)));
+
+    $("[data-chat-conferma]")?.addEventListener("click", confermaProposta);
+    $("[data-chat-annulla]")?.addEventListener("click", () => {
+      proposta = null; dice("qf", "Annullato: non ho scritto niente."); QF().render();
+    });
+
+    /* La conversazione si legge dal basso, come tutte le
+       conversazioni. */
+    const storia = $("#chat-storia");
+    if (storia) storia.scrollTop = storia.scrollHeight;
+    if (!chatInCorso && !proposta && chat.length) casella.focus();
+  }
+
   /* ---------------- SEZIONI IN ARRIVO ---------------- */
   /* Una scheda vuota che sembra funzionante è peggio di una che
      dichiara di non esserlo: qui c'è scritto cosa farà e da dove
@@ -840,6 +1113,7 @@
     panoramica: ["📊 Panoramica", panoramicaView],
     collaboratori: ["👥 Collaboratori", collaboratoriView],
     lead: ["🔎 Lead locali", leadView],
+    assistente: ["🎙️ Assistente", assistenteView],
     posta: ["✉️ Posta", mailView],
     mail: ["📮 Mail Marketing", null],
     magazine: ["📰 Magazine", null],
@@ -924,8 +1198,14 @@
 
     if (fase === "vuoto") { carica(); return; }
 
-    $("#crm-ricarica")?.addEventListener("click", carica);
-    $("#crm-riprova")?.addEventListener("click", carica);
+    /* Avvolti in una funzione: passare `carica` direttamente
+       gli consegnerebbe l'evento del click come primo argomento,
+       e un MouseEvent è vero — l'aggiornamento a mano diventerebbe
+       silenzioso proprio quando si vuole vederlo. */
+    $("#crm-ricarica")?.addEventListener("click", () => carica());
+    $("#crm-riprova")?.addEventListener("click", () => carica());
+
+    bindAssistente();
 
     $("[data-crm-nuovo]")?.addEventListener("click", () => { modifica = "nuovo"; QF().render(); });
     $("[data-crm-annulla]")?.addEventListener("click", () => { modifica = null; QF().render(); });
