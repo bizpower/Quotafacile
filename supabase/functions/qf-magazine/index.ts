@@ -274,6 +274,33 @@ function ripulisceHtml(html: string): string {
   return h.trim();
 }
 
+/* ---------------- L'indirizzo della pagina ----------------
+   Lo slug lo assegna il database alla prima pubblicazione, a
+   partire dal titolo, e da quel momento non si tocca più. Va
+   bene per il caso normale, ma il titolo non è sempre un buon
+   indirizzo: "Polizza catastrofale obbligatoria: la guida
+   completa per le imprese" diventa un indirizzo lungo che finisce
+   su una preposizione.
+
+   Quindi si può scriverlo a mano, ma solo finché l'articolo non
+   ne ha ancora uno. Dopo no: un indirizzo pubblicato che cambia è
+   un indirizzo che si rompe, per i link già condivisi e per i
+   motori che lo hanno indicizzato. La regola non la decide questa
+   funzione guardando lo stato — la decide il fatto che lo slug
+   sia già stato assegnato, che è l'unica cosa che conta. */
+function slugPulito(v: string | null): string | null {
+  if (!v) return null;
+  const senzaAccenti = [...String(v).toLowerCase().normalize("NFD")]
+    .filter((ch) => { const c = ch.codePointAt(0)!; return c < 0x300 || c > 0x36f; })
+    .join("");
+  const s = senzaAccenti
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 70)
+    .replace(/-+$/g, "");
+  return s || null;
+}
+
 const soloTesto = (html: string) => String(html).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const contaParole = (html: string) => { const t = soloTesto(html); return t ? t.split(" ").length : 0; };
 
@@ -397,17 +424,44 @@ async function salva(d: Record<string, unknown>) {
     stato,
   };
 
+  /* L'indirizzo proposto vale solo se l'articolo non ne ha già
+     uno. Non è una gentilezza dell'interfaccia: se arrivasse qui
+     uno slug per un articolo pubblicato, questa funzione lo
+     scarterebbe comunque. */
+  const slugChiesto = slugPulito(testo(d.slug, 120));
+
   const id = testo(d.id, 40);
   if (id) {
+    const { data: prima } = await db.from("mag_articoli")
+      .select("slug").eq("id", id).maybeSingle();
+    if (!prima) throw new ErroreCliente("Articolo non trovato", 404);
+    if (!prima.slug && slugChiesto) {
+      (riga as Record<string, unknown>).slug = slugChiesto;
+    }
     const { data, error } = await db.from("mag_articoli").update(riga).eq("id", id)
       .select("id, slug, stato").single();
-    if (error) throw new Error(error.message);
+    if (error) throw erroreSalvataggio(error);
     return { articolo: data };
   }
+
+  if (slugChiesto) (riga as Record<string, unknown>).slug = slugChiesto;
   const { data, error } = await db.from("mag_articoli").insert(riga)
     .select("id, slug, stato").single();
-  if (error) throw new Error(error.message);
+  if (error) throw erroreSalvataggio(error);
   return { articolo: data };
+}
+
+/* 23505 è il vincolo di unicità sullo slug: è un errore di chi
+   scrive, non del sistema, e va detto in italiano invece di
+   lasciar passare il messaggio del database. */
+function erroreSalvataggio(error: { code?: string; message: string }): Error {
+  if (error.code === "23505") {
+    return new ErroreCliente(
+      "Questo indirizzo è già usato da un altro articolo. Cambialo: due pagine allo stesso indirizzo non possono esistere.",
+      409,
+    );
+  }
+  return new Error(error.message);
 }
 
 async function cambiaStato(d: Record<string, unknown>) {

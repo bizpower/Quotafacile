@@ -476,11 +476,11 @@ a.chip { display: inline-block; text-decoration: none; }
 @media (max-width: 760px) {
   .topnav, .topbar-cta .btn-ghost { display: none; }
   .tabbar { display: flex; }
-  body { padding-bottom: 76px; }
+  body { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
   .footer { padding-bottom: 7rem; }
   .form-grid { grid-template-columns: 1fr; }
   .section { padding: 3rem 0; }
-  .toast { bottom: 108px; }
+  .toast { bottom: calc(108px + env(safe-area-inset-bottom)); }
 }
 
 /* ============================================================
@@ -642,6 +642,21 @@ a.chip { display: inline-block; text-decoration: none; }
    ============================================================ */
 .admin-shell { background: var(--bg); }
 .admin-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.4rem; flex-wrap: wrap; }
+/* Spazio fra l'occhiello e il titolo, per via dell'anello di
+   fuoco.
+
+   A ogni cambio di rotta il fuoco va sull'h1: serve a chi naviga
+   da tastiera o con uno screen reader per sapere dov'e' finito.
+   L'anello pero' sporge di cinque punti sopra il titolo, e con
+   line-height 1.08 il titolo e' incollato alla riga di sopra: il
+   risultato era una riga che sembrava barrata sopra
+   "AMMINISTRAZIONE SOCIETA'".
+
+   L'occhiello e' uno <span> in linea, quindi non aveva margini
+   propri. Diventa un blocco con un po' di spazio sotto: si
+   risolve li', senza toccare il fuoco - che e' corretto - ne' il
+   line-height di tutti i titoli del sito. */
+.admin-top .eyebrow { display: block; margin-bottom: .4rem; }
 .admin-hint { font-size: .88rem; line-height: 1.6; color: var(--ink-soft); background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--green-600); border-radius: var(--radius); padding: .9rem 1.1rem; margin: 0 0 1.2rem; }
 .admin-hint a { text-decoration: underline; }
 .notif { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 .3rem; border-radius: 999px; background: var(--danger); color: #fff; font-size: .68rem; font-weight: 700; margin-left: .25rem; }
@@ -761,47 +776,6 @@ a.chip { display: inline-block; text-decoration: none; }
 @media (max-width: 700px) {
   .lead-scheda { grid-template-columns: 1fr; }
 }
-
-/* ---------- Pipeline ---------- */
-/* Cinque colonne che scorrono di lato invece di stringersi: una
-   colonna troppo stretta smette di far vedere quello per cui
-   esiste, cioè dove si accumula il lavoro. */
-.pl-colonne {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr);
-  gap: .8rem; overflow-x: auto; padding-bottom: .6rem; margin-top: 1rem;
-}
-.pl-colonna { background: var(--green-50); border-radius: var(--radius); padding: .8rem; min-height: 120px; }
-.pl-colonna h4 { font-size: .82rem; margin: 0 0 .6rem; display: flex; align-items: center; gap: .4rem; }
-.pl-card {
-  display: block; width: 100%; text-align: left; background: #fff; border: 1.5px solid var(--line);
-  border-radius: 10px; padding: .6rem .7rem; margin-bottom: .5rem; cursor: pointer;
-  font-family: var(--font-body); transition: border-color .15s, transform .15s;
-}
-.pl-card:hover { border-color: var(--green-600); transform: translateY(-1px); }
-.pl-card.aperta { border-color: var(--green-800); box-shadow: 0 0 0 2px var(--green-100); }
-.pl-card strong { display: block; font-size: .88rem; line-height: 1.25; }
-.pl-card > span { display: block; font-size: .76rem; color: var(--ink-soft); }
-.pl-piede { margin-top: .35rem; font-size: .72rem !important; }
-.pl-etichette { display: flex; flex-wrap: wrap; gap: .2rem; margin: .35rem 0 0; }
-
-.tag {
-  display: inline-flex; align-items: center; gap: .25rem;
-  font-size: .68rem; font-weight: 700; border-radius: 999px; padding: .1rem .5rem;
-}
-.tag-verde  { background: var(--green-100); color: var(--green-800); }
-.tag-oro    { background: var(--gold-100);  color: #8A5B0B; }
-.tag-rosso  { background: #FCEDED;          color: #9B2C2C; }
-.tag-blu    { background: #E7EEF9;          color: #1F4E8C; }
-.tag-grigio { background: #ECEFEE;          color: #4C5F55; }
-.tag-x { background: none; border: 0; cursor: pointer; color: inherit; font-size: .7rem; padding: 0 0 0 .1rem; opacity: .6; }
-.tag-x:hover { opacity: 1; }
-
-.pl-dettaglio { margin-top: 1.2rem; border-left: 3px solid var(--green-600); }
-.pl-attivita { border-bottom: 1px dashed var(--line); padding: .6rem 0; }
-.pl-attivita:last-of-type { border-bottom: 0; }
-.pl-attivita-capo { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; font-size: .82rem; }
-.pl-attivita-capo .muted { font-size: .75rem; }
-.pl-attivita p { font-size: .85rem; color: var(--ink-soft); margin: .3rem 0; line-height: 1.5; }
 
 /* ---------- Posta ---------- */
 /* Il corpo dell'anteprima si mostra come partirà davvero: a
@@ -1365,15 +1339,192 @@ a.chip { display: inline-block; text-decoration: none; }
 .mag-cover-nota.ok { background: var(--green-50); color: var(--green-800); }
 .mag-cover-nota.ko { background: #FCECEC; color: var(--danger); }
 
+/* ----- l'indirizzo della pagina ----- */
+.mag-slug-riga {
+  display: flex; align-items: center; gap: .1rem;
+  border: 1px solid var(--line); border-radius: 8px; padding: .15rem .5rem;
+  background: var(--card); font-size: .82rem;
+}
+.mag-slug-riga:focus-within { border-color: var(--green-600); box-shadow: 0 0 0 3px var(--green-50); }
+.mag-slug-fisso { color: var(--ink-soft); white-space: nowrap; font-family: var(--font-mono, monospace); }
+.mag-slug-riga input {
+  flex: 1; min-width: 0; border: 0; outline: none; background: none;
+  padding: .35rem .1rem; font: inherit; font-family: var(--font-mono, monospace);
+  color: var(--green-800); font-weight: 600;
+}
+
+/* ----- l'anteprima del risultato su Google ----- */
+/* Le misure imitano il risultato vero: titolo blu più grande,
+   percorso sopra, descrizione grigia sotto. Non e' decorazione —
+   serve a far vedere dove cade il taglio prima di pubblicare. */
+.mag-serp-titolo { font-size: .85rem; margin: 0 0 .5rem; font-family: var(--font-display); }
+.mag-serp {
+  display: flex; flex-direction: column; gap: .15rem;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  padding: .7rem .8rem; line-height: 1.35;
+}
+.mag-serp-sito { font-size: .72rem; color: #4d5156; word-break: break-all; }
+.mag-serp-t {
+  font-size: 1rem; color: #1a0dab; font-weight: 500; line-height: 1.3;
+  text-wrap: balance;
+}
+.mag-serp-d { font-size: .78rem; color: #4d5156; }
+.mag-serp-vuota { font-style: italic; opacity: .75; }
+
+/* ----- la barra del corpo ----- */
+.mag-barra {
+  display: flex; flex-wrap: wrap; gap: .25rem; margin-bottom: .4rem;
+}
+.mag-barra-b {
+  font: inherit; font-size: .74rem; font-weight: 700; line-height: 1;
+  padding: .35rem .55rem; border-radius: 6px; cursor: pointer;
+  background: var(--card); color: var(--green-800); border: 1px solid var(--line);
+  transition: background .15s var(--ease), border-color .15s var(--ease);
+}
+.mag-barra-b:hover { background: var(--green-50); border-color: var(--green-600); }
+
 .mag-bottoni { display: flex; flex-direction: column; gap: .5rem; }
+
+/* ---------- Piani e calcolatore (professionisti) ---------- */
+
+.piani-griglia {
+  display: grid; gap: 1rem; align-items: start;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 1080px) { .piani-griglia { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px)  { .piani-griglia { grid-template-columns: 1fr; } }
+
+.piano {
+  position: relative; display: flex; flex-direction: column; height: 100%;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1.3rem 1.2rem 1.2rem;
+}
+/* Un piano si distingue con il bordo e un nastro, non ingrandendosi:
+   una scheda più alta delle altre rompe la riga e costringe a leggere
+   in diagonale. */
+.piano-consigliato { border: 2px solid var(--green-600); box-shadow: var(--shadow-med); }
+.piano-nastro {
+  position: absolute; top: -.7rem; left: 1.2rem;
+  background: var(--green-800); color: #fff; font-size: .68rem; font-weight: 700;
+  padding: .2rem .6rem; border-radius: 999px; letter-spacing: .03em;
+}
+/* I piani annunciati ma non ancora attivabili restano leggibili e si
+   dichiarano per quello che sono: bordo tratteggiato, nastro neutro e
+   un bottone che non è un bottone, perché non c'è niente da cliccare. */
+.piano-arrivo { border-style: dashed; background: color-mix(in srgb, var(--card) 88%, var(--bg)); }
+.piano-nastro-attesa { background: var(--ink-soft); }
+.piano-btn-attesa {
+  display: block; margin-top: auto; width: 100%; text-align: center;
+  padding: .7rem 1rem; border-radius: 10px;
+  border: 1px dashed var(--line); background: transparent;
+  color: var(--ink-soft); font-size: .85rem; font-weight: 600;
+}
+.piano-enterprise { border-left: 3px solid var(--gold-500); }
+
+.piano-nome {
+  font-family: var(--font-display); font-size: 1.15rem; margin: 0 0 .3rem;
+}
+.piano-prezzo { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; margin: 0 0 .6rem; }
+.piano-prezzo strong { font-size: 1.9rem; font-family: var(--font-display); line-height: 1; }
+.piano-prezzo span { font-size: .75rem; color: var(--ink-soft); }
+.piano-sommario { font-size: .86rem; color: var(--ink-soft); margin: 0 0 .8rem; line-height: 1.5; }
+
+.piano-voci { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-direction: column; gap: .45rem; }
+.piano-voci li {
+  position: relative; padding-left: 1.4rem; font-size: .85rem; line-height: 1.45;
+}
+.piano-voci li::before {
+  content: "✓"; position: absolute; left: 0; top: 0;
+  color: var(--green-600); font-weight: 700;
+}
+.piano-btn { margin-top: auto; width: 100%; text-align: center; justify-content: center; }
+
+.calc-riga {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem;
+  margin: 1rem 0 .8rem; padding: .8rem 1rem;
+  background: var(--bg); border-radius: 10px;
+}
+.calc-riga label { font-size: .78rem; font-weight: 600; color: var(--ink-soft); }
+.calc-riga input {
+  width: 7rem; padding: .35rem .5rem; font: inherit; font-size: .9rem;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+  font-variant-numeric: tabular-nums;
+}
+
+.calc-tabella { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.calc-tabella th {
+  text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--ink-soft); padding: .5rem .6rem; border-bottom: 1px solid var(--line);
+}
+.calc-tabella td { padding: .55rem .6rem; border-bottom: 1px solid var(--line); }
+.calc-tabella tr:last-child td { border-bottom: 0; }
+.calc-tabella .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* ---------- Magazine (pubblico) ---------- */
 
-.mag-griglia {
-  display: grid; gap: 1.1rem; margin-bottom: 2.2rem;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+/* ----- il filtro per categoria ----- */
+
+.mag-filtri { margin-bottom: 1.6rem; }
+.mag-filtri-titolo {
+  font-family: var(--font-display); font-size: 1rem; font-weight: 700;
+  margin: 0 0 .6rem; color: var(--green-800);
 }
-.mag-griglia-pillar { grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); }
+.mag-chips { display: flex; flex-wrap: wrap; gap: .45rem; }
+.mag-chip {
+  font: inherit; font-size: .82rem; font-weight: 600;
+  padding: .35rem .85rem; border-radius: 999px; cursor: pointer;
+  background: var(--card); color: var(--green-800);
+  border: 1px solid var(--line);
+  transition: background .18s var(--ease), border-color .18s var(--ease), color .18s var(--ease);
+}
+.mag-chip:hover { border-color: var(--green-600); }
+.mag-chip.acceso { background: var(--green-800); border-color: var(--green-800); color: #fff; }
+
+/* ----- l'articolo in apertura ----- */
+
+.mag-apertura {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: stretch; gap: 0; margin-bottom: 2.4rem;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+.mag-apertura-cover { display: block; width: 100%; height: 100%; min-height: 15rem; object-fit: cover; }
+.mag-apertura-testo {
+  display: flex; flex-direction: column; gap: .7rem;
+  padding: 1.8rem 1.9rem; justify-content: center;
+}
+.mag-apertura-tag {
+  background: var(--green-800); color: #fff;
+  padding: .12rem .55rem; border-radius: 999px; font-weight: 700;
+}
+.mag-apertura-titolo {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(1.5rem, 2.6vw, 2.1rem); line-height: 1.15;
+  margin: 0; text-wrap: balance;
+}
+.mag-apertura-occhiello { font-size: .95rem; line-height: 1.55; color: var(--ink-soft); margin: 0; }
+.mag-apertura-piede {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: .8rem; margin-top: .4rem;
+}
+.mag-apertura-firma { font-size: .8rem; color: var(--ink-soft); }
+
+@media (max-width: 800px) {
+  .mag-apertura { grid-template-columns: 1fr; }
+  .mag-apertura-cover { aspect-ratio: 16 / 9; height: auto; min-height: 0; }
+  .mag-apertura-testo { padding: 1.3rem 1.2rem 1.5rem; }
+}
+
+/* ----- la griglia: cinque per riga, e scende a gradini ----- */
+
+.mag-griglia {
+  display: grid; gap: 1rem; margin-bottom: 2.2rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media (max-width: 1180px) { .mag-griglia { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 992px)  { .mag-griglia { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 768px)  { .mag-griglia { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px)  { .mag-griglia { grid-template-columns: 1fr; } }
 
 .mag-sezione-titolo {
   font-size: 1.15rem; font-weight: 700; margin: 0 0 .9rem;
@@ -1381,41 +1532,83 @@ a.chip { display: inline-block; text-decoration: none; }
 }
 
 .mag-card {
+  position: relative;
   display: flex; flex-direction: column;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
-  overflow: hidden; text-decoration: none; color: inherit;
+  overflow: hidden; color: inherit;
   transition: border-color .2s var(--ease), transform .2s var(--ease), box-shadow .2s var(--ease);
 }
 .mag-card:hover { border-color: var(--green-600); transform: translateY(-2px); box-shadow: var(--shadow-med); }
-/* Il fuoco si vede sulla scheda intera, non sul testo dentro:
-   è la scheda che si sta per aprire. */
-.mag-card:focus-visible { outline: 3px solid var(--green-600); outline-offset: 2px; }
 
-.mag-card-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+/* Il link sta sul titolo ma si allarga su tutta la scheda: un
+   solo collegamento nell'albero di accessibilità, e il suo nome è
+   il titolo dell'articolo. Il fuoco però si disegna sulla scheda
+   intera, perché è quella che si sta per aprire. */
+.mag-card-link { color: inherit; text-decoration: none; }
+.mag-card-link::after { content: ""; position: absolute; inset: 0; }
+.mag-card:has(.mag-card-link:focus-visible) { outline: 3px solid var(--green-600); outline-offset: 2px; }
+.mag-card-link:focus-visible { outline: none; }
+
+/* height:auto e flex:none non sono decorazioni.
+
+   L'immagine porta width="1200" height="675", che servono al
+   browser per riservare lo spazio prima di scaricarla — senza, la
+   pagina sobbalza quando arriva. Ma dentro un contenitore flex in
+   colonna quell'altezza diventa la dimensione di base dell'
+   elemento, e vince sull'aspect-ratio: la copertina veniva alta
+   675px dentro una scheda larga 211. Con height:auto l'altezza
+   torna a dipendere dalla proporzione, e flex:none impedisce al
+   flex di ricalcolarla per conto suo. */
+.mag-card-cover {
+  display: block; width: 100%; height: auto; flex: none;
+  aspect-ratio: 16 / 9; object-fit: cover;
+  background: var(--bg);
+}
 .mag-card-vuota { background: linear-gradient(135deg, var(--green-50), var(--gold-100)); }
-.mag-card-grande .mag-card-cover { aspect-ratio: 21 / 9; }
 
-.mag-card-corpo { display: flex; flex-direction: column; gap: .4rem; padding: 1rem 1.1rem 1.2rem; }
+.mag-card-corpo {
+  display: flex; flex-direction: column; gap: .4rem;
+  padding: .75rem .8rem .85rem; flex: 1;
+}
 .mag-card-meta {
-  display: flex; flex-wrap: wrap; align-items: center; gap: .45rem;
-  font-size: .74rem; color: var(--ink-soft);
+  display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
+  font-size: .68rem; color: var(--ink-soft);
 }
 .mag-card-cat {
   background: var(--green-50); color: var(--green-800);
-  padding: .1rem .5rem; border-radius: 999px; font-weight: 600;
+  padding: .08rem .45rem; border-radius: 999px; font-weight: 600;
 }
 .mag-pillar-tag {
   background: var(--gold-100); color: #8A5F11;
-  padding: .1rem .5rem; border-radius: 999px; font-weight: 700;
+  padding: .08rem .45rem; border-radius: 999px; font-weight: 700;
 }
 .mag-card-titolo {
-  font-family: var(--font-display); font-weight: 700; font-size: 1.05rem;
-  line-height: 1.25; text-wrap: balance;
+  font-family: var(--font-display); font-weight: 700; font-size: .95rem;
+  line-height: 1.25; margin: 0; text-wrap: balance;
 }
-.mag-card-grande .mag-card-titolo { font-size: 1.3rem; }
 .mag-card:hover .mag-card-titolo { color: var(--green-800); }
-.mag-card-apertura { font-size: .88rem; line-height: 1.5; color: var(--ink-soft); }
+.mag-card-apertura {
+  font-size: .8rem; line-height: 1.45; color: var(--ink-soft); margin: 0;
+  /* Tre righe al massimo: in una griglia da cinque, una scheda più
+     alta delle altre sfalsa la riga intera. */
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.mag-card-piede {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem;
+  justify-content: space-between; margin-top: auto; padding-top: .5rem;
+  font-size: .7rem; color: var(--ink-soft);
+}
+.mag-card-cta {
+  font-weight: 700; color: var(--green-800); white-space: nowrap;
+}
+.mag-card-cta::after { content: " →"; }
+.mag-card:hover .mag-card-cta { text-decoration: underline; text-underline-offset: .2em; }
 .mag-card-pillar { border-left: 3px solid var(--gold-500); }
+
+.link-btn {
+  font: inherit; background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--green-800); font-weight: 600; text-decoration: underline;
+}
 
 /* ----- la pagina di un articolo ----- */
 
@@ -1515,9 +1708,10 @@ a.chip { display: inline-block; text-decoration: none; }
 
 .mag-correlati { margin-top: 2.8rem; }
 
-@media (max-width: 560px) {
-  .mag-griglia, .mag-griglia-pillar { grid-template-columns: 1fr; }
-}
+/* I punti di rottura della griglia stanno tutti insieme più
+   sopra, accanto alla griglia stessa: averne un altro quaggiù
+   voleva dire due posti da tenere d'accordo, e infatti dichiarava
+   ancora una classe che non esiste più. */
 
 /* Il rimando al pillar in testa a un cluster: si legge prima del
    testo, perché serve a chi è arrivato qui da una ricerca stretta
@@ -1528,3 +1722,221 @@ a.chip { display: inline-block; text-decoration: none; }
   font-size: .9rem; margin: 0 0 1.6rem;
 }
 .mag-da-pillar a { color: #8A5F11; font-weight: 600; }
+
+/* ============================================================
+   RIFINITURA PER TELEFONO
+   ------------------------------------------------------------
+   Il sito era già responsive: le colonne scendevano, la tab bar
+   compariva. Quello che mancava è la differenza fra "si legge" e
+   "si usa con il pollice".
+   ============================================================ */
+
+/* ---------- 1. Niente scroll laterale ----------
+   Una colonna di griglia ha min-width:auto, quindi non si
+   stringe sotto la larghezza minima del suo contenuto: un modulo
+   in riga o una parola lunga allargano la colonna oltre lo
+   schermo, e la pagina scorre di lato. Su una griglia a colonna
+   singola quel comportamento non serve mai.
+
+   Si sistema la causa invece di mettere overflow-x:hidden sul
+   body: nascondere lo scroll non toglie il contenuto da fuori
+   schermo, lo rende solo irraggiungibile. */
+@media (max-width: 960px) {
+  .appsoon > *, .hero-inner > *, .grid-2 > *, .grid-3 > *,
+  .form-grid > *, .piani-griglia > *, .board-layout > *, .pro-layout > * { min-width: 0; }
+}
+
+@media (max-width: 560px) {
+  /* Il modulo dell'avviso app: input e bottone in riga non si
+     stringono sotto una certa misura, e quella misura era più
+     larga dello schermo. A capo. */
+  .notify-form { flex-wrap: wrap; }
+  .notify-form .btn { width: 100%; }
+  .store-badges { gap: .5rem; }
+  .store-badge { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ---------- 2. Bersagli da toccare ----------
+   44 punti è la misura sotto la quale un dito sbaglia. Vale per
+   i comandi — bottoni, filtri, voci della tab bar — non per i
+   link dentro un paragrafo: allargare quelli spezzerebbe le
+   righe del testo senza rendere niente più facile. */
+@media (max-width: 760px) {
+  .btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .btn-sm { min-height: 40px; }
+  .chip { min-height: 40px; display: inline-flex; align-items: center; }
+  .mag-chip { min-height: 40px; }
+  .tabbar a { min-height: 52px; justify-content: center; }
+  /* La ✕ che chiude una finestra è un comando come gli altri, e
+     stava a 24 punti: su un banner che copre mezzo schermo è
+     proprio quella che si deve poter centrare al primo colpo. */
+  .cc-x { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+  /* 16px non è una scelta estetica: sotto quella misura iOS
+     ingrandisce la pagina da solo quando si tocca un campo, e da
+     lì non torna indietro da sé — si resta con il sito zoomato e
+     la colonna tagliata a metà.
+
+     I campi sono elencati per classe e non solo come elementi
+     perché ognuna di queste regole li rimpiccioliva: .field li
+     mette a 15,2 punti, il calcolatore a 14,4. Una regola sul
+     solo elemento perderebbe contro tutte. */
+  input, select, textarea,
+  .field input, .field select, .field textarea,
+  .calc-riga input, .notify-form input, .mm-mittente select,
+  .mag-slug-riga input {
+    min-height: 44px; font-size: 16px;
+  }
+  textarea, .field textarea { min-height: 96px; }
+  .filterbar { gap: .45rem; }
+}
+
+/* ---------- 3. Il notch e la barra di sistema ---------- */
+.topbar { padding-top: env(safe-area-inset-top); }
+@media (max-width: 760px) {
+  .container { width: min(1120px, 100% - 2rem); }
+  .cc-overlay { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+}
+
+/* ---------- 4. L'intestazione si ritrae ----------
+   Su uno schermo alto 844 punti, 64 di intestazione fissa sono
+   l'8% dello spazio occupato da qualcosa che serve solo quando
+   si vuole cambiare pagina. Scorrendo in giù si toglie di mezzo,
+   scorrendo in su torna: è il gesto che ci si aspetta. */
+@media (max-width: 760px) {
+  .topbar { transition: transform .25s var(--ease); will-change: transform; }
+  .topbar.ritratta { transform: translateY(-100%); }
+}
+
+/* ---------- 5. Il passaggio fra le schermate ----------
+   Un'applicazione non sostituisce la pagina di colpo. Basta una
+   dissolvenza breve perché il cambio si legga come un passaggio
+   invece che come un salto.
+
+   Chi ha chiesto meno animazioni al sistema operativo non la
+   vede: prefers-reduced-motion non è una preferenza estetica,
+   per qualcuno è quello che evita la nausea. */
+@media (max-width: 760px) {
+  .app-main > * { animation: entra .22s var(--ease) both; }
+}
+@keyframes entra {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-main > *, .rise, .rise-2, .rise-3 { animation: none; }
+  .topbar { transition: none; }
+}
+
+/* ============================================================
+   AREA RISERVATA DA TELEFONO
+   ------------------------------------------------------------
+   Nessuna delle schermate sbordava: il problema era un altro, e
+   si vede solo misurandolo. Nel CRM la fila delle sezioni
+   occupava quattro righe e 380 punti prima di qualunque
+   contenuto — il 45% di uno schermo da 844 speso per scegliere
+   dove andare. Nel Mail Marketing il menu di undici voci ne
+   prendeva quasi 500.
+
+   La risposta e' sempre la stessa: una fila che scorre di lato
+   invece di andare a capo. E' il modo in cui le applicazioni
+   risolvono questo problema da anni, e costa una riga di
+   contenuto invece di cinque.
+   ============================================================ */
+
+@media (max-width: 760px) {
+
+  /* ---------- Le file di sezioni scorrono ----------
+     Il margine negativo fa arrivare la striscia ai bordi dello
+     schermo: serve a far capire che continua, altrimenti
+     sembra tagliata. La barra di scorrimento si nasconde perche'
+     su telefono non si usa comunque, e occupa spazio verticale. */
+  .filterbar, .lead-categorie {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .filterbar::-webkit-scrollbar, .lead-categorie::-webkit-scrollbar { display: none; }
+  .filterbar > *, .lead-categorie > * { flex: 0 0 auto; scroll-snap-align: start; }
+
+  /* La sezione aperta resta visibile anche se sta a meta' della
+     striscia: senza, aprendo il CRM su "Produzione" la fila
+     parte da "Panoramica" e non si capisce dove si e'. */
+  .filterbar .chip.active, .filterbar .chip[aria-selected="true"] { scroll-snap-align: center; }
+
+  /* ---------- L'intestazione della console ----------
+     Titolo, occhiello, link di ritorno e bottone "Aggiorna"
+     occupavano 150 punti. Su telefono il titolo e' piu' piccolo e
+     il bottone sta sulla stessa riga. */
+  .admin-top { flex-wrap: wrap; gap: .4rem; align-items: center; }
+  .admin-top h1 { font-size: 1.35rem !important; }
+  .admin-top .eyebrow { font-size: .62rem; }
+  .crm-indietro { margin-bottom: .1rem; }
+
+  /* ---------- Le tabelle chiave-valore ----------
+     Due colonne con l'etichetta a larghezza fissa di 8,5rem
+     lasciano al valore meno di metà schermo: un indirizzo email
+     ci va a capo tre volte. Etichetta sopra, valore sotto. */
+  .admin-kv, .admin-kv tbody, .admin-kv tr, .admin-kv th, .admin-kv td { display: block; width: auto; }
+  .admin-kv tr { padding: .45rem 0; border-bottom: 1px solid var(--line); }
+  .admin-kv tr:last-child { border-bottom: 0; }
+  .admin-kv th { width: auto; padding: 0 0 .1rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+  .admin-kv td { padding: 0; word-break: break-word; }
+
+  /* ---------- Le righe di lavorazione ----------
+     Nome a sinistra e comandi a destra su 390 punti vuol dire
+     due colonne da 160: i menu a tendina diventano illeggibili.
+     I comandi vanno sotto, a tutta larghezza. */
+  .lead-scheda { grid-template-columns: 1fr; gap: .5rem; }
+  .lead-lavorazione { flex-wrap: wrap; gap: .4rem; }
+  .lead-lavorazione select { flex: 1 1 100%; }
+  .admin-actions .btn { flex: 1 1 auto; }
+
+  /* ---------- Mail Marketing ----------
+     Undici voci in colonna sono mezzo schermo. Diventano una
+     striscia orizzontale come le altre, e il menu perde la
+     posizione appiccicata: su telefono non serve, ruba solo
+     spazio quando si scorre. */
+  /* La striscia orizzontale va contenuta, o allarga la griglia
+     che la ospita invece di scorrere: .mm-shell e' una griglia e
+     le sue colonne hanno min-width:auto, quindi si adattano alla
+     larghezza del contenuto - 1428 punti di voci in fila. Lo
+     stesso difetto della home, in un altro punto. */
+  .mm-shell, .mm-shell > * { min-width: 0; }
+  .mm-menu, .mm-menu.ridotta { position: static; padding: .5rem; min-width: 0; }
+  .mm-voci {
+    flex-direction: row; flex-wrap: nowrap;
+    overflow-x: auto; scroll-snap-type: x proximity;
+    margin-inline: -.5rem; padding-inline: .5rem;
+    scrollbar-width: none;
+  }
+  .mm-voci::-webkit-scrollbar { display: none; }
+  .mm-voce { flex: 0 0 auto; scroll-snap-align: start; white-space: nowrap; }
+  .mm-voce.attiva { scroll-snap-align: center; }
+  .mm-menu-testa { margin-bottom: .35rem; }
+
+  /* ---------- I riquadri dei numeri ----------
+     Quattro per riga diventano due: quattro su 390 punti danno
+     colonne da 85, e un numero a quattro cifre non ci sta. */
+  .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; }
+  .kpi-tile { padding: .7rem .8rem; }
+  .kpi-tile strong { font-size: 1.4rem; }
+
+  /* ---------- L'editor del Magazine ----------
+     Scrivere cinquemila parole da telefono non e' una cosa che
+     succede, e fingere che si possa non aiuta nessuno. Quello
+     che ha senso da telefono e' rileggere e correggere: il corpo
+     resta modificabile ma parte piu' basso, e la colonna di
+     destra va sotto invece di stringersi a 150 punti. */
+  .mag-editor { grid-template-columns: 1fr; }
+  .mag-fianco { order: 2; }
+  .mag-colonna { order: 1; }
+  #mag-corpo { min-height: 18rem; }
+  .mag-barra { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .mag-barra::-webkit-scrollbar { display: none; }
+  .mag-barra-b { flex: 0 0 auto; min-height: 40px; }
+}

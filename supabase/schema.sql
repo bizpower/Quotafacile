@@ -1463,13 +1463,40 @@ create index if not exists mag_articoli_pillar_idx
 -- sempre. Dopo la pubblicazione non si tocca più: un indirizzo
 -- che cambia è un indirizzo che si rompe, per i link già
 -- condivisi e per i motori che lo hanno indicizzato.
+--
+-- La data di pubblicazione è una responsabilità separata dallo
+-- slug, anche se stanno nella stessa funzione.
+--
+-- Prima erano una cosa sola: si usciva alla prima riga se lo slug
+-- c'era già, e la data si scriveva in fondo insieme allo slug.
+-- Finché l'indirizzo lo generava sempre il database le due cose
+-- coincidevano. Da quando si può scrivere a mano prima della
+-- pubblicazione non coincidono più, e un articolo pubblicato con
+-- un indirizzo scelto restava senza data: finiva in fondo
+-- all'elenco del Magazine e dichiarava un datePublished vuoto nei
+-- dati strutturati, cioè spariva dalla vista proprio mentre
+-- risultava online.
 create or replace function public.mag_assegna_slug()
 returns trigger language plpgsql security definer set search_path = '' as $$
 declare
   base text;
   tentativo text;
 begin
-  if new.stato <> 'pubblicato' or new.slug is not null then
+  if new.stato <> 'pubblicato' then
+    return new;
+  end if;
+
+  -- La data si scrive perché l'articolo è passato a "pubblicato",
+  -- qualunque sia l'origine dello slug. Una volta sola: un
+  -- articolo ritirato e ripubblicato conserva la data in cui è
+  -- uscito la prima volta, perché è quella che i motori hanno
+  -- già visto.
+  if new.pubblicato_il is null then
+    new.pubblicato_il := now();
+  end if;
+
+  -- Lo slug, invece, si scrive perché non ce n'era uno.
+  if new.slug is not null then
     return new;
   end if;
 
@@ -1482,7 +1509,6 @@ begin
   end if;
 
   new.slug := tentativo;
-  if new.pubblicato_il is null then new.pubblicato_il := now(); end if;
   return new;
 end $$;
 

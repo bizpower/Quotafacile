@@ -1027,18 +1027,137 @@ views.home = () => {
   </section>`;
 };
 
-/* ----- PAGINA PROFESSIONISTI ----- */
+/* ----- PAGINA PROFESSIONISTI -----
+
+   I NUMERI DI QUESTA PAGINA NON SONO UNA PROMESSA
+
+   A un intermediario che valuta un abbonamento serve sapere cosa
+   può tornargli indietro. La tentazione è scrivere "ricevi fino a
+   N contatti al mese": è quello che fanno tutti, ed è una cifra
+   che nessuno può sostenere.
+
+   Qui si fa il contrario: si mostra il calcolo. Un volume di
+   ricerca misurato, le quote di clic per posizione, un tasso di
+   contatto dichiarato. Chi legge vede da dove esce il numero e
+   può cambiarne le ipotesi. E si dice, nella stessa pagina, che
+   quella posizione oggi non ce l'abbiamo: il numero dice quanto
+   vale arrivarci, non quanto stiamo incassando.
+
+   È meno efficace di una promessa e regge alla prima domanda
+   difficile, che su un pubblico di professionisti arriva sempre. */
+
+/* Volume misurato su Ubersuggest (Italia, settembre 2026) per
+   "assicurazione monopattino elettrico", la chiave del pillar più
+   recente. Una sola chiave, non la somma del Magazine: un numero
+   verificabile vale più di un totale che nessuno può ricontrollare. */
+const SEO_ESEMPIO = { chiave: "assicurazione monopattino elettrico", ricerche: 6600, difficolta: 15 };
+
+/* Quote di clic organico per fascia di posizione. Sono ordini di
+   grandezza ricorrenti negli studi pubblici sul CTR, non una
+   misura del nostro sito: servono a dare la scala, e la pagina lo
+   dichiara. */
+const CTR_FASCE = [
+  ["1ª posizione", 0.27],
+  ["2ª e 3ª", 0.12],
+  ["dalla 4ª alla 6ª", 0.06],
+  ["dalla 7ª alla 10ª", 0.02]
+];
+
+const PIANI = [
+  {
+    id: "gratis", nome: "QuotaPass", prezzo: null, cadenza: "sempre gratuito",
+    sommario: "La vetrina. Serve a esserci e a farsi verificare.",
+    voci: [
+      "Profilo pubblico con numero RUI, ruolo e città",
+      "Risposte in bacheca firmate e indicizzate",
+      "Presenza nella lista intermediari"
+    ],
+    azione: { testo: "Crea la QuotaPass", href: "#/area-pro" }
+  },
+  /* I due piani a pagamento sono annunciati, non attivi: non
+     esistono su Stripe e non c'è codice che li faccia valere.
+     Quindi si dice "in arrivo" e il bottone non finge di poterli
+     attivare — e l'elenco delle funzioni porta scritto che è in
+     definizione, perché lo è. Pubblicare un listino che promette
+     cose non costruite è il modo più rapido di perdere la fiducia
+     del primo che paga e non le trova. */
+  {
+    id: "base", nome: "Base", prezzo: "8,99", cadenza: "al mese, IVA esclusa",
+    inArrivo: true,
+    sommario: "Per chi vuole essere trovato, non solo essere presente.",
+    voci: [
+      "Tutto quello che c'è nel piano gratuito",
+      "Profilo in evidenza nella lista, sopra i profili gratuiti",
+      "Richieste di preventivo della tua provincia",
+      "Statistiche del profilo: quante volte è stato aperto"
+    ]
+  },
+  {
+    id: "pro", nome: "Pro", prezzo: "19,99", cadenza: "al mese, IVA esclusa",
+    inArrivo: true,
+    sommario: "Per chi lavora sui contatti in entrata come canale vero.",
+    voci: [
+      "Tutto quello che c'è in Base",
+      "Priorità nello smistamento delle richieste",
+      "Specializzazioni senza limite di numero",
+      "Profilo fra gli intermediari in evidenza in home"
+    ]
+  }
+];
+
 views.professionisti = () => {
-  setJsonLd(null);
+  const visite = q => Math.round(SEO_ESEMPIO.ricerche * q);
+  const contatti = q => Math.round(SEO_ESEMPIO.ricerche * q * 0.02);
+
+  /* Il grafo dichiara i due piani a listino come offerte con un
+     prezzo vero. L'Enterprise no: un'offerta senza prezzo in
+     schema.org si dichiara solo se il prezzo esiste e non lo si
+     vuole mostrare — qui non esiste, perché si costruisce caso
+     per caso, e inventarne uno sarebbe dichiarare il falso. */
+  setJsonLd({
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Service",
+        "@id": SITO() + "professionisti/#servizio",
+        "name": "QuotaFacile per intermediari assicurativi",
+        "serviceType": "Piattaforma di visibilità e contatti per intermediari assicurativi",
+        "areaServed": { "@type": "Country", "name": "Italia" },
+        "provider": { "@id": SITO() + "#org" },
+        /* availability PreOrder e non InStock: i due piani hanno
+           un prezzo deciso ma non si possono ancora sottoscrivere,
+           e dichiararli disponibili sarebbe dichiarare il falso a
+           un motore di ricerca — che poi lo mostra come tale. */
+        "offers": PIANI.filter(p => p.prezzo).map(p => ({
+          "@type": "Offer",
+          "name": "Piano " + p.nome,
+          "price": p.prezzo.replace(",", "."),
+          "priceCurrency": "EUR",
+          "valueAddedTaxIncluded": false,
+          "availability": p.inArrivo ? "https://schema.org/PreOrder" : "https://schema.org/InStock",
+          "description": p.sommario,
+          "url": SITO() + "professionisti/"
+        }))
+      },
+      breadcrumbJsonLd([
+        { nome: "Home", rotta: "home" },
+        { nome: "Per i professionisti", rotta: "professionisti" }
+      ])
+    ]
+  });
+
   return `
   <section class="hero">
     <div class="container hero-inner">
       <div class="rise">
         <span class="eyebrow">Per agenti, broker e collaboratori</span>
-        <h1>QuotaFacile — il primo marketplace per agenti assicurativi</h1>
-        <p class="lead">Su QuotaFacile non compri contatti: li conquisti. Crea il tuo profilo, rispondi alle domande degli utenti e fatti trovare da chi sta già cercando una polizza.</p>
+        <h1>La prima piattaforma per intermediari assicurativi</h1>
+        <p class="lead">Su QuotaFacile non compri contatti: li conquisti. Crea il tuo profilo, rispondi
+        alle domande degli utenti e fatti trovare da chi sta già cercando una polizza.
+        Nessuna commissione sui contratti: il cliente è tuo, e il rapporto pure.</p>
         <div class="hero-actions">
           <a href="#/area-pro" class="btn btn-gold">Inizia gratis — crea la QuotaPass</a>
+          <a href="#piani" class="btn btn-outline">Vedi i piani</a>
         </div>
       </div>
       <div class="rise-2">${qpass(DB.brokers[1])}</div>
@@ -1047,26 +1166,138 @@ views.professionisti = () => {
 
   <section class="section">
     <div class="container">
-      <div class="section-head"><span class="eyebrow">Come funziona per te</span><h2>Un motore di visibilità in 3 mosse</h2></div>
+      <div class="section-head"><span class="eyebrow">Come funziona per te</span>
+      <h2>Tre mosse, e nessuna provvigione</h2></div>
       <div class="grid-3">
-        <div class="card"><span class="step-num">1</span><h3>Crea la tua QuotaPass</h3><p class="muted">Nome, ruolo, numero RUI, specializzazioni. Il tuo profilo diventa una tessera professionale che ispira fiducia a colpo d'occhio.</p></div>
-        <div class="card"><span class="step-num">2</span><h3>Rispondi in bacheca</h3><p class="muted">Gli utenti pubblicano dubbi assicurativi. Ogni tua risposta è pubblica, firmata e indicizzata su Google: contenuto che lavora per te 24/7.</p></div>
-        <div class="card"><span class="step-num">3</span><h3>Sali in classifica</h3><p class="muted">Ogni risposta vale punti. Chi ne ha di più appare in evidenza in home e nei risultati: più aiuti, più visibilità, più contatti.</p></div>
+        <div class="card"><span class="step-num">1</span><h3>Crea la tua QuotaPass</h3>
+          <p class="muted">Nome, ruolo, numero RUI, specializzazioni. Il numero RUI è verificabile sul
+          registro pubblico IVASS da chiunque apra il tuo profilo: è quello che ti distingue da un
+          annuncio qualsiasi.</p></div>
+        <div class="card"><span class="step-num">2</span><h3>Rispondi in bacheca</h3>
+          <p class="muted">Gli utenti pubblicano dubbi assicurativi. Ogni tua risposta è pubblica,
+          firmata e indicizzata: resta online e continua a lavorare mesi dopo che l'hai scritta.</p></div>
+        <div class="card"><span class="step-num">3</span><h3>Le richieste arrivano a te</h3>
+          <p class="muted">Chi ti ha letto e vuole parlarne ti scrive direttamente. Non passiamo dal
+          mezzo: nessuna commissione sul contratto, nessun contatto rivenduto a tre colleghi.</p></div>
       </div>
     </div>
   </section>
 
   <section class="section section-alt">
     <div class="container">
-      <div class="section-head"><span class="eyebrow">Il sistema punti</span><h2>La reputazione si costruisce, non si compra</h2></div>
-      <div class="grid-3">
-        <div class="card"><span class="icon-dot">✍️</span><h3>+10 punti</h3><p class="muted">Per ogni risposta pubblicata in bacheca.</p></div>
-        <div class="card"><span class="icon-dot">👍</span><h3>+5 punti</h3><p class="muted">Per ogni voto "utile" ricevuto dagli utenti.</p></div>
-        <div class="card"><span class="icon-dot">🏆</span><h3>+25 punti</h3><p class="muted">Se la tua risposta viene segnata come "migliore risposta".</p></div>
+      <div class="section-head">
+        <span class="eyebrow">In numeri</span>
+        <h2>Quanto vale una posizione, con il calcolo in chiaro</h2>
+        <p class="muted">Nessuno può promettere quanti contatti riceverai. Quello che si può fare è
+        mostrare l'aritmetica e le sue ipotesi, così puoi rifarla con i tuoi numeri.</p>
       </div>
-      <div class="card" style="margin-top:1.2rem">
-        <h3>I livelli</h3>
-        <p class="muted">Novizio (0) → Consulente (50) → Esperto (150) → <strong style="color:var(--gold-testo)">Top Advisor (300)</strong>. I Top Advisor compaiono nella sezione "Intermediari in evidenza" della home.</p>
+
+      <div class="card">
+        <h3>Il punto di partenza è una misura, non una stima</h3>
+        <p class="muted">La chiave <strong>«${esc(SEO_ESEMPIO.chiave)}»</strong> fa
+        <strong>${SEO_ESEMPIO.ricerche.toLocaleString("it-IT")} ricerche al mese</strong> in Italia, con
+        una difficoltà SEO di ${SEO_ESEMPIO.difficolta} su 100 (fonte: Ubersuggest, settembre 2026).
+        È la chiave su cui è costruita la nostra <a href="#/magazine/assicurazione-monopattino-elettrico">guida
+        all'obbligo di assicurazione per i monopattini</a>. Una sola chiave fra le dodici del Magazine:
+        un numero che puoi ricontrollare vale più di un totale che nessuno può verificare.</p>
+
+        <div class="calc-riga">
+          <label for="calc-ricerche">Ricerche al mese</label>
+          <input id="calc-ricerche" type="number" min="0" step="100" value="${SEO_ESEMPIO.ricerche}">
+          <label for="calc-tasso">Su 100 che leggono, quanti ti scrivono</label>
+          <input id="calc-tasso" type="number" min="0" max="100" step="0.5" value="2">
+        </div>
+
+        <table class="calc-tabella">
+          <thead><tr><th>Se la pagina si posiziona</th><th class="num">Visite al mese</th><th class="num">Contatti al mese</th></tr></thead>
+          <tbody id="calc-corpo">
+            ${CTR_FASCE.map(([nome, q]) => `
+              <tr data-ctr="${q}">
+                <td>${esc(nome)}</td>
+                <td class="num">${visite(q).toLocaleString("it-IT")}</td>
+                <td class="num"><strong>${contatti(q)}</strong></td>
+              </tr>`).join("")}
+          </tbody>
+        </table>
+
+        <p class="privacy-hint">Le quote di clic sono ordini di grandezza ricorrenti negli studi pubblici
+        sul CTR organico, non una misura di questo sito. Il tasso di contatto è l'ipotesi che puoi
+        cambiare qui sopra: due su cento è un valore prudente per un contenuto informativo.</p>
+
+        <div class="legal-warning" style="margin-top:1rem">
+          <strong>E la cosa che gli altri non scrivono:</strong> oggi QuotaFacile non è in prima pagina
+          su questa chiave. La tabella dice <em>quanto vale arrivarci</em>, non quanto stiamo incassando.
+          Il Magazine è online da poche settimane e i dodici articoli devono ancora posizionarsi —
+          se qualcuno ti promette contatti dal primo mese, chiedigli di mostrarti questo stesso calcolo.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="piani">
+    <div class="container">
+      <div class="section-head"><span class="eyebrow">Piani</span>
+      <h2>Quanto costa stare qui</h2>
+      <p class="muted">Un prezzo mensile, nessuna percentuale sui contratti, nessun vincolo di durata.</p></div>
+
+      <div class="piani-griglia">
+        ${PIANI.map(p => `
+          <div class="piano ${p.inArrivo ? "piano-arrivo" : ""}">
+            ${p.inArrivo ? `<span class="piano-nastro piano-nastro-attesa">In arrivo</span>` : ""}
+            <h3 class="piano-nome">${esc(p.nome)}</h3>
+            <p class="piano-prezzo">
+              ${p.prezzo
+                ? `<strong>${esc(p.prezzo)} €</strong><span>${esc(p.cadenza)}</span>`
+                : `<strong>Gratis</strong><span>${esc(p.cadenza)}</span>`}
+            </p>
+            <p class="piano-sommario">${esc(p.sommario)}</p>
+            <ul class="piano-voci">
+              ${p.voci.map(v => `<li>${esc(v)}</li>`).join("")}
+            </ul>
+            ${p.inArrivo
+              ? `<p class="privacy-hint">Non è ancora attivabile: il prezzo è deciso, l'elenco delle
+                 funzioni è in definizione e può cambiare prima dell'attivazione.</p>
+                 <span class="piano-btn piano-btn-attesa">Attivazione a breve</span>`
+              : `<a class="btn btn-outline piano-btn" href="${esc(p.azione.href)}">${esc(p.azione.testo)}</a>`}
+          </div>`).join("")}
+
+        <div class="piano piano-enterprise">
+          <h3 class="piano-nome">Enterprise</h3>
+          <p class="piano-prezzo"><strong>Su misura</strong><span>si parte da una chiamata</span></p>
+          <p class="piano-sommario">Quando il problema non è la visibilità ma il lavoro ripetitivo che ti porta via le giornate.</p>
+          <ul class="piano-voci">
+            <li>Automazioni su misura per l'agenzia o lo studio: rinnovi, scadenzario, solleciti, smistamento delle richieste</li>
+            <li>Integrazione con il gestionale che già usi, invece di sostituirlo</li>
+            <li>Sviluppo di applicazioni web dedicate — un portale clienti, un preventivatore interno, una dashboard di produzione</li>
+            <li>Import e bonifica delle anagrafiche che oggi vivono in fogli di calcolo</li>
+          </ul>
+          <p class="privacy-hint">Non è un piano a listino perché non esiste un prezzo onesto prima di
+          aver capito cosa fai e con quali strumenti. Si parte da una conversazione: se non ha senso,
+          te lo diciamo.</p>
+          <button type="button" class="btn btn-gold piano-btn" data-apri-enterprise>Raccontaci cosa ti serve</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt">
+    <div class="container">
+      <div class="section-head"><span class="eyebrow">Prima che lo chiedi</span><h2>Le domande che ci fanno gli intermediari</h2></div>
+      <div class="grid-2" style="gap:1rem;align-items:start">
+        <div class="card"><h3>Prendete una percentuale sui contratti?</h3>
+          <p class="muted">No, e non è una promozione a tempo: QuotaFacile non svolge attività di
+          distribuzione assicurativa e non percepisce provvigioni. Il contratto lo fai tu, con il tuo
+          mandato e la tua responsabilità.</p></div>
+        <div class="card"><h3>I contatti li vendete anche ad altri?</h3>
+          <p class="muted">No. Una richiesta indirizzata a te arriva a te. Non è un mercato di lead
+          rivenduti a tre colleghi della stessa città.</p></div>
+        <div class="card"><h3>Posso disdire quando voglio?</h3>
+          <p class="muted">Sì. L'abbonamento è mensile e si interrompe dalla mensilità successiva.
+          Il profilo gratuito resta, con le risposte che hai scritto.</p></div>
+        <div class="card"><h3>Il gestore è un concorrente?</h3>
+          <p class="muted">QuotaFacile è gestita da un intermediario iscritto alla sezione E del RUI,
+          che è anche presente in vetrina. Lo scriviamo in chiaro nelle
+          <a href="#/note-legali">note legali</a>, perché è il tipo di cosa che è giusto sapere prima.</p></div>
       </div>
     </div>
   </section>
@@ -1076,7 +1307,7 @@ views.professionisti = () => {
       <div class="cta-band">
         <div>
           <h2 style="color:#fff">Iscrizione gratuita. Ti bastano 3 minuti.</h2>
-          <p>Nessuna commissione sui contratti: il cliente è tuo, il rapporto è tuo.</p>
+          <p>Si comincia dal profilo gratuito. I piani a pagamento si attivano quando hai visto se il posto ti serve.</p>
         </div>
         <a href="#/area-pro" class="btn btn-gold">Crea il profilo ora</a>
       </div>
@@ -1272,36 +1503,111 @@ const magMinuti = html => Math.max(1, Math.round(
    Se l'indirizzo non ha la forma attesa non si inventa niente e
    si torna stringa vuota: meglio nessun srcset che un srcset che
    punta a indirizzi che non esistono. */
+const MAG_LARGHEZZE = [320, 480, 768, 1120, 1600];
+
 const magSrcset = url => {
   const u = String(url || "");
   if (!/\/upload\/[^/]*w_\d+/.test(u)) return "";
-  return [400, 800, 1200]
+  return MAG_LARGHEZZE
     .map(w => u.replace(/(\/upload\/[^/]*?)w_\d+/, "$1w_" + w) + " " + w + "w")
     .join(", ");
 };
 
-function magSchedaHtml(a, grande) {
+/* Quanto spazio occuperà davvero l'immagine, per ogni larghezza di
+   finestra. Senza questa riga il browser assume 100vw e scarica il
+   file più grande anche per una scheda da 210 punti: è la
+   differenza fra una copertina nitida e mezzo megabyte sprecato.
+   I valori seguono i punti di rottura della griglia nel CSS: se si
+   cambiano là, vanno cambiati qui. */
+const MAG_SIZES_SCHEDA =
+  "(min-width: 1180px) 210px, (min-width: 992px) 22vw, (min-width: 768px) 30vw, (min-width: 520px) 45vw, 90vw";
+const MAG_SIZES_APERTURA = "(min-width: 1180px) 1120px, 92vw";
+
+const magCoverHtml = (a, classe, sizes, priorita) =>
+  a.cover_url
+    ? `<img class="${classe}" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
+            srcset="${esc(magSrcset(a.cover_url))}" sizes="${esc(sizes)}"
+            width="1200" height="675" decoding="async"
+            ${priorita ? 'fetchpriority="high"' : 'loading="lazy"'}>`
+    : `<span class="${classe} mag-card-vuota" aria-hidden="true"></span>`;
+
+const magTempo = a => a.pubblicato_il
+  ? `<time datetime="${esc(String(a.pubblicato_il).slice(0, 10))}">${esc(magData(a.pubblicato_il))}</time>`
+  : "";
+
+/* L'apertura di un articolo può essere lunga: nella scheda si
+   taglia a una lunghezza che non manda a capo la griglia. Il
+   taglio è sull'ultima parola intera, non a metà sillaba. */
+const magStringa = (s, max) => {
+  const t = String(s || "").trim();
+  if (t.length <= max) return t;
+  return t.slice(0, t.lastIndexOf(" ", max) > 0 ? t.lastIndexOf(" ", max) : max).trim() + "…";
+};
+
+/* La scheda non è più un <a> che avvolge tutto: dentro doveva
+   starci il bottone «Leggi tutto l'articolo», e un link dentro un
+   link non è HTML valido — il browser lo sfascia e la tastiera ci
+   si perde.
+
+   Quindi il link è uno solo, sul titolo, e si allarga su tutta la
+   scheda con un ::after. Chi naviga a tastiera o con uno screen
+   reader sente un collegamento per scheda, e il suo nome è il
+   titolo dell'articolo: cinque link chiamati tutti «Leggi tutto
+   l'articolo» sarebbero cinque voci identiche in un elenco di
+   collegamenti. Per questo il bottone è decorativo. */
+function magSchedaHtml(a, livello) {
   const cat = magCategoria(a);
+  const h = livello === 2 ? "h2" : "h3";
   return `
-  <a class="mag-card ${grande ? "mag-card-grande" : ""} ${a.tipo === "pillar" ? "mag-card-pillar" : ""}"
-     href="#/magazine/${esc(a.slug)}">
-    ${a.cover_url ? `
-      <img class="mag-card-cover" src="${esc(a.cover_url)}" alt="${esc(a.cover_alt || "")}"
-           srcset="${esc(magSrcset(a.cover_url))}"
-           sizes="(max-width: 700px) 100vw, 380px"
-           width="1200" height="675"
-           loading="lazy" decoding="async">` : `<span class="mag-card-cover mag-card-vuota" aria-hidden="true"></span>`}
-    <span class="mag-card-corpo">
-      <span class="mag-card-meta">
+  <article class="mag-card ${a.tipo === "pillar" ? "mag-card-pillar" : ""}">
+    ${magCoverHtml(a, "mag-card-cover", MAG_SIZES_SCHEDA, false)}
+    <div class="mag-card-corpo">
+      <div class="mag-card-meta">
         ${a.tipo === "pillar" ? `<span class="mag-pillar-tag">Guida completa</span>` : ""}
         ${cat ? `<span class="mag-card-cat">${esc(cat)}</span>` : ""}
-        <span>${esc(magData(a.pubblicato_il))}</span>
-      </span>
-      <span class="mag-card-titolo">${esc(a.titolo)}</span>
-      ${a.apertura ? `<span class="mag-card-apertura">${esc(a.apertura)}</span>` : ""}
-    </span>
-  </a>`;
+      </div>
+      <${h} class="mag-card-titolo">
+        <a class="mag-card-link" href="#/magazine/${esc(a.slug)}">${esc(a.titolo)}</a>
+      </${h}>
+      ${a.apertura ? `<p class="mag-card-apertura">${esc(magStringa(a.apertura, 120))}</p>` : ""}
+      <div class="mag-card-piede">
+        ${magTempo(a)}
+        <span class="mag-card-cta" aria-hidden="true">Leggi tutto l'articolo</span>
+      </div>
+    </div>
+  </article>`;
 }
+
+/* L'articolo più recente in apertura. È la prima cosa che si vede
+   e l'unica immagine sopra la piega, quindi la sua copertina si
+   carica con priorità invece che pigramente: è quella che decide
+   quanto la pagina *sembra* veloce. */
+function magAperturaHtml(a) {
+  const cat = magCategoria(a);
+  return `
+  <article class="mag-apertura">
+    ${magCoverHtml(a, "mag-apertura-cover", MAG_SIZES_APERTURA, true)}
+    <div class="mag-apertura-testo">
+      <div class="mag-card-meta">
+        <span class="mag-apertura-tag">Ultimo pubblicato</span>
+        ${a.tipo === "pillar" ? `<span class="mag-pillar-tag">Guida completa</span>` : ""}
+        ${cat ? `<span class="mag-card-cat">${esc(cat)}</span>` : ""}
+      </div>
+      <h2 class="mag-apertura-titolo">${esc(a.titolo)}</h2>
+      ${a.apertura ? `<p class="mag-apertura-occhiello">${esc(magStringa(a.apertura, 260))}</p>` : ""}
+      <div class="mag-apertura-piede">
+        <span class="mag-apertura-firma">${esc(a.firma || "Redazione QuotaFacile")} · ${magTempo(a)}</span>
+        <a class="btn btn-primary" href="#/magazine/${esc(a.slug)}">Leggi tutto l'articolo</a>
+      </div>
+    </div>
+  </article>`;
+}
+
+/* Le categorie selezionate. Vive fuori dalla vista perché render()
+   ricostruisce l'HTML da capo a ogni giro: una variabile dentro la
+   funzione si azzererebbe al primo clic. Vuoto = tutte, che è
+   anche lo stato che il pre-render salva nell'HTML pubblicato. */
+let magFiltro = [];
 
 views.magazine = () => {
   const m = MAG();
@@ -1327,9 +1633,26 @@ views.magazine = () => {
           "@type": "ItemList",
           "itemListOrder": "https://schema.org/ItemListOrderDescending",
           "numberOfItems": arts.length,
+          /* Ogni voce porta con sé copertina e descrizione, non
+             solo titolo e indirizzo: è quello che un motore
+             generativo legge per decidere se citare l'articolo
+             senza doverlo aprire. La descrizione è quella vera
+             dell'articolo, mai inventata qui. */
           "itemListElement": arts.slice(0, 30).map((a, i) => ({
             "@type": "ListItem", "position": i + 1,
-            "url": urlArticolo(a), "name": a.titolo
+            "url": urlArticolo(a),
+            "item": {
+              "@type": "BlogPosting",
+              "@id": urlArticolo(a) + "#articolo",
+              "headline": a.titolo,
+              "url": urlArticolo(a),
+              ...(a.meta_description || a.apertura
+                ? { "description": a.meta_description || a.apertura } : {}),
+              ...(a.cover_url ? { "image": a.cover_url } : {}),
+              ...(a.pubblicato_il ? { "datePublished": a.pubblicato_il } : {}),
+              ...(magCategoria(a) ? { "articleSection": magCategoria(a) } : {}),
+              "isPartOf": { "@id": SITO() + "magazine/#blog" }
+            }
           }))
         },
         breadcrumbJsonLd([
@@ -1342,8 +1665,27 @@ views.magazine = () => {
     setJsonLd(null);
   }
 
-  const pillar = arts.filter(a => a.tipo === "pillar");
-  const resto = arts.filter(a => a.tipo !== "pillar");
+  /* Si filtra solo su categorie che esistono davvero: se una
+     categoria viene rinominata o tolta mentre qualcuno ha la
+     pagina aperta, il filtro si svuota da solo invece di mostrare
+     un elenco vuoto senza spiegazione. */
+  const cats = (m ? m.stato.categorie : [])
+    .filter(c => arts.some(a => a.categoria_id === c.id));
+  const attivi = magFiltro.filter(id => cats.some(c => c.id === id));
+  const scelti = attivi.length
+    ? arts.filter(a => attivi.includes(a.categoria_id))
+    : arts;
+
+  /* L'apertura è l'ultimo pubblicato fra quelli che passano il
+     filtro, e non compare due volte: sotto c'è tutto il resto. */
+  const apertura = scelti[0] || null;
+  const restanti = apertura ? scelti.slice(1) : [];
+  const pillar = restanti.filter(a => a.tipo === "pillar");
+  const resto = restanti.filter(a => a.tipo !== "pillar");
+
+  const chip = (id, testo, acceso) => `
+    <button type="button" class="mag-chip ${acceso ? "acceso" : ""}"
+            data-magcat="${esc(id)}" aria-pressed="${acceso ? "true" : "false"}">${esc(testo)}</button>`;
 
   return `
   <section class="section">
@@ -1367,15 +1709,31 @@ views.magazine = () => {
           già pubblicate e una domanda nuova ogni giorno.</p>
         </div>`
       : `
-        ${pillar.length ? `
-          <div class="mag-griglia mag-griglia-pillar">
-            ${pillar.map(a => magSchedaHtml(a, true)).join("")}
+        ${cats.length > 1 ? `
+          <div class="mag-filtri">
+            <h2 class="mag-filtri-titolo" id="mag-categorie">Scegli le categorie</h2>
+            <div class="mag-chips" role="group" aria-labelledby="mag-categorie">
+              ${chip("", "Tutte", attivi.length === 0)}
+              ${cats.map(c => chip(c.id, c.nome, attivi.includes(c.id))).join("")}
+            </div>
           </div>` : ""}
-        ${resto.length ? `
-          <h2 class="mag-sezione-titolo">Approfondimenti</h2>
-          <div class="mag-griglia">
-            ${resto.map(a => magSchedaHtml(a, false)).join("")}
-          </div>` : ""}`}
+
+        ${scelti.length === 0 ? `
+          <div class="card"><p class="muted">Nessun articolo in questa categoria.
+          <button type="button" class="link-btn" data-magcat="">Mostra tutti</button></p></div>`
+        : `
+          ${apertura ? magAperturaHtml(apertura) : ""}
+
+          ${pillar.length ? `
+            <h2 class="mag-sezione-titolo">Guide complete</h2>
+            <div class="mag-griglia">
+              ${pillar.map(a => magSchedaHtml(a, 3)).join("")}
+            </div>` : ""}
+          ${resto.length ? `
+            <h2 class="mag-sezione-titolo">Approfondimenti</h2>
+            <div class="mag-griglia">
+              ${resto.map(a => magSchedaHtml(a, 3)).join("")}
+            </div>` : ""}`}`}
     </div>
   </section>`;
 };
@@ -1569,7 +1927,7 @@ views.magazineArticolo = (slug) => {
       ${fratelli.length ? `
         <nav class="mag-correlati" aria-label="Articoli collegati">
           <h2 class="mag-sezione-titolo">${padre ? "Altri approfondimenti della stessa guida" : "Approfondimenti collegati"}</h2>
-          <div class="mag-griglia">${fratelli.map(x => magSchedaHtml(x, false)).join("")}</div>
+          <div class="mag-griglia">${fratelli.map(x => magSchedaHtml(x, 3)).join("")}</div>
         </nav>` : ""}
     </div>
   </article>`;
@@ -2020,7 +2378,7 @@ function parseHash() {
 const SEO_PAGINE = {
   "intermediari": ["Trova un intermediario assicurativo verificato RUI | QuotaFacile", "Agenti, broker e collaboratori iscritti al RUI in vetrina: ruolo, città, specializzazioni e numero di iscrizione. Contatta direttamente chi preferisci, gratis."],
   "bacheca": ["Bacheca Q&A: domande e risposte sulle assicurazioni | QuotaFacile", "Dubbi assicurativi reali con risposte firmate da intermediari iscritti al RUI. Una nuova domanda ogni giorno, tutte le risposte pubbliche e verificabili."],
-  "professionisti": ["QuotaFacile — il primo marketplace per agenti assicurativi", "Crea la tua QuotaPass gratis, rispondi in bacheca e fatti trovare da chi cerca una polizza. Nessuna commissione sui contratti: il cliente è tuo."],
+  "professionisti": ["La prima piattaforma per intermediari assicurativi | QuotaFacile", "Profilo gratuito con numero RUI verificabile, piani da 8,99 € al mese e nessuna commissione sui contratti. Con il calcolo in chiaro di quanti contatti vale una posizione."],
   "preventivo": ["Richiedi un preventivo assicurativo gratuito | QuotaFacile", "Compila in due minuti e ricevi il contatto di intermediari specializzati nel ramo che ti serve. Gratuito, senza impegno, senza registrazione."],
   "area-pro": ["Area Pro — dashboard intermediari | QuotaFacile", "Gestisci la tua QuotaPass, rispondi alle domande della bacheca e monitora i contatti ricevuti."],
   "privacy": ["Privacy Policy | QuotaFacile", "Informativa sul trattamento dei dati personali ai sensi degli artt. 13-14 del Regolamento (UE) 2016/679."],
@@ -2270,6 +2628,90 @@ function apriSegnalazione(target) {
   });
 }
 
+/* La richiesta Enterprise passa dal canale che esiste già.
+
+   Serviva un modo per raccogliere "raccontaci cosa ti serve", e
+   la tentazione era costruire un modulo nuovo con la sua tabella
+   e la sua azione sul server. Ma una richiesta Enterprise è, di
+   fatto, una richiesta di consulenza: l'endpoint la sa già
+   registrare, notificare e far comparire in console. Aggiungere
+   un secondo percorso avrebbe voluto dire un secondo posto in cui
+   una richiesta può perdersi senza che nessuno se ne accorga.
+
+   Quindi: tipo "consulenza", ramo "Enterprise", e l'origine che
+   dice da dove è arrivata. Zero righe sul server. */
+function apriEnterprise() {
+  const host = document.createElement("div");
+  host.innerHTML = `
+  <div class="cc-overlay" data-close-ent>
+    <div class="cc-modal" role="dialog" aria-modal="true" aria-labelledby="ent-t">
+      <div class="cc-modal-head">
+        <h2 id="ent-t">Raccontaci cosa ti serve</h2>
+        <button class="cc-x" data-close-ent aria-label="Chiudi">✕</button>
+      </div>
+      <form id="ent-form" class="cc-modal-body">
+        <p class="muted" style="font-size:.88rem">Scrivi che lavoro fai e qual è la cosa ripetitiva che
+        ti porta via più tempo. Ti rispondiamo con un'idea di come si automatizza e quanto costa —
+        oppure con il motivo per cui, nel tuo caso, non conviene.</p>
+        <div class="grid-2" style="gap:.6rem">
+          <div class="field"><label for="ent-nome">Nome e cognome *</label>
+            <input id="ent-nome" required autocomplete="name"></div>
+          <div class="field"><label for="ent-email">Email *</label>
+            <input id="ent-email" type="email" required autocomplete="email"></div>
+        </div>
+        <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
+          <div class="field"><label for="ent-tel">Telefono</label>
+            <input id="ent-tel" autocomplete="tel"></div>
+          <div class="field"><label for="ent-citta">Città</label>
+            <input id="ent-citta" autocomplete="address-level2"></div>
+        </div>
+        <div class="field" style="margin-top:.6rem">
+          <label for="ent-note">Cosa vorresti automatizzare *</label>
+          <textarea id="ent-note" required rows="5"
+            placeholder="Es.: ogni mese ricontrollo a mano le scadenze di 400 polizze su un foglio Excel e mando i solleciti uno per uno. Uso il gestionale X."></textarea>
+        </div>
+        ${consentBox("ent-consenso", "Acconsento al trattamento dei dati per essere ricontattato su questa richiesta.", false)}
+      </form>
+      <div class="cc-modal-foot">
+        <button class="btn btn-ghost btn-sm" data-close-ent>Annulla</button>
+        <button class="btn btn-primary btn-sm" form="ent-form" type="submit">Invia la richiesta</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(host);
+  const chiudi = () => { document.removeEventListener("keydown", conEsc); host.remove(); };
+  const conEsc = e => { if (e.key === "Escape") { e.stopPropagation(); chiudi(); } };
+  document.addEventListener("keydown", conEsc);
+  host.querySelectorAll("[data-close-ent]").forEach(el =>
+    el.addEventListener("click", e => { if (e.target === el) chiudi(); }));
+
+  host.querySelector("#ent-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    if (!host.querySelector("#ent-consenso").checked) {
+      toast("Per inviare la richiesta serve il consenso al trattamento dei dati.");
+      return;
+    }
+    const btn = host.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = "Invio…";
+    const esito = await window.QFMailer.invia("richiesta", {
+      tipo: "consulenza",
+      ramo: "Enterprise",
+      nome: host.querySelector("#ent-nome").value.trim(),
+      email: host.querySelector("#ent-email").value.trim(),
+      telefono: host.querySelector("#ent-tel").value.trim(),
+      citta: host.querySelector("#ent-citta").value.trim(),
+      note: host.querySelector("#ent-note").value.trim(),
+      origine: "professionisti/piano-enterprise",
+      consenso: true,
+      consensoTesto: "Acconsento al trattamento dei dati per essere ricontattato su questa richiesta."
+    });
+    chiudi();
+    toast(esito && esito.ok === false
+      ? "La richiesta non è partita. Riprova fra poco, oppure scrivici dalla pagina Contatti."
+      : "Richiesta ricevuta. Ti rispondiamo entro due giorni lavorativi.");
+  });
+}
+
 /* ---------------- EVENTS ---------------- */
 function bind() {
   /* card cliccabili */
@@ -2283,6 +2725,58 @@ function bind() {
     b.addEventListener("click", () => { boardFilter = b.dataset.boardfilter; render(); }));
   document.querySelectorAll("[data-protab]").forEach(b =>
     b.addEventListener("click", () => { proTab = b.dataset.protab; render(); }));
+
+  /* ---- pagina professionisti ---- */
+  $("[data-apri-enterprise]")?.addEventListener("click", apriEnterprise);
+
+  /* Le file di sezioni che su telefono scorrono di lato devono
+     aprirsi mostrando dov'è che ci si trova. Senza questo,
+     entrando nel CRM su "Produzione" la striscia parte da
+     "Panoramica" e la voce attiva è fuori schermo: si vede una
+     fila di sezioni e nessuna sembra selezionata.
+
+     Solo se serve davvero: se la fila ci sta tutta, spostarla
+     sarebbe un movimento senza motivo. */
+  document.querySelectorAll(".filterbar, .mm-voci").forEach(fila => {
+    if (fila.scrollWidth <= fila.clientWidth + 2) return;
+    const attiva = fila.querySelector(".active, .attiva, [aria-selected='true']");
+    if (!attiva) return;
+    const centro = attiva.offsetLeft - (fila.clientWidth - attiva.offsetWidth) / 2;
+    fila.scrollTo({ left: Math.max(0, centro), behavior: "instant" });
+  });
+
+  /* Il calcolatore dei contatti. Ricalcola le stesse righe che il
+     pre-render ha già scritto nell'HTML: chi arriva senza
+     JavaScript — un crawler, per esempio — vede comunque numeri
+     veri, e chi ha JavaScript può cambiare le ipotesi. */
+  const calcR = $("#calc-ricerche");
+  const calcT = $("#calc-tasso");
+  if (calcR && calcT) {
+    const ricalcola = () => {
+      const ricerche = Math.max(0, Number(calcR.value) || 0);
+      const tasso = Math.max(0, Math.min(100, Number(calcT.value) || 0)) / 100;
+      document.querySelectorAll("#calc-corpo tr").forEach(tr => {
+        const ctr = Number(tr.dataset.ctr);
+        const visite = Math.round(ricerche * ctr);
+        tr.children[1].textContent = visite.toLocaleString("it-IT");
+        tr.children[2].innerHTML = "<strong>" + Math.round(visite * tasso).toLocaleString("it-IT") + "</strong>";
+      });
+    };
+    calcR.addEventListener("input", ricalcola);
+    calcT.addEventListener("input", ricalcola);
+  }
+
+  /* Categorie del Magazine: si sommano invece di sostituirsi —
+     «Auto» e «Imprese» insieme mostrano entrambe. Il pulsante
+     senza valore è «Tutte» e azzera. */
+  document.querySelectorAll("[data-magcat]").forEach(b =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.magcat;
+      if (!id) magFiltro = [];
+      else if (magFiltro.includes(id)) magFiltro = magFiltro.filter(x => x !== id);
+      else magFiltro = magFiltro.concat(id);
+      render();
+    }));
 
   /* preventivo: scelte e step */
   document.querySelectorAll("[data-tipo]").forEach(b =>
@@ -2524,6 +3018,12 @@ window.QF = {
   saveDB, render, toast, esc, initials, livello, qpass, broker,
   staffFaqs, publishedDaily, dailyPublishedCount, getFaqById,
   contaRisposte, sincronizzaBrokers, campo, DA_COMPILARE, ruiLabel,
+  /* La radice del sito. Serve a chi carica un file da assets/ e
+     non può scrivere un percorso assoluto: in locale il sito sta
+     in "/", su GitHub Pages può stare sotto una sottocartella, e
+     un "/assets/..." scritto a mano funzionerebbe solo in uno dei
+     due posti. */
+  base: BASE_SITO,
   /* Serve a chi deve parlare con l'area riservata prima che il
      router ci arrivi: l'uscita dall'Area Pro di un collaboratore
      la rimanda lì, e senza aspettare il caricamento parlerebbe a
@@ -2532,6 +3032,53 @@ window.QF = {
 };
 
 window.addEventListener("hashchange", render);
+
+/* L'intestazione che si ritrae scorrendo in giù.
+
+   Tre cose che sembrano dettagli e non lo sono:
+
+   - la soglia. Senza, l'intestazione sfarfalla a ogni micro
+     movimento del dito, e il rimbalzo di iOS a fine pagina la fa
+     sparire e riapparire da sola;
+   - il ritorno immediato appena si scorre in su. Se tornasse solo
+     in cima alla pagina, per cambiare sezione bisognerebbe
+     risalire tutto;
+   - non si ritrae mai nei primi 80 punti, perché lassù non sta
+     rubando spazio a nessuno.
+
+   Il calcolo sta dentro requestAnimationFrame: leggere scrollY a
+   ogni evento di scorrimento significa chiedere al browser di
+   ricalcolare il layout decine di volte al secondo. */
+(() => {
+  const barra = document.querySelector(".topbar");
+  if (!barra) return;
+
+  let ultimo = window.scrollY;
+  let inCoda = false;
+
+  const valuta = () => {
+    inCoda = false;
+    const y = Math.max(0, window.scrollY);
+    const delta = y - ultimo;
+    if (Math.abs(delta) < 6) return;
+    /* In cima si mostra sempre; più giù comanda la direzione. */
+    barra.classList.toggle("ritratta", y > 80 && delta > 0);
+    ultimo = y;
+  };
+
+  window.addEventListener("scroll", () => {
+    if (inCoda) return;
+    inCoda = true;
+    requestAnimationFrame(valuta);
+  }, { passive: true });
+
+  /* Cambiando schermata l'intestazione deve esserci: si arriva in
+     cima alla pagina nuova, ed è il momento in cui serve di più. */
+  window.addEventListener("hashchange", () => {
+    barra.classList.remove("ritratta");
+    ultimo = 0;
+  });
+})();
 
 /* Il link "salta al contenuto" punta a #app, che per un browser
    senza JavaScript è esattamente il salto giusto. Ma qui il

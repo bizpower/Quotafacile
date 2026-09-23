@@ -294,6 +294,22 @@
               ${anteprima ? "Torna a scrivere" : "Anteprima"}
             </button>
           </div>
+          ${anteprima ? "" : `
+            <div class="mag-barra" role="toolbar" aria-label="Formattazione del corpo">
+              ${[
+                ["h2", "H2", "Titolo di sezione"],
+                ["h3", "H3", "Sottotitolo"],
+                ["h4", "H4", "Livello più profondo"],
+                ["b", "B", "Grassetto"],
+                ["i", "I", "Corsivo"],
+                ["link", "🔗", "Collegamento"],
+                ["ul", "• Elenco", "Elenco puntato"],
+                ["ol", "1. Elenco", "Elenco numerato"],
+                ["quote", "❝", "Citazione"],
+                ["tab", "▦", "Tabella"]
+              ].map(([k, l, t]) =>
+                `<button type="button" class="mag-barra-b" data-mag-fmt="${k}" title="${esc(t)}">${esc(l)}</button>`).join("")}
+            </div>`}
           ${anteprima
             ? `<div class="mag-preview prosa" id="mag-preview"></div>`
             : `<textarea id="mag-corpo" required rows="26" spellcheck="true"
@@ -376,7 +392,32 @@ Testo normale. **Grassetto**, *corsivo*, [link](https://…).
             <tr><th>Indirizzo</th><td><code>/magazine/${esc(a.slug)}/</code></td></tr>
           </table>
           <p class="privacy-hint">Assegnato alla prima pubblicazione e non più modificabile: cambiarlo
-          romperebbe i link già condivisi e quello che i motori hanno indicizzato.</p>` : ""}
+          romperebbe i link già condivisi e quello che i motori hanno indicizzato.</p>`
+          : `
+          <div class="field" style="margin-top:.6rem">
+            <label for="mag-slug">Indirizzo della pagina</label>
+            <div class="mag-slug-riga">
+              <span class="mag-slug-fisso">/magazine/</span>
+              <input id="mag-slug" maxlength="70" value="${esc(a.slug || "")}"
+                     placeholder="si-compila-dal-titolo" spellcheck="false">
+              <span class="mag-slug-fisso">/</span>
+            </div>
+            <p class="privacy-hint">Si propone dal titolo mentre scrivi. Puoi accorciarlo — un indirizzo
+            che finisce su una preposizione si legge male — ma solo adesso: alla pubblicazione si fissa
+            e non si tocca più.</p>
+          </div>`}
+        </div>
+
+        <div class="card">
+          <h4 class="mag-serp-titolo">Come appare su Google</h4>
+          <div class="mag-serp" id="mag-serp">
+            <span class="mag-serp-sito">www.quotafacile.net &rsaquo; magazine &rsaquo; <span id="mag-serp-slug"></span></span>
+            <span class="mag-serp-t" id="mag-serp-t"></span>
+            <span class="mag-serp-d" id="mag-serp-d"></span>
+          </div>
+          <p class="privacy-hint">Anteprima indicativa: Google riscrive titolo e descrizione quando
+          ritiene che un'altra parte della pagina risponda meglio alla domanda. Serve a vedere dove
+          taglia, non a garantire cosa mostrerà.</p>
         </div>
 
         <div class="mag-bottoni">
@@ -472,9 +513,24 @@ Testo normale. **Grassetto**, *corsivo*, [link](https://…).
       cover_alt: $("#mag-alt")?.value.trim() || null,
       categoria_id: $("#mag-categoria")?.value || null,
       tipo: $("#mag-tipo")?.value || "cluster",
-      pillar_id: $("#mag-pillar")?.value || null
+      pillar_id: $("#mag-pillar")?.value || null,
+      /* Solo finché l'articolo non ha un indirizzo: dopo il campo
+         non c'è, e il server scarterebbe comunque quello che
+         arrivasse. */
+      slug: $("#mag-slug")?.value.trim() || null
     };
   }
+
+  /* La stessa regola del server, ripetuta qui per far vedere
+     subito cosa diventerà l'indirizzo. Il server non si fida di
+     questa: la riapplica. */
+  const slugDa = s => [...String(s || "").toLowerCase().normalize("NFD")]
+    .filter(ch => { const c = ch.codePointAt(0); return c < 0x300 || c > 0x36f; })
+    .join("")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 70)
+    .replace(/-+$/g, "");
 
   async function salva(stato) {
     if (salvando) return;
@@ -520,6 +576,106 @@ Testo normale. **Grassetto**, *corsivo*, [link](https://…).
     };
     contatore(titolo, $("#mag-len-t"), 60);
     contatore(meta, $("#mag-len-m"), 155);
+
+    /* ---- l'indirizzo e l'anteprima Google ---- */
+    const slug = $("#mag-slug");
+    const apertura = $("#mag-apertura");
+
+    /* Lo slug si propone dal titolo finché nessuno lo ha toccato.
+       Da quel momento in poi resta quello scritto a mano: un campo
+       che si riscrive da solo mentre lo si sta compilando è il
+       modo più rapido di far perdere fiducia a chi lo usa. */
+    let slugAMano = !!(slug && slug.value);
+    slug?.addEventListener("input", () => {
+      slugAMano = true;
+      aggiornaSerp();
+    });
+
+    const serpT = $("#mag-serp-t");
+    const serpD = $("#mag-serp-d");
+    const serpS = $("#mag-serp-slug");
+
+    /* Google taglia intorno ai 60 caratteri nel titolo e ai 155
+       nella descrizione, sull'ultima parola intera. Qui si mostra
+       lo stesso taglio: vedere dove cade è l'unico modo di
+       scrivere un titolo che non finisce a metà. */
+    const taglia = (s, max) => {
+      const t = String(s || "").trim();
+      if (t.length <= max) return t;
+      const i = t.lastIndexOf(" ", max);
+      return t.slice(0, i > max * 0.6 ? i : max).trim() + " …";
+    };
+
+    function aggiornaSerp() {
+      if (!serpT) return;
+      if (slug && !slugAMano) slug.value = slugDa(titolo?.value || "");
+      const s = slug ? slug.value : (aperto?.slug || "");
+      if (serpS) serpS.textContent = s || "…";
+      serpT.textContent = taglia(titolo?.value, 60) || "Titolo dell'articolo";
+      const d = (meta?.value || "").trim() || (apertura?.value || "").trim();
+      serpD.textContent = taglia(d, 155) || "Senza meta description Google prende una frase dal testo, e non sempre quella giusta.";
+      serpD.classList.toggle("mag-serp-vuota", !(meta?.value || "").trim());
+    }
+
+    [titolo, meta, apertura].forEach(c => c?.addEventListener("input", aggiornaSerp));
+    aggiornaSerp();
+
+    /* ---- la barra del corpo ---- */
+    /* Inserisce Markdown attorno alla selezione. Non è un editor
+       visuale e non vuole esserlo: il corpo resta testo che si
+       può leggere, incollare altrove e mettere sotto controllo di
+       versione. I pulsanti servono a non doversi ricordare la
+       sintassi, non a nasconderla. */
+    const AVVOLGI = {
+      b: ["**", "**", "testo in grassetto"],
+      i: ["*", "*", "testo in corsivo"],
+      link: ["[", "](https://)", "testo del link"]
+    };
+    const PREFISSI = {
+      h2: ["## ", "Titolo di sezione"],
+      h3: ["### ", "Sottotitolo"],
+      h4: ["#### ", "Livello più profondo"],
+      ul: ["- ", "voce dell'elenco"],
+      ol: ["1. ", "prima voce"],
+      quote: ["> ", "la citazione"]
+    };
+    const TABELLA = "\n| Colonna | Colonna |\n| --- | --- |\n| valore | valore |\n";
+
+    document.querySelectorAll("[data-mag-fmt]").forEach(b =>
+      b.addEventListener("click", () => {
+        const c = $("#mag-corpo");
+        if (!c) return;
+        const da = c.selectionStart, a = c.selectionEnd;
+        const sel = c.value.slice(da, a);
+        const k = b.dataset.magFmt;
+        let testo, fuocoDa, fuocoA;
+
+        if (k === "tab") {
+          testo = TABELLA;
+          fuocoDa = da + testo.length; fuocoA = fuocoDa;
+        } else if (AVVOLGI[k]) {
+          const [pre, post, segnaposto] = AVVOLGI[k];
+          const dentro = sel || segnaposto;
+          testo = pre + dentro + post;
+          fuocoDa = da + pre.length; fuocoA = fuocoDa + dentro.length;
+        } else {
+          const [pre, segnaposto] = PREFISSI[k];
+          /* Su più righe il prefisso va su ognuna: selezionare tre
+             righe e premere "elenco" deve fare un elenco di tre
+             voci, non una voce sola con dentro tre righe. */
+          const righe = (sel || segnaposto).split("\n");
+          testo = righe.map(r => pre + r).join("\n");
+          const aCapo = da > 0 && c.value[da - 1] !== "\n" ? "\n" : "";
+          testo = aCapo + testo;
+          fuocoDa = da + aCapo.length + pre.length;
+          fuocoA = da + testo.length;
+        }
+
+        c.setRangeText(testo, da, a, "end");
+        c.focus();
+        c.setSelectionRange(fuocoDa, fuocoA);
+        c.dispatchEvent(new Event("input", { bubbles: true }));
+      }));
 
     if (corpo) {
       const spia = $("#mag-parole");

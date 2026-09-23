@@ -7,8 +7,8 @@
    Due cose distinte dietro la stessa porta:
    - la console di PIATTAFORMA modera QuotaFacile (bacheca,
      richieste, intermediari): riguarda il marketplace;
-   - questo CRM amministra BIZPOWER: collaboratori, lead,
-     documenti, produzione. Riguarda la società.
+   - questo CRM amministra BIZPOWER: collaboratori, lead, posta,
+     produzione. Riguarda la società.
    Tenerli separati evita l'errore più facile, cioè mostrare in
    pubblico un dato che non doveva uscire dall'ufficio.
 
@@ -145,9 +145,10 @@
         const n = D().lead.filter(l => l.stato === "nuovo").length;
         return n ? `${n} ancora da contattare` : "tutti presi in carico";
       })())}
-      ${tile(D().documenti.length, "Documenti archiviati", (() => {
-        const s = D().documenti.filter(d => d.scadenza && new Date(d.scadenza) < new Date(Date.now() + 60 * 86400000)).length;
-        return s ? `⚠️ ${s} in scadenza o scaduti` : "nessuna scadenza vicina";
+      ${tile(D().lead.filter(l => l.email).length, "Lead con email", (() => {
+        const n = D().lead.filter(l => l.email).length;
+        const t = D().lead.length;
+        return t ? `${Math.round((n / t) * 100)}% dell'archivio — sono quelli scrivibili` : "—";
       })())}
       ${tile((D().inviate || []).filter(x => new Date(x.inviata_il) > new Date(Date.now() - 30 * 86400000)).length, "Email inviate (30 giorni)", (() => {
         const f = (D().inviate || []).filter(x => x.esito === "fallita").length;
@@ -175,8 +176,6 @@
             ["Collaboratori e anagrafica squadra", true],
             ["Accessi personali dei collaboratori", true],
             ["Lead locali (ricerca per zona e categoria)", true],
-            ["Pipeline: etichette, attività, viste per fase", true],
-            ["Documenti e contratti", true],
             ["Mail: modelli, invio, registro", true],
             ["Produzione e classifica", true]
           ].map(([t, fatto]) => `
@@ -259,7 +258,6 @@
           <tr><th>Email</th><td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td></tr>
           ${c.telefono ? `<tr><th>Telefono</th><td><a href="tel:${esc(String(c.telefono).replace(/\s/g, ""))}">${esc(c.telefono)}</a></td></tr>` : ""}
           <tr><th>Produzione</th><td>${(D().produzione.find(p => p.collaboratore_id === c.id) || {}).punti ?? 0} punti <span class="muted">(calcolati dalle attività registrate)</span></td></tr>
-          <tr><th>Documenti</th><td>${D().documenti.filter(d => d.collaboratore_id === c.id).length}</td></tr>
           ${c.note ? `<tr><th>Note</th><td>${esc(c.note)}</td></tr>` : ""}
         </table>
         <div class="admin-actions">
@@ -272,58 +270,8 @@
             ${c.attivo ? "Disattiva" : "Riattiva"}
           </button>
         </div>
-        ${c.attivo ? "" : `<p class="privacy-hint">Disattivare chiude davvero la porta: l'utenza viene sospesa e la password non funziona più, non è solo una riga nascosta da un elenco. La sua storia però — documenti caricati, lead lavorati, produzione — resta al suo posto. Per questo non si cancella.</p>`}
+        ${c.attivo ? "" : `<p class="privacy-hint">Disattivare chiude davvero la porta: l'utenza viene sospesa e la password non funziona più, non è solo una riga nascosta da un elenco. La sua storia però — lead lavorati, email inviate, produzione — resta al suo posto. Per questo non si cancella.</p>`}
       </div>`).join("") : `<p class="muted">Nessun collaboratore inserito.</p>`}`;
-  }
-
-  /* ---------------- SEZIONE · DOCUMENTI ----------------
-     Qui il titolare vede l'archivio di tutti. I file però non
-     passano da questa pagina: chi li ha caricati li scarica dalla
-     propria area, con la propria utenza. Questa è la vista di
-     controllo — cosa c'è, di chi è, quando scade. */
-  function documentiView() {
-    const docs = D().documenti;
-    const perCollaboratore = {};
-    docs.forEach(d => { (perCollaboratore[d.collaboratore_id] ||= []).push(d); });
-
-    const nome = id => D().collaboratori.find(c => c.id === id)?.nome || "Collaboratore rimosso";
-    const peso = n => !n ? "—" : n < 1024 * 1024
-      ? Math.round(n / 1024) + " KB"
-      : (n / 1024 / 1024).toFixed(1).replace(".", ",") + " MB";
-
-    /* Le scadenze in evidenza: è il motivo per cui questo è un
-       archivio e non una cartella condivisa. */
-    const inScadenza = docs
-      .filter(d => d.scadenza)
-      .map(d => ({ ...d, giorni: Math.ceil((new Date(d.scadenza + "T00:00:00") - new Date()) / 86400000) }))
-      .filter(d => d.giorni <= 60)
-      .sort((a, b) => a.giorni - b.giorni);
-
-    return `
-    <p class="admin-hint">L'archivio della squadra. I documenti li carica ciascuno dalla propria area, con la propria utenza: così si sa sempre chi ha caricato cosa. I file stanno in un archivio privato e non sono raggiungibili da alcun indirizzo pubblico.</p>
-
-    ${inScadenza.length ? `
-      <div class="legal-warning">
-        <strong>${inScadenza.length} document${inScadenza.length === 1 ? "o" : "i"} in scadenza o scadut${inScadenza.length === 1 ? "o" : "i"}.</strong>
-        <ul style="margin:.5rem 0 0;padding-left:1.1rem">
-          ${inScadenza.slice(0, 8).map(d => `<li>${esc(d.nome_file)} — ${esc(nome(d.collaboratore_id))} — ${d.giorni < 0 ? `scaduto da ${-d.giorni} giorni` : `fra ${d.giorni} giorni`}</li>`).join("")}
-        </ul>
-      </div>` : ""}
-
-    ${docs.length ? Object.entries(perCollaboratore).map(([id, elenco]) => `
-      <div class="card" style="margin-bottom:1rem">
-        <h3>${esc(nome(id))} <span class="pill">${elenco.length} document${elenco.length === 1 ? "o" : "i"}</span></h3>
-        ${elenco.map(d => `
-          <div class="lead-row">
-            <span class="lead-icon">${/pdf/i.test(d.tipo_mime || "") ? "📕" : /image/i.test(d.tipo_mime || "") ? "🖼️" : "📄"}</span>
-            <span class="leader-info">
-              <strong>${esc(d.nome_file)}</strong>
-              <span>${esc(d.categoria.replace(/_/g, " "))} · ${peso(d.dimensione)} · ${dataBreve(d.creato_il)}${d.scadenza ? ` · scade il ${dataBreve(d.scadenza)}` : ""}</span>
-              ${d.note ? `<span class="muted" style="font-size:.8rem">${esc(d.note)}</span>` : ""}
-            </span>
-          </div>`).join("")}
-      </div>`).join("")
-    : `<p class="muted">Nessun documento caricato. Comincerà ad arrivare qualcosa quando i collaboratori entreranno con il loro accesso.</p>`}`;
   }
 
   /* ---------------- SEZIONE · LEAD LOCALI ----------------
@@ -350,12 +298,44 @@
     in_trattativa: "🟠 In trattativa", cliente: "🟢 Cliente", scartato: "⚪ Scartato"
   };
 
+  /* ---- Regioni, province e comuni ----
+     L'elenco sta in assets/data/comuni.json (lo rigenera
+     tools/comuni.mjs dai dati ISTAT) ed è 190 KB: troppi per
+     farli scaricare a chi apre il CRM per guardare la
+     produzione. Si caricano quando servono davvero, cioè la
+     prima volta che si apre la ricerca precisa, e una volta
+     sola. Se non arrivano, i campi tornano a essere di testo
+     libero invece di lasciare tre tendine vuote. */
+  const geo = { dati: null, inCorso: false, fallita: false };
+
+  function caricaGeo() {
+    if (geo.dati || geo.inCorso || geo.fallita) return;
+    geo.inCorso = true;
+    fetch((QF().base || "/") + "assets/data/comuni.json")
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
+      .then(d => { geo.dati = d; })
+      .catch(() => { geo.fallita = true; })
+      .finally(() => { geo.inCorso = false; QF().render(); });
+  }
+
+  /* La provincia è la chiave di tutto: la sigla è quella che il
+     server riceve, ed è anche quella con cui si trovano i comuni.
+     La regione serve solo ad accorciare la tendina delle
+     province, quindi se manca non blocca niente. */
+  const provinceDi = regione => {
+    if (!geo.dati) return [];
+    if (regione && geo.dati.regioni[regione]) return geo.dati.regioni[regione];
+    return Object.keys(geo.dati.province)
+      .sort((a, b) => geo.dati.province[a].nome.localeCompare(geo.dati.province[b].nome, "it"));
+  };
+  const comuniDi = sigla => (geo.dati && geo.dati.comuni[sigla]) || [];
+
   /* Stato della ricerca. Vive solo finché la scheda è aperta: i
      risultati non salvati non sono un archivio, sono una lista
      della spesa. */
   const ricerca = {
     modalita: "rapida",
-    campi: { zona: "", via: "", citta: "Milano", provincia: "MI", cap: "" },
+    campi: { zona: "", via: "", citta: "Milano", provincia: "MI", cap: "", regione: "Lombardia" },
     categorie: ["ristorazione"],
     raggio: 2000,
     soloQualita: true,
@@ -366,6 +346,86 @@
     scelti: new Set(),
     filtroStato: "tutti"
   };
+
+  /* I tre menu a tendina della ricerca precisa.
+
+     Prima erano campi di testo, e il testo libero qui è una
+     trappola silenziosa: «Reggio Emilia» invece di «Reggio
+     nell'Emilia», o una sigla di provincia che non esiste,
+     centrano la ricerca da un'altra parte senza dire niente. Si
+     scopre dai risultati sbagliati, quando si è già consumata una
+     chiamata a Google.
+
+     Regione → Provincia → Comune: ogni tendina restringe la
+     successiva, così la terza ha al massimo trecento voci invece
+     di ottomila. La regione è facoltativa e serve solo a
+     accorciare l'elenco delle province. */
+  function zoneHtml(R) {
+    if (geo.fallita) {
+      return `
+        <div class="legal-warning" style="margin-bottom:.7rem">
+          L'elenco dei comuni non si è caricato: i campi qui sotto restano liberi.
+          Scrivi il nome del comune come lo scrive l'anagrafe.
+        </div>
+        <div class="grid-2" style="gap:.6rem">
+          <div class="field"><label for="ld-citta">Città *</label>
+            <input id="ld-citta" required value="${esc(R.campi.citta)}" placeholder="Milano"></div>
+          <div class="field"><label for="ld-prov">Provincia</label>
+            <input id="ld-prov" maxlength="2" value="${esc(R.campi.provincia)}" placeholder="MI"
+                   style="text-transform:uppercase"></div>
+        </div>
+        <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
+          <div class="field"><label for="ld-via">Via e civico</label>
+            <input id="ld-via" value="${esc(R.campi.via)}" placeholder="Corso Lodi 10"></div>
+          <div class="field"><label for="ld-cap">CAP</label>
+            <input id="ld-cap" value="${esc(R.campi.cap)}" placeholder="20139"></div>
+        </div>`;
+    }
+
+    if (!geo.dati) {
+      return `<p class="muted" style="margin:.4rem 0 .8rem">Carico l'elenco dei comuni…</p>`;
+    }
+
+    const prov = provinceDi(R.campi.regione);
+    const sigla = prov.includes(R.campi.provincia) ? R.campi.provincia : (prov[0] || "");
+    const elenco = comuniDi(sigla);
+    const citta = elenco.some(c => c[0] === R.campi.citta) ? R.campi.citta : (elenco[0] ? elenco[0][0] : "");
+    /* Il CAP mostrato: quello scritto a mano se c'è, altrimenti
+       quello del comune selezionato quando ne ha uno solo. Si
+       calcola qui e non si scrive nello stato, perché questa
+       funzione disegna e basta. */
+    const capMostrato = R.campi.cap || (elenco.find(c => c[0] === citta) || [])[1] || "";
+
+    return `
+      <div class="grid-3" style="gap:.6rem">
+        <div class="field"><label for="ld-regione">Regione</label>
+          <select id="ld-regione">
+            <option value="">Tutte le regioni</option>
+            ${Object.keys(geo.dati.regioni).map(r =>
+              `<option value="${esc(r)}" ${R.campi.regione === r ? "selected" : ""}>${esc(r)}</option>`).join("")}
+          </select></div>
+        <div class="field"><label for="ld-prov">Provincia *</label>
+          <select id="ld-prov" required>
+            ${prov.map(s =>
+              `<option value="${esc(s)}" ${sigla === s ? "selected" : ""}>${esc(geo.dati.province[s].nome)} (${esc(s)})</option>`).join("")}
+          </select></div>
+        <div class="field"><label for="ld-citta">Comune *</label>
+          <select id="ld-citta" required>
+            ${elenco.map(([n]) =>
+              `<option value="${esc(n)}" ${citta === n ? "selected" : ""}>${esc(n)}</option>`).join("")}
+          </select>
+          <p class="privacy-hint">${elenco.length} comuni in questa provincia. Scrivi le prime lettere per arrivarci.</p>
+        </div>
+      </div>
+      <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
+        <div class="field"><label for="ld-via">Via e civico <span class="muted">(facoltativo)</span></label>
+          <input id="ld-via" value="${esc(R.campi.via)}" placeholder="Corso Lodi 10"></div>
+        <div class="field"><label for="ld-cap">CAP <span class="muted">(facoltativo)</span></label>
+          <input id="ld-cap" inputmode="numeric" maxlength="5" value="${esc(capMostrato)}" placeholder="20139">
+          <p class="privacy-hint">Si compila da solo per i comuni che ne hanno uno solo; per le città grandi scegli tu la zona.</p>
+        </div>
+      </div>`;
+  }
 
   function leadView() {
     const salvati = D().lead || [];
@@ -388,21 +448,7 @@
         </div>
 
         <form id="lead-form">
-          ${precisa ? `
-            <div class="grid-2" style="gap:.6rem">
-              <div class="field"><label for="ld-via">Via e civico</label>
-                <input id="ld-via" value="${esc(R.campi.via)}" placeholder="Corso Lodi 10"></div>
-              <div class="field"><label for="ld-cap">CAP</label>
-                <input id="ld-cap" value="${esc(R.campi.cap)}" placeholder="20139"></div>
-            </div>
-            <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
-              <div class="field"><label for="ld-citta">Città *</label>
-                <input id="ld-citta" required value="${esc(R.campi.citta)}" placeholder="Milano"></div>
-              <div class="field"><label for="ld-prov">Provincia</label>
-                <input id="ld-prov" maxlength="2" value="${esc(R.campi.provincia)}" placeholder="MI"
-                       style="text-transform:uppercase"></div>
-            </div>`
-          : `
+          ${precisa ? zoneHtml(R) : `
             <div class="field"><label for="ld-zona">Zona *</label>
               <input id="ld-zona" required value="${esc(R.campi.zona)}" placeholder="Opera, Milano — oppure un CAP, un quartiere, una via">
               <p class="privacy-hint">Più è precisa la zona, più i risultati sono nel posto giusto: «Milano» centra il cerchio in Duomo.</p>
@@ -504,6 +550,10 @@
                   · <span class="muted">${esc(CATEGORIE_LEAD[l.categoria] || l.categoria || "—")}</span>
                 </span>
                 <span class="lead-meta muted">Trovato il ${dataBreve(l.raccolto_il)} cercando «${esc(l.query_origine || "—")}» su Google Places</span>
+                ${l.no_contatto ? `
+                  <span class="lead-meta"><span class="pill">🚫 si è opposto</span>
+                  ${l.no_contatto_il ? `<span class="muted">dal ${dataBreve(l.no_contatto_il)}</span>` : ""}
+                  ${l.no_contatto_motivo ? `<span class="muted">— ${esc(l.no_contatto_motivo)}</span>` : ""}</span>` : ""}
               </div>
               <div class="lead-lavorazione">
                 <select data-lead-stato="${esc(l.id)}">
@@ -514,6 +564,9 @@
                   <option value="">Non assegnato</option>
                   ${attivi().map(c => `<option value="${esc(c.id)}" ${l.assegnato_a === c.id ? "selected" : ""}>${esc(c.nome)}</option>`).join("")}
                 </select>
+                ${l.no_contatto
+                  ? `<button class="btn btn-ghost btn-sm" data-lead-riapri="${esc(l.id)}" title="Riapri il contatto">Riapri</button>`
+                  : `<button class="btn btn-ghost btn-sm" data-lead-nocontatto="${esc(l.id)}" title="Registra che si è opposto a essere contattato">🚫 Si è opposto</button>`}
                 <button class="btn btn-ghost btn-sm danger" data-lead-elimina="${esc(l.id)}">🗑</button>
               </div>
             </div>`).join("") || `<p class="muted">Nessun lead con questo filtro.</p>`}`
@@ -521,198 +574,6 @@
       </div>`;
 
     return modulo + risultati() + archivio;
-  }
-
-  /* ---------------- SEZIONE · PIPELINE ----------------
-     Lo stesso archivio dei lead, guardato per fase invece che in
-     elenco: si vede subito dove si accumula il lavoro.
-
-     Due cose che qui diventano possibili e prima no:
-     - le ETICHETTE, che dicono quello che lo stato non può dire.
-       Lo stato è uno solo per volta; "priorità alta" e "da
-       richiamare" convivono, e costringerle in un campo unico
-       significherebbe scegliere fra informazioni che non si
-       escludono.
-     - le ATTIVITÀ, cioè chi ha chiamato, quando e com'è andata.
-       Senza, "contattato" è un'affermazione che nessuno può
-       verificare, e la produzione di ciascuno resta un'opinione. */
-
-  const TIPI_ATTIVITA = {
-    chiamata: "📞 Chiamata", email: "✉️ Email", incontro: "🤝 Incontro",
-    preventivo: "📄 Preventivo", nota: "📝 Nota"
-  };
-  const ESITI = {
-    positivo: "Positivo", da_richiamare: "Da richiamare",
-    negativo: "Negativo", nessuna_risposta: "Nessuna risposta"
-  };
-
-  const pipeline = { aperto: null, filtroChi: "tutti", filtroEtichetta: "tutte" };
-
-  const etichetteDi = leadId => (D().applicate || [])
-    .filter(a => a.lead_id === leadId)
-    .map(a => (D().etichette || []).find(e => e.id === a.etichetta_id))
-    .filter(Boolean);
-
-  const attivitaDi = leadId => (D().attivita || [])
-    .filter(a => a.lead_id === leadId);
-
-  function pipelineView() {
-    const tutti = D().lead || [];
-    const etichette = D().etichette || [];
-
-    let lista = tutti;
-    if (pipeline.filtroChi === "nessuno") lista = lista.filter(l => !l.assegnato_a);
-    else if (pipeline.filtroChi !== "tutti") lista = lista.filter(l => l.assegnato_a === pipeline.filtroChi);
-    if (pipeline.filtroEtichetta !== "tutte") {
-      lista = lista.filter(l => etichetteDi(l.id).some(e => e.id === pipeline.filtroEtichetta));
-    }
-
-    const colonne = Object.keys(STATI_LEAD);
-    const aperto = pipeline.aperto ? tutti.find(l => l.id === pipeline.aperto) : null;
-
-    const cartellino = l => `
-      <button class="pl-card ${pipeline.aperto === l.id ? "aperta" : ""}" data-pl-apri="${esc(l.id)}">
-        <strong>${esc(l.nome)}</strong>
-        <span>${esc(l.citta || l.indirizzo || "—")}</span>
-        ${etichetteDi(l.id).length ? `<span class="pl-etichette">${etichetteDi(l.id)
-          .map(e => `<span class="tag tag-${esc(e.colore)}">${esc(e.nome)}</span>`).join("")}</span>` : ""}
-        <span class="pl-piede">
-          ${l.assegnato_a
-            ? esc((D().collaboratori.find(c => c.id === l.assegnato_a) || {}).nome || "—")
-            : `<em>non assegnato</em>`}
-          ${attivitaDi(l.id).length ? ` · ${attivitaDi(l.id).length} attività` : ""}
-        </span>
-      </button>`;
-
-    return `
-    <p class="admin-hint">Lo stesso archivio dei lead, guardato per fase: si vede subito dove si accumula il lavoro. Apri un lead per registrare cosa hai fatto e mettergli le etichette — lo stato dice a che punto è la trattativa, le etichette tutto il resto.</p>
-
-    <div class="filterbar">
-      <button class="chip ${pipeline.filtroChi === "tutti" ? "active" : ""}" data-pl-chi="tutti">Tutti</button>
-      <button class="chip ${pipeline.filtroChi === "nessuno" ? "active" : ""}" data-pl-chi="nessuno">Non assegnati</button>
-      ${attivi().map(c => `<button class="chip ${pipeline.filtroChi === c.id ? "active" : ""}" data-pl-chi="${esc(c.id)}">${esc(c.nome)}</button>`).join("")}
-    </div>
-    ${etichette.length ? `
-    <div class="filterbar" style="margin-top:.4rem">
-      <button class="chip ${pipeline.filtroEtichetta === "tutte" ? "active" : ""}" data-pl-etichetta="tutte">Tutte le etichette</button>
-      ${etichette.map(e => `<button class="chip ${pipeline.filtroEtichetta === e.id ? "active" : ""}" data-pl-etichetta="${esc(e.id)}">${esc(e.nome)}</button>`).join("")}
-    </div>` : ""}
-
-    ${tutti.length ? `
-    <div class="pl-colonne">
-      ${colonne.map(s => {
-        const dentro = lista.filter(l => l.stato === s);
-        return `
-        <div class="pl-colonna">
-          <h4>${STATI_LEAD[s]} <span class="pill">${dentro.length}</span></h4>
-          ${dentro.map(cartellino).join("") || `<p class="muted" style="font-size:.8rem;font-style:italic">vuota</p>`}
-        </div>`;
-      }).join("")}
-    </div>`
-    : `<p class="muted">Nessun lead ancora. Trovane dalla scheda <strong>Lead locali</strong>.</p>`}
-
-    ${aperto ? dettaglioLead(aperto) : ""}
-
-    <div class="card" style="margin-top:1.2rem">
-      <h3>🏷️ Etichette</h3>
-      <p class="muted" style="font-size:.85rem">Eliminare un'etichetta la toglie da tutti i lead che la portano: è una scelta, non un effetto collaterale.</p>
-      <div class="lead-categorie" style="margin:.7rem 0">
-        ${etichette.map(e => `
-          <span class="tag tag-${esc(e.colore)}">${esc(e.nome)}
-            <button class="tag-x" data-pl-etichetta-elimina="${esc(e.id)}" title="Elimina">✕</button>
-          </span>`).join("") || `<span class="muted" style="font-size:.85rem">Nessuna etichetta.</span>`}
-      </div>
-      <form id="pl-etichetta-form" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end">
-        <div class="field" style="flex:1;min-width:180px"><label for="et-nome">Nuova etichetta</label>
-          <input id="et-nome" required maxlength="60" placeholder="es. Rinnovo a gennaio"></div>
-        <div class="field"><label for="et-colore">Colore</label>
-          <select id="et-colore">${["verde", "oro", "rosso", "blu", "grigio"].map(c =>
-            `<option value="${c}">${c}</option>`).join("")}</select></div>
-        <button class="btn btn-outline" type="submit">Aggiungi</button>
-      </form>
-    </div>`;
-  }
-
-  function dettaglioLead(l) {
-    const mie = etichetteDi(l.id);
-    const storia = attivitaDi(l.id);
-    const chi = id => (D().collaboratori.find(c => c.id === id) || {}).nome || "—";
-
-    return `
-    <div class="card pl-dettaglio">
-      <div class="admin-top" style="margin-bottom:.8rem">
-        <div>
-          <span class="eyebrow">${esc(STATI_LEAD[l.stato] || l.stato)}</span>
-          <h3 style="margin:.1rem 0">${esc(l.nome)}</h3>
-          <p class="muted" style="margin:0;font-size:.85rem">${esc(l.indirizzo || "—")}</p>
-        </div>
-        <button class="btn btn-ghost btn-sm" data-pl-chiudi>Chiudi ✕</button>
-      </div>
-
-      <div class="grid-2" style="align-items:start;gap:1.2rem">
-        <div>
-          <table class="admin-kv">
-            ${l.telefono ? `<tr><th>Telefono</th><td><a href="tel:${esc(String(l.telefono).replace(/\s/g, ""))}">${esc(l.telefono)}</a></td></tr>` : ""}
-            ${l.sito ? `<tr><th>Sito</th><td><a href="${esc(l.sito)}" target="_blank" rel="noopener">${esc(l.sito)}</a></td></tr>` : ""}
-            <tr><th>Assegnato a</th><td>${l.assegnato_a ? esc(chi(l.assegnato_a)) : "<em>nessuno</em>"}</td></tr>
-            ${l.email ? `<tr><th>Email</th><td><a href="mailto:${esc(l.email)}">${esc(l.email)}</a></td></tr>` : ""}
-            <tr><th>Provenienza</th><td>Google Places, ${dataBreve(l.raccolto_il)} — «${esc(l.query_origine || "—")}»</td></tr>
-            ${l.note ? `<tr><th>Note</th><td>${esc(l.note)}</td></tr>` : ""}
-          </table>
-
-          ${l.no_contatto ? `
-            <div class="legal-warning" style="margin-top:.8rem">
-              <strong>Si è opposto al contatto.</strong> ${esc(l.no_contatto_motivo || "")}
-              ${l.no_contatto_il ? `<br><span class="muted">Registrato il ${dataOra(l.no_contatto_il)}</span>` : ""}
-              <br><button class="btn btn-ghost btn-sm" style="margin-top:.5rem" data-pl-riapri="${esc(l.id)}">Ha cambiato idea: riapri il contatto</button>
-            </div>`
-          : `<button class="btn btn-ghost btn-sm danger" style="margin-top:.6rem" data-pl-nocontatto="${esc(l.id)}">🚫 Si è opposto al contatto</button>`}
-
-          <h4 style="margin:1rem 0 .4rem;font-size:.95rem">Etichette</h4>
-          <div class="lead-categorie">
-            ${(D().etichette || []).map(e => {
-              const attiva = mie.some(m => m.id === e.id);
-              return `<button class="chip ${attiva ? "active" : ""}" data-pl-tag="${esc(l.id)}:${esc(e.id)}:${attiva ? "togli" : "metti"}">${esc(e.nome)}</button>`;
-            }).join("") || `<span class="muted" style="font-size:.85rem">Nessuna etichetta ancora creata.</span>`}
-          </div>
-        </div>
-
-        <div>
-          <h4 style="margin:0 0 .4rem;font-size:.95rem">Registra cosa hai fatto</h4>
-          <form id="pl-attivita-form" data-lead="${esc(l.id)}">
-            <div class="grid-2" style="gap:.5rem">
-              <div class="field"><label for="at-tipo">Cosa</label>
-                <select id="at-tipo">${Object.entries(TIPI_ATTIVITA).map(([k, v]) =>
-                  `<option value="${k}">${v}</option>`).join("")}</select></div>
-              <div class="field"><label for="at-esito">Com'è andata</label>
-                <select id="at-esito"><option value="">—</option>${Object.entries(ESITI).map(([k, v]) =>
-                  `<option value="${k}">${v}</option>`).join("")}</select></div>
-            </div>
-            <div class="field" style="margin-top:.5rem"><label for="at-chi">A nome di</label>
-              <select id="at-chi">
-                <option value="">Titolare</option>
-                ${attivi().map(c => `<option value="${esc(c.id)}" ${l.assegnato_a === c.id ? "selected" : ""}>${esc(c.nome)}</option>`).join("")}
-              </select></div>
-            <div class="field" style="margin-top:.5rem"><label for="at-testo">Dettagli</label>
-              <textarea id="at-testo" rows="2" placeholder="Cosa vi siete detti, cosa serve, quando richiamare"></textarea></div>
-            <button class="btn btn-primary btn-sm" style="margin-top:.6rem" type="submit">Registra</button>
-          </form>
-
-          <h4 style="margin:1.2rem 0 .4rem;font-size:.95rem">Storia (${storia.length})</h4>
-          ${storia.length ? storia.map(a => `
-            <div class="pl-attivita">
-              <span class="pl-attivita-capo">
-                <strong>${esc(TIPI_ATTIVITA[a.tipo] || a.tipo)}</strong>
-                ${a.esito ? `<span class="pill">${esc(ESITI[a.esito] || a.esito)}</span>` : ""}
-                <span class="muted">${dataOra(a.quando)} · ${a.collaboratore_id ? esc(chi(a.collaboratore_id)) : "titolare"}</span>
-              </span>
-              ${a.testo ? `<p>${esc(a.testo)}</p>` : ""}
-              <button class="btn btn-ghost btn-sm danger" data-pl-attivita-elimina="${esc(a.id)}">Elimina</button>
-            </div>`).join("")
-          : `<p class="muted" style="font-size:.85rem;font-style:italic">Ancora nulla. Quello che registri qui è ciò che poi conterà nella produzione.</p>`}
-        </div>
-      </div>
-    </div>`;
   }
 
   /* ---------------- SEZIONE · PRODUZIONE ----------------
@@ -738,7 +599,9 @@
       <div class="kpi-tile"><strong>${v}</strong><span>${l}</span>${hint ? `<em>${hint}</em>` : ""}</div>`;
 
     return `
-    <p class="admin-hint">Il punteggio lo calcola il database dai fatti registrati: le attività nella pipeline e i lead diventati clienti. Non esiste da nessuna parte un numero da scrivere a mano — per questo si può guardare senza doversi chiedere chi l'ha messo lì.</p>
+    <p class="admin-hint">Il punteggio lo calcola il database dai fatti registrati: le attività e i lead diventati clienti. Non esiste da nessuna parte un numero da scrivere a mano — per questo si può guardare senza doversi chiedere chi l'ha messo lì.</p>
+
+    <p class="privacy-hint">Le attività si registravano dalla scheda della pipeline, che non c'è più: quelle già registrate continuano a contare, ma da questa console non se ne aggiungono di nuove. Le email inviate dal Mail Marketing sì, quelle si registrano da sole.</p>
 
     <div class="kpi-grid">
       ${tile(totali, "Punti della squadra", "somma di chi è attivo")}
@@ -977,8 +840,6 @@
     panoramica: ["📊 Panoramica", panoramicaView],
     collaboratori: ["👥 Collaboratori", collaboratoriView],
     lead: ["🔎 Lead locali", leadView],
-    pipeline: ["📇 Pipeline", pipelineView],
-    documenti: ["📁 Documenti", documentiView],
     posta: ["✉️ Posta", mailView],
     mail: ["📮 Mail Marketing", null],
     magazine: ["📰 Magazine", null],
@@ -1078,8 +939,60 @@
       b.addEventListener("click", () => {
         leggiCampiRicerca();
         R.modalita = b.dataset.leadModalita;
+        if (R.modalita === "precisa") caricaGeo();
         QF().render();
       }));
+
+    /* La ricerca precisa può essere già aperta quando la sezione
+       viene ridisegnata per un altro motivo: l'elenco va chiesto
+       anche qui, e caricaGeo() sa già di non ripetersi. */
+    if (R.modalita === "precisa") caricaGeo();
+
+    /* Le tre tendine sono a cascata: cambiare regione svuota la
+       provincia scelta se non le appartiene piu', e cambiare
+       provincia svuota il comune. Il valore vecchio non si
+       "ripulisce": si lascia che zoneHtml ricada sul primo
+       elemento valido, cosi' il modulo non resta mai in uno stato
+       che il server rifiuterebbe.
+
+       Si agganciano solo quando le tendine ci sono davvero: se
+       l'elenco dei comuni non si e' caricato gli stessi
+       identificativi appartengono a campi di testo, e un gestore
+       che azzera il comune a ogni uscita dal campo cancellerebbe
+       quello che si sta scrivendo. */
+    if (geo.dati && R.modalita === "precisa") {
+      $("#ld-regione")?.addEventListener("change", e => {
+        leggiCampiRicerca();
+        R.campi.regione = e.target.value;
+        const prov = provinceDi(R.campi.regione);
+        if (!prov.includes(R.campi.provincia)) {
+          R.campi.provincia = prov[0] || "";
+          R.campi.citta = "";
+          R.campi.cap = "";
+        }
+        QF().render();
+      });
+
+      $("#ld-prov")?.addEventListener("change", e => {
+        leggiCampiRicerca();
+        R.campi.provincia = e.target.value;
+        R.campi.citta = "";
+        R.campi.cap = "";
+        QF().render();
+      });
+
+      /* Scegliendo il comune si compila il CAP, ma solo se quel
+         comune ne ha uno solo: Milano ne ha decine e sceglierne
+         uno a caso vorrebbe dire centrare la ricerca su un
+         quartiere qualunque senza che nessuno se ne accorga. */
+      $("#ld-citta")?.addEventListener("change", e => {
+        leggiCampiRicerca();
+        R.campi.citta = e.target.value;
+        const trovato = comuniDi(R.campi.provincia).find(c => c[0] === R.campi.citta);
+        R.campi.cap = trovato && trovato[1] ? trovato[1] : "";
+        QF().render();
+      });
+    }
 
     document.querySelectorAll("[data-lead-cat]").forEach(b =>
       b.addEventListener("click", () => {
@@ -1102,6 +1015,7 @@
         R.campi.cap = g("#ld-cap") ?? R.campi.cap;
         R.campi.citta = g("#ld-citta") ?? R.campi.citta;
         R.campi.provincia = (g("#ld-prov") ?? R.campi.provincia).toUpperCase();
+        R.campi.regione = g("#ld-regione") ?? R.campi.regione;
       } else {
         R.campi.zona = g("#ld-zona") ?? R.campi.zona;
       }
@@ -1194,97 +1108,29 @@
         await carica();
       }));
 
-    /* ---- pipeline ---- */
-    document.querySelectorAll("[data-pl-apri]").forEach(b =>
-      b.addEventListener("click", () => {
-        /* Ricliccare la stessa scheda la chiude: è il gesto che
-           ci si aspetta, e evita di dover cercare la ✕. */
-        pipeline.aperto = pipeline.aperto === b.dataset.plApri ? null : b.dataset.plApri;
-        QF().render();
-      }));
-    $("[data-pl-chiudi]")?.addEventListener("click", () => { pipeline.aperto = null; QF().render(); });
+    /* L'opposizione al contatto stava nella scheda della
+       pipeline. Tolta quella, sarebbe rimasta senza casa: e non e'
+       una funzione fra le altre, e' l'art. 21 del GDPR. La
+       promessa nel piede di ogni email - "rispondi NO e non ti
+       scriveremo piu'" - vale quanto il posto in cui si registra
+       quel NO. Quindi si registra qui, nell'archivio dei lead.
 
-    document.querySelectorAll("[data-pl-chi]").forEach(b =>
-      b.addEventListener("click", () => { pipeline.filtroChi = b.dataset.plChi; QF().render(); }));
-    document.querySelectorAll("[data-pl-etichetta]").forEach(b =>
-      b.addEventListener("click", () => { pipeline.filtroEtichetta = b.dataset.plEtichetta; QF().render(); }));
-
-    document.querySelectorAll("[data-pl-tag]").forEach(b =>
+       Da quel momento l'invio e' bloccato dal server, non solo
+       nascosto da questa schermata. */
+    document.querySelectorAll("[data-lead-nocontatto]").forEach(b =>
       b.addEventListener("click", async () => {
-        const [leadId, etichettaId, verso] = b.dataset.plTag.split(":");
-        const e = await chiamaLead("etichetta-applica", { leadId, etichettaId, applica: verso === "metti" });
-        if (!e.ok) { QF().toast(e.errore || "Operazione non riuscita."); return; }
-        await carica();
-      }));
-
-    $("#pl-etichetta-form")?.addEventListener("submit", async e => {
-      e.preventDefault();
-      const esito = await chiamaLead("etichetta-crea", {
-        nome: $("#et-nome").value.trim(), colore: $("#et-colore").value
-      });
-      if (!esito.ok) { QF().toast(esito.errore || "Creazione non riuscita."); return; }
-      QF().toast("Etichetta creata.");
-      await carica();
-    });
-
-    document.querySelectorAll("[data-pl-etichetta-elimina]").forEach(b =>
-      b.addEventListener("click", async () => {
-        if (!confirm("Eliminare questa etichetta?\n\nVerrà tolta da tutti i lead che la portano.")) return;
-        const e = await chiamaLead("etichetta-elimina", { id: b.dataset.plEtichettaElimina });
-        if (!e.ok) { QF().toast(e.errore || "Eliminazione non riuscita."); return; }
-        QF().toast("Etichetta eliminata.");
-        await carica();
-      }));
-
-    $("#pl-attivita-form")?.addEventListener("submit", async ev => {
-      ev.preventDefault();
-      /* Come per gli altri moduli: i campi si leggono prima del
-         ridisegno, non dopo. */
-      const dati = {
-        leadId: ev.target.dataset.lead,
-        tipo: $("#at-tipo").value,
-        esito: $("#at-esito").value || null,
-        collaboratoreId: $("#at-chi").value || null,
-        testo: $("#at-testo").value.trim() || null
-      };
-      const btn = ev.target.querySelector('button[type="submit"]');
-      if (btn) { btn.disabled = true; btn.textContent = "Registro…"; }
-      const e = await chiamaLead("attivita-registra", dati);
-      if (!e.ok) {
-        QF().toast(e.errore || "Registrazione non riuscita.");
-        if (btn) { btn.disabled = false; btn.textContent = "Registra"; }
-        return;
-      }
-      QF().toast("Attività registrata.");
-      await carica();
-    });
-
-    document.querySelectorAll("[data-pl-attivita-elimina]").forEach(b =>
-      b.addEventListener("click", async () => {
-        if (!confirm("Eliminare questa attività dalla storia del lead?")) return;
-        const e = await chiamaLead("attivita-elimina", { id: b.dataset.plAttivitaElimina });
-        if (!e.ok) { QF().toast(e.errore || "Eliminazione non riuscita."); return; }
-        QF().toast("Attività eliminata.");
-        await carica();
-      }));
-
-    /* L'opposizione al contatto si registra dalla scheda del
-       lead, perché è lì che arriva la notizia. Da quel momento
-       l'invio è bloccato dal server, non solo nascosto qui. */
-    document.querySelectorAll("[data-pl-nocontatto]").forEach(b =>
-      b.addEventListener("click", async () => {
-        const motivo = prompt("Come ha comunicato di non voler essere contattato?\n(es. «ha risposto NO all'email», «l'ha detto al telefono»)");
+        const motivo = prompt("Come ha comunicato di non voler essere contattato?\n(es. \u00abha risposto NO all'email\u00bb, \u00abl'ha detto al telefono\u00bb)");
         if (motivo === null) return;
-        const e = await chiamaMail("no-contatto", { id: b.dataset.plNocontatto, attivo: true, motivo: motivo.trim() || null });
+        const e = await chiamaMail("no-contatto", { id: b.dataset.leadNocontatto, attivo: true, motivo: motivo.trim() || null });
         if (!e.ok) { QF().toast(e.errore || "Registrazione non riuscita."); return; }
-        QF().toast("Opposizione registrata: a questo contatto non partirà più nulla.");
+        QF().toast("Opposizione registrata: a questo contatto non partira' piu' nulla.");
         await carica();
       }));
 
-    document.querySelectorAll("[data-pl-riapri]").forEach(b =>
+    document.querySelectorAll("[data-lead-riapri]").forEach(b =>
       b.addEventListener("click", async () => {
-        if (!confirm("Riaprire il contatto?\n\nFallo solo se è stato lui a chiedertelo: l'opposizione la revoca chi l'ha espressa, non chi la subisce.")) return;
-        const e = await chiamaMail("no-contatto", { id: b.dataset.plRiapri, attivo: false });
+        if (!confirm("Riaprire il contatto?\n\nFallo solo se e' stato lui a chiedertelo: l'opposizione la revoca chi l'ha espressa, non chi la subisce.")) return;
+        const e = await chiamaMail("no-contatto", { id: b.dataset.leadRiapri, attivo: false });
         if (!e.ok) { QF().toast(e.errore || "Operazione non riuscita."); return; }
         QF().toast("Contatto riaperto.");
         await carica();
