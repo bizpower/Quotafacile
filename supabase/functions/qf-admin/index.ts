@@ -50,35 +50,35 @@ function uguali(a: string, b: string): boolean {
   return diff === 0;
 }
 
-// L'impronta letta dal database viene tenuta in memoria per la
-// vita dell'istanza: è una lettura per avvio a freddo, non una
-// per richiesta.
-let improntaDb: string | null | undefined;
-
-// La chiave sta in un posto solo: l'impronta in impostazioni_admin.
+// La chiave sta in un posto solo, e si rilegge a ogni richiesta.
 //
-// Prima ce n'erano due, e il segreto QF_ADMIN_TOKEN vinceva sul
-// database. Sembrava prudente - la chiave non tocca il database -
-// ma nella pratica creava una situazione in cui nessuno sapeva
-// piu' quale delle due fosse attiva: cambiare l'impronta non
-// aveva alcun effetto finche' il segreto esisteva, e il segreto
-// non e' leggibile da nessuna schermata dell'applicazione.
+// Prima ce n'erano due: il segreto QF_ADMIN_TOKEN vinceva sul
+// database, cambiare l'impronta non aveva alcun effetto finche'
+// il segreto esisteva, e il segreto non e' leggibile da nessuna
+// schermata dell'applicazione. Ora la fonte e' una sola:
+// l'impronta SHA-256 in impostazioni_admin.
 //
-// Una sola fonte, quindi. Nel database resta comunque soltanto
-// l'impronta SHA-256: la frase non e' conservata da nessuna
-// parte e non e' recuperabile. Per cambiarla:
+// E non viene tenuta in memoria fra una richiesta e l'altra.
+// Costa la lettura di una riga su chiave primaria - niente,
+// accanto a quello che la funzione fa comunque - e in cambio un
+// cambio di chiave vale subito, dappertutto. Con la copia in
+// memoria un'istanza gia' avviata avrebbe continuato ad
+// accettare la chiave vecchia finche' non veniva spenta: e'
+// esattamente il "quale delle due e' attiva?" che si voleva
+// togliere di mezzo.
+//
+// Nel database resta soltanto l'impronta: la frase non e'
+// conservata da nessuna parte e non e' recuperabile. Si cambia
+// dalla console, oppure a mano:
 //
 //   update impostazioni_admin
 //      set token_hash = encode(digest('nuova-frase','sha256'),'hex'),
 //          aggiornato_il = now()
 //    where id = 1;
 async function improntaAttesa(): Promise<string | null> {
-  if (improntaDb === undefined) {
-    const { data } = await db.from("impostazioni_admin")
-      .select("token_hash").eq("id", 1).maybeSingle();
-    improntaDb = data?.token_hash ?? null;
-  }
-  return improntaDb;
+  const { data } = await db.from("impostazioni_admin")
+    .select("token_hash").eq("id", 1).maybeSingle();
+  return data?.token_hash ?? null;
 }
 
 // ---------------- Azioni ----------------
@@ -87,13 +87,18 @@ async function improntaAttesa(): Promise<string | null> {
 // rimosse: la console deve poter mostrare cosa è stato tolto e
 // perché, non solo cosa è online.
 async function panoramica() {
-  const [richieste, iscrizioni, segnalazioni, domande, risposte, waitlist] = await Promise.all([
+  const [richieste, iscrizioni, segnalazioni, domande, risposte, waitlist, chiave] = await Promise.all([
     db.from("richieste").select("*").order("creato_il", { ascending: false }).limit(300),
     db.from("iscrizioni_pro").select("*").order("creato_il", { ascending: false }).limit(300),
     db.from("segnalazioni").select("*").order("creato_il", { ascending: false }).limit(300),
     db.from("domande").select("*").order("creato_il", { ascending: false }).limit(500),
     db.from("risposte").select("*").order("creato_il", { ascending: false }).limit(800),
     db.from("waitlist").select("id, creato_il, email").order("creato_il", { ascending: false }).limit(500),
+    // Solo la data: l'impronta non esce da qui. Serve a dire in
+    // console "l'unica chiave attiva è stata decisa il …", che è
+    // l'unica cosa verificabile su una chiave che nessuno può
+    // rileggere — nemmeno il titolare, nemmeno questa funzione.
+    db.from("impostazioni_admin").select("aggiornato_il").eq("id", 1).maybeSingle(),
   ]);
   return {
     richieste: richieste.data ?? [],
@@ -102,8 +107,43 @@ async function panoramica() {
     domande: domande.data ?? [],
     risposte: risposte.data ?? [],
     waitlist: waitlist.data ?? [],
+    chiaveAggiornataIl: chiave.data?.aggiornato_il ?? null,
     letteIl: new Date().toISOString(),
   };
+}
+
+// Cambiare la chiave di amministrazione.
+//
+// Chi arriva qui ha gia' superato il controllo nel Deno.serve
+// qui sotto: sta usando la chiave in corso. Non serve chiederla
+// una seconda volta, serve che la nuova sia scritta in un posto
+// solo e valga subito ovunque - e vale, perche' nessuna funzione
+// tiene piu' l'impronta in memoria.
+//
+// La lunghezza minima non e' un vezzo: questa frase e' l'unica
+// cosa che separa il CRM da chiunque, non c'e' un secondo
+// fattore e non c'e' un blocco dopo N tentativi. Sedici caratteri
+// e' il minimo sotto il quale non ha senso parlare di segreto.
+async function cambiaChiave(d: Record<string, unknown>) {
+  const nuova = testo(d.nuova, 200);
+  if (!nuova) throw new Error("Manca la nuova chiave");
+  if (nuova.length < 16) {
+    throw new Error("La chiave deve essere lunga almeno 16 caratteri: è l'unica cosa che protegge la console.");
+  }
+
+  const nuovaImpronta = await impronta(nuova);
+  const attuale = await improntaAttesa();
+  if (attuale && uguali(nuovaImpronta, attuale)) {
+    throw new Error("Questa è già la chiave in uso.");
+  }
+
+  const aggiornatoIl = new Date().toISOString();
+  const { error } = await db.from("impostazioni_admin")
+    .update({ token_hash: nuovaImpronta, aggiornato_il: aggiornatoIl })
+    .eq("id", 1);
+  if (error) throw new Error(error.message);
+
+  return { cambiata: true, aggiornatoIl };
 }
 
 async function moderaRisposta(d: Record<string, unknown>) {
@@ -207,6 +247,7 @@ const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> =
   "verifica-pro": verificaPro,
   "chiudi-segnalazione": chiudiSegnalazione,
   "aggiorna-richiesta": aggiornaRichiesta,
+  "cambia-chiave": cambiaChiave,
 };
 
 Deno.serve(async (req: Request) => {

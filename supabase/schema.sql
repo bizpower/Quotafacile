@@ -288,9 +288,15 @@ create table if not exists public.segnalazioni (
 -- ------------------------------------------------------------
 -- 4. Chiave della console di moderazione
 -- ------------------------------------------------------------
--- Il segreto QF_ADMIN_TOKEN del progetto ha la precedenza. Qui
--- c'è solo l'impronta SHA-256 di un token casuale a 240 bit:
--- nemmeno chi legge questa tabella può risalire alla chiave.
+-- Questa riga è l'unica fonte della chiave di amministrazione.
+-- Non c'è un segreto del progetto che la scavalca: c'era, si
+-- chiamava QF_ADMIN_TOKEN e vinceva su questa tabella, e il
+-- risultato era che nessuno sapeva più quale delle due fosse
+-- attiva — l'una non si legge, l'altra non si inverte.
+--
+-- Qui c'è solo l'impronta SHA-256 della chiave: nemmeno chi
+-- legge questa tabella può risalire alla frase. Le funzioni la
+-- rileggono a ogni richiesta, quindi un cambio vale subito.
 create table if not exists public.impostazioni_admin (
   id            smallint primary key default 1 check (id = 1),
   token_hash    text not null,

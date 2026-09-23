@@ -240,17 +240,22 @@ La chiave **non** viene confrontata nel browser: viaggia nell'intestazione `x-qf
 funzione `qf-admin`, che ne calcola l'impronta SHA-256 e la confronta a tempo costante lato server.
 Nel sito e nel repository la chiave non compare mai, e senza di essa ogni azione riceve `401`.
 
-Due modi di configurarla, in quest'ordine di precedenza:
+**Una sola chiave, in un posto solo:** l'impronta SHA-256 conservata in `impostazioni_admin`.
 
-1. il segreto **`QF_ADMIN_TOKEN`** fra i secrets del progetto Supabase — la via preferita, perché la
-   chiave non tocca il database;
-2. l'impronta conservata in `impostazioni_admin` — ripiego attivo, che permette alla console di
-   funzionare senza passaggi manuali nel pannello.
+C'era anche un segreto di progetto, `QF_ADMIN_TOKEN`, e aveva la precedenza. Sembrava più prudente —
+la chiave non toccava il database — ma nella pratica produceva la situazione peggiore: nessuno
+sapeva quale delle due fosse attiva. Cambiare l'impronta non aveva alcun effetto finché il segreto
+esisteva, e il segreto non è leggibile da nessuna schermata. È stato tolto da tutte le funzioni.
+Se nel progetto Supabase è rimasto, **non fa più nulla** e può essere cancellato.
 
-Se non è configurata né l'una né l'altra la funzione risponde `503` e **nessuna** moderazione è
-possibile: meglio una console inattiva che una aperta a chiunque.
+Nessuna funzione tiene l'impronta in memoria fra una richiesta e l'altra: costa la lettura di una
+riga su chiave primaria e in cambio un cambio di chiave vale subito, dappertutto, senza aspettare
+che le istanze già avviate si spengano.
 
-Per ruotare la chiave conservata nel database:
+Se l'impronta non è configurata, le funzioni rispondono `503` e **nessuna** azione è possibile:
+meglio una console inattiva che una aperta a chiunque.
+
+Per cambiare la chiave si usa la scheda **🔑 Chiave** della console. A mano, se serve:
 
 ```sql
 update impostazioni_admin
