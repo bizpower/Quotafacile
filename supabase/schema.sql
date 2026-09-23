@@ -903,6 +903,18 @@ comment on column public.crm_lead.no_contatto is
 comment on column public.crm_lead.email is
   'Indirizzo trovato a mano: Places non lo fornisce. Senza questo, a un lead si può solo telefonare.';
 
+-- L'informativa alle imprese promette che sulla scheda è scritto
+-- da dove viene il recapito. Per indirizzo e telefono la risposta
+-- era già nelle colonne fonte e raccolto_il; per l'email no, e
+-- una promessa vera a metà è una promessa falsa.
+--
+--   'sito_web' → letta sul sito dell'attività da qf-lead
+--   'dettato'  → dettata o digitata da chi lavora in agenzia
+--   'import'   → arrivata da un file caricato
+alter table public.crm_lead
+  add column if not exists email_fonte      text,
+  add column if not exists email_trovata_il timestamptz;
+
 -- ------------------------------------------------------------
 -- 8. Funzioni non esposte
 -- ------------------------------------------------------------
