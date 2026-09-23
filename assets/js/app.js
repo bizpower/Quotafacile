@@ -1074,28 +1074,34 @@ const PIANI = [
     ],
     azione: { testo: "Crea la QuotaPass", href: "#/area-pro" }
   },
+  /* I due piani a pagamento sono annunciati, non attivi: non
+     esistono su Stripe e non c'è codice che li faccia valere.
+     Quindi si dice "in arrivo" e il bottone non finge di poterli
+     attivare — e l'elenco delle funzioni porta scritto che è in
+     definizione, perché lo è. Pubblicare un listino che promette
+     cose non costruite è il modo più rapido di perdere la fiducia
+     del primo che paga e non le trova. */
   {
     id: "base", nome: "Base", prezzo: "8,99", cadenza: "al mese, IVA esclusa",
+    inArrivo: true,
     sommario: "Per chi vuole essere trovato, non solo essere presente.",
     voci: [
       "Tutto quello che c'è nel piano gratuito",
       "Profilo in evidenza nella lista, sopra i profili gratuiti",
       "Richieste di preventivo della tua provincia",
       "Statistiche del profilo: quante volte è stato aperto"
-    ],
-    azione: { testo: "Attiva Base", href: "#/area-pro" }
+    ]
   },
   {
     id: "pro", nome: "Pro", prezzo: "19,99", cadenza: "al mese, IVA esclusa",
+    inArrivo: true,
     sommario: "Per chi lavora sui contatti in entrata come canale vero.",
-    consigliato: true,
     voci: [
       "Tutto quello che c'è in Base",
       "Priorità nello smistamento delle richieste",
       "Specializzazioni senza limite di numero",
       "Profilo fra gli intermediari in evidenza in home"
-    ],
-    azione: { testo: "Attiva Pro", href: "#/area-pro" }
+    ]
   }
 ];
 
@@ -1118,12 +1124,17 @@ views.professionisti = () => {
         "serviceType": "Piattaforma di visibilità e contatti per intermediari assicurativi",
         "areaServed": { "@type": "Country", "name": "Italia" },
         "provider": { "@id": SITO() + "#org" },
+        /* availability PreOrder e non InStock: i due piani hanno
+           un prezzo deciso ma non si possono ancora sottoscrivere,
+           e dichiararli disponibili sarebbe dichiarare il falso a
+           un motore di ricerca — che poi lo mostra come tale. */
         "offers": PIANI.filter(p => p.prezzo).map(p => ({
           "@type": "Offer",
           "name": "Piano " + p.nome,
           "price": p.prezzo.replace(",", "."),
           "priceCurrency": "EUR",
           "valueAddedTaxIncluded": false,
+          "availability": p.inArrivo ? "https://schema.org/PreOrder" : "https://schema.org/InStock",
           "description": p.sommario,
           "url": SITO() + "professionisti/"
         }))
@@ -1231,8 +1242,8 @@ views.professionisti = () => {
 
       <div class="piani-griglia">
         ${PIANI.map(p => `
-          <div class="piano ${p.consigliato ? "piano-consigliato" : ""}">
-            ${p.consigliato ? `<span class="piano-nastro">Il più scelto</span>` : ""}
+          <div class="piano ${p.inArrivo ? "piano-arrivo" : ""}">
+            ${p.inArrivo ? `<span class="piano-nastro piano-nastro-attesa">In arrivo</span>` : ""}
             <h3 class="piano-nome">${esc(p.nome)}</h3>
             <p class="piano-prezzo">
               ${p.prezzo
@@ -1243,7 +1254,11 @@ views.professionisti = () => {
             <ul class="piano-voci">
               ${p.voci.map(v => `<li>${esc(v)}</li>`).join("")}
             </ul>
-            <a class="btn ${p.consigliato ? "btn-primary" : "btn-outline"} piano-btn" href="${esc(p.azione.href)}">${esc(p.azione.testo)}</a>
+            ${p.inArrivo
+              ? `<p class="privacy-hint">Non è ancora attivabile: il prezzo è deciso, l'elenco delle
+                 funzioni è in definizione e può cambiare prima dell'attivazione.</p>
+                 <span class="piano-btn piano-btn-attesa">Attivazione a breve</span>`
+              : `<a class="btn btn-outline piano-btn" href="${esc(p.azione.href)}">${esc(p.azione.testo)}</a>`}
           </div>`).join("")}
 
         <div class="piano piano-enterprise">

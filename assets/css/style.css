@@ -1399,14 +1399,25 @@ a.chip { display: inline-block; text-decoration: none; }
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
   padding: 1.3rem 1.2rem 1.2rem;
 }
-/* Il piano consigliato si distingue con il bordo e un nastro, non
-   ingrandendosi: una scheda più alta delle altre rompe la riga e
-   costringe a leggere in diagonale. */
+/* Un piano si distingue con il bordo e un nastro, non ingrandendosi:
+   una scheda più alta delle altre rompe la riga e costringe a leggere
+   in diagonale. */
 .piano-consigliato { border: 2px solid var(--green-600); box-shadow: var(--shadow-med); }
 .piano-nastro {
   position: absolute; top: -.7rem; left: 1.2rem;
   background: var(--green-800); color: #fff; font-size: .68rem; font-weight: 700;
   padding: .2rem .6rem; border-radius: 999px; letter-spacing: .03em;
+}
+/* I piani annunciati ma non ancora attivabili restano leggibili e si
+   dichiarano per quello che sono: bordo tratteggiato, nastro neutro e
+   un bottone che non è un bottone, perché non c'è niente da cliccare. */
+.piano-arrivo { border-style: dashed; background: color-mix(in srgb, var(--card) 88%, var(--bg)); }
+.piano-nastro-attesa { background: var(--ink-soft); }
+.piano-btn-attesa {
+  display: block; margin-top: auto; width: 100%; text-align: center;
+  padding: .7rem 1rem; border-radius: 10px;
+  border: 1px dashed var(--line); background: transparent;
+  color: var(--ink-soft); font-size: .85rem; font-weight: 600;
 }
 .piano-enterprise { border-left: 3px solid var(--gold-500); }
 
