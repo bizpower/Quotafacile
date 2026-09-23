@@ -37,6 +37,10 @@
 
   let tab = "kpi";
   let modFiltro = "tutte";
+  /* Identificativo della domanda di cui è aperto l'editor di
+     titolo e descrizione: uno per volta, come nell'editor del
+     Magazine. */
+  let seoAperto = null;
   let filtroRichieste = "nuova";
 
   /* Panoramica caricata dal server. Nulla di tutto questo vive
@@ -173,6 +177,9 @@
       data: (d.creato_il || "").slice(0, 10),
       domanda: d.domanda,
       keyword: d.keyword,
+      slug: d.slug || null,
+      titoloSeo: d.titolo_seo || "",
+      metaSeo: d.meta_seo || "",
       rimossa: d.stato === "rimossa",
       motivoRimozione: d.motivo_rimozione,
       nelDatabase: true,
@@ -384,6 +391,64 @@
   }
 
   /* ---------------- TAB 4 · MODERAZIONE BACHECA ---------------- */
+
+  /* Lo stesso arnese dell'editor del Magazine, portato qui.
+     Google taglia intorno ai 60 caratteri nel titolo e ai 155
+     nella descrizione, sull'ultima parola intera: vedere dove
+     cade è l'unico modo di scrivere un titolo che non finisce a
+     metà. */
+  const taglia = (s, max) => {
+    const t = String(s || "").trim();
+    if (t.length <= max) return t;
+    const i = t.lastIndexOf(" ", max);
+    return t.slice(0, i > max * 0.6 ? i : max).trim() + " …";
+  };
+
+  /* Stessa regola di applicaSeo() in app.js: il suffisso si
+     aggiunge solo se il titolo ci sta sotto i sessanta caratteri.
+     Se le due regole divergessero, l'anteprima mostrerebbe una
+     cosa e la pagina ne scriverebbe un'altra — che è peggio di
+     non avere l'anteprima. */
+  const conSuffisso = t => String(t || "").length > 60 ? String(t) : String(t || "") + " | QuotaFacile";
+
+  function seoDomandaHtml(f) {
+    const risposta = pubblicate(f.risposte)[0];
+    /* Il ripiego è lo stesso che usa il sito quando i campi sono
+       vuoti: mostrarlo qui evita di far credere che senza titolo
+       la pagina non ne abbia uno. */
+    const titoloAuto = conSuffisso(f.domanda);
+    const metaAuto = risposta ? String(risposta.testo || "").slice(0, 155).replace(/\s+\S*$/, "") + "…" : "";
+    return `
+    <div class="admin-seo">
+      <p class="privacy-hint" style="margin-top:0">
+        ${f.slug
+          ? `Questa domanda ha un indirizzo pubblico: <code>/bacheca/${esc(f.slug)}/</code>. Titolo e descrizione qui sotto sono quelli con cui compare su Google.`
+          : `Questa domanda <strong>non è ancora indicizzabile</strong>: l'indirizzo pubblico nasce con la prima risposta pubblicata. Puoi scrivere titolo e descrizione fin d'ora — serviranno da quel momento.`}
+      </p>
+      <div class="field">
+        <label for="seo-t-${esc(f.chiave)}">Titolo per Google <span class="muted" style="font-weight:400">— vuoto: usa la domanda</span></label>
+        <input id="seo-t-${esc(f.chiave)}" type="text" maxlength="200" data-seo-campo="titolo"
+               value="${esc(f.titoloSeo)}" placeholder="${esc(titoloAuto)}">
+      </div>
+      <div class="field" style="margin-top:.6rem">
+        <label for="seo-d-${esc(f.chiave)}">Descrizione <span class="muted" style="font-weight:400">— vuota: usa l'inizio della risposta</span></label>
+        <textarea id="seo-d-${esc(f.chiave)}" maxlength="400" rows="2" data-seo-campo="meta"
+                  placeholder="${esc(metaAuto)}">${esc(f.metaSeo)}</textarea>
+      </div>
+
+      <h4 class="mag-serp-titolo" style="margin-top:1rem">Come appare su Google</h4>
+      <div class="mag-serp">
+        <span class="mag-serp-sito">www.quotafacile.net &rsaquo; bacheca &rsaquo; ${esc(f.slug || "…")}</span>
+        <span class="mag-serp-t" data-seo-serp="t">${esc(taglia(f.titoloSeo ? conSuffisso(f.titoloSeo) : titoloAuto, 60))}</span>
+        <span class="mag-serp-d" data-seo-serp="d">${esc(taglia(f.metaSeo || metaAuto, 155))}</span>
+      </div>
+      <p class="privacy-hint">Anteprima indicativa: Google riscrive titolo e descrizione quando ritiene
+      che un'altra parte della pagina risponda meglio alla domanda. Serve a vedere dove taglia.</p>
+
+      <button class="btn btn-primary btn-sm" data-seo-salva="${esc(f.chiave)}">Salva</button>
+    </div>`;
+  }
+
   function bachecaView() {
     const filtri = {
       attesa: "Da approvare",
@@ -431,8 +496,11 @@
         ${f.rimossa && f.motivoRimozione ? `<p class="privacy-hint">Motivazione registrata: ${esc(f.motivoRimozione)}</p>` : ""}
         <div class="admin-q-actions">
           ${f.tipo === "repo" ? `<span class="muted" style="font-size:.78rem">Contenuto del repository: si modifica in <code>assets/js/staff-questions.js</code>.</span>`
-            : !f.rimossa ? `<button class="btn btn-ghost btn-sm danger" data-del-domanda="${f.chiave}">🗑 Rimuovi la domanda</button>` : ""}
+            : !f.rimossa ? `
+              <button class="btn btn-outline btn-sm" data-seo="${f.chiave}">🔍 ${seoAperto === f.chiave ? "Chiudi" : "Titolo e descrizione"}</button>
+              <button class="btn btn-ghost btn-sm danger" data-del-domanda="${f.chiave}">🗑 Rimuovi la domanda</button>` : ""}
         </div>
+        ${seoAperto === f.chiave ? seoDomandaHtml(f) : ""}
 
         ${f.risposte.length ? f.risposte.map(r => `
           <div class="admin-a ${r.migliore ? "best" : ""}">
@@ -923,6 +991,42 @@ Usa **grassetto** per i numeri che contano."></textarea>
       try { sessionStorage.setItem(SESSION_KEY, nuova); } catch (_) { /* no-op */ }
       QF().toast("Fatto: da adesso vale solo questa.");
       await carica();
+    });
+
+    /* ---- titolo e descrizione di una domanda ---- */
+    document.querySelectorAll("[data-seo]").forEach(b =>
+      b.addEventListener("click", () => {
+        seoAperto = seoAperto === b.dataset.seo ? null : b.dataset.seo;
+        QF().render();
+      }));
+
+    /* L'anteprima si aggiorna mentre si scrive, senza ridisegnare
+       la pagina: un render a ogni tasto riporterebbe il cursore
+       in fondo al campo. */
+    const serp = (sel, valore, ripiego, max) => {
+      const n = document.querySelector(`[data-seo-serp="${sel}"]`);
+      if (n) n.textContent = taglia(valore.trim() || ripiego, max);
+    };
+    const campoT = document.querySelector('[data-seo-campo="titolo"]');
+    const campoD = document.querySelector('[data-seo-campo="meta"]');
+    campoT?.addEventListener("input", () =>
+      serp("t", campoT.value.trim() ? conSuffisso(campoT.value.trim()) : "", campoT.placeholder, 60));
+    campoD?.addEventListener("input", () => serp("d", campoD.value, campoD.placeholder, 155));
+
+    $("[data-seo-salva]")?.addEventListener("click", async e => {
+      const id = e.currentTarget.dataset.seoSalva;
+      const btn = e.currentTarget;
+      btn.disabled = true; btn.textContent = "Salvataggio…";
+      const ok = await agisci("seo-domanda", {
+        id,
+        titolo: campoT ? campoT.value.trim() : "",
+        meta: campoD ? campoD.value.trim() : ""
+      }, "Titolo e descrizione salvati.");
+      /* agisci() ricarica e ridisegna prima di restituire: chiudere
+         il pannello dopo, senza un secondo render, lo lascerebbe
+         aperto fino al clic successivo. */
+      if (ok) { seoAperto = null; QF().render(); }
+      else { btn.disabled = false; btn.textContent = "Salva"; }
     });
 
     document.querySelectorAll("[data-modfiltro]").forEach(b =>

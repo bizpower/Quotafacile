@@ -179,6 +179,37 @@ async function moderaRisposta(d: Record<string, unknown>) {
   throw new Error("Decisione non riconosciuta");
 }
 
+// Titolo e descrizione con cui una domanda compare su Google.
+//
+// Per le guide li scrive già il modulo di pubblicazione. Per una
+// domanda di un utente non li scrive nessuno: il titolo diventa
+// la domanda così com'è e la descrizione i primi 155 caratteri
+// della risposta. Funziona, ma "Conviene la kasko su un'auto di
+// 8-10 anni?" non è sempre il titolo con cui conviene comparire,
+// e un taglio a 155 caratteri finisce dove capita.
+//
+// Lasciarli vuoti è una scelta legittima: si torna al titolo e
+// alla descrizione ricavati, che è meglio di un campo compilato
+// male.
+async function seoDomanda(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new Error("Manca l'identificativo della domanda");
+
+  const { data: esistente, error: errLettura } = await db.from("domande")
+    .select("id").eq("id", id).maybeSingle();
+  if (errLettura) throw new Error(errLettura.message);
+  if (!esistente) throw new Error("Questa domanda non esiste più");
+
+  const titolo = testo(d.titolo, 200);
+  const meta = testo(d.meta, 400);
+
+  const { error } = await db.from("domande")
+    .update({ titolo_seo: titolo, meta_seo: meta }).eq("id", id);
+  if (error) throw new Error(error.message);
+
+  return { titolo, meta, salvato: true };
+}
+
 async function moderaDomanda(d: Record<string, unknown>) {
   const id = testo(d.id, 40);
   const motivo = testo(d.motivo, 1000);
@@ -243,6 +274,7 @@ const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> =
   panoramica: () => panoramica(),
   "modera-risposta": moderaRisposta,
   "modera-domanda": moderaDomanda,
+  "seo-domanda": seoDomanda,
   "pubblica-guida": pubblicaGuida,
   "verifica-pro": verificaPro,
   "chiudi-segnalazione": chiudiSegnalazione,
