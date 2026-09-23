@@ -150,6 +150,16 @@ function dayIndex() {
 function dailyPublishedCount() {
   return Math.min(dayIndex() + 1, Math.min(DAILY_TOTAL, (window.DAILY_POOL || []).length));
 }
+
+/* Il denominatore del contatore è quante domande ci sono davvero
+   nel serbatoio, non la costante: se le due cose divergessero, la
+   pagina prometterebbe un seguito che non esiste.
+   Oggi coincidono — DAILY_TOTAL è 200 e in daily-questions.js ce
+   ne sono 200 — ma il giorno in cui qualcuno ne toglie una metà
+   il contatore continuerebbe a dire "di 200" e a promettere la
+   prossima fra qualche ora. Meglio leggerlo dal serbatoio. */
+const dailyTotale = () => Math.min(DAILY_TOTAL, (window.DAILY_POOL || []).length);
+const dailyEsaurite = () => dailyPublishedCount() >= dailyTotale();
 function dailyFaq(i) {
   const src = (window.DAILY_POOL || [])[i];
   if (!src) return null;
@@ -159,7 +169,10 @@ function dailyFaq(i) {
     { autore: "qf", testo: src.rispostaAuto, voti: DB.autoVotes[id] || 0, accettata: true, auto: true },
     ...(window.QFBacheca?.risposteDi(id, true) || [])
   ];
-  return { id, daily: true, num: i + 1, cat: src.cat, keyword: src.keyword, autore: "qf", data: d.toISOString().slice(0, 10), domanda: src.domanda, risposte };
+  /* Lo slug ce l'hanno solo le domande scritte a mano: le altre
+     nascono da quattro modelli e non meritano un indirizzo
+     proprio. Restano leggibili qui dentro, fuori dall'indice. */
+  return { id, daily: true, num: i + 1, cat: src.cat, keyword: src.keyword, slug: src.slug || null, curata: !!src.curata, autore: "qf", data: d.toISOString().slice(0, 10), domanda: src.domanda, risposte };
 }
 function publishedDaily() {
   const n = dailyPublishedCount();
@@ -242,6 +255,26 @@ function getFaqById(id) {
   if (/^q/.test(id)) return domandeCommunity().find(x => x.id === id) || null;
   return DB.faqs.find(x => x.id === id) || null;
 }
+/* Le domande che hanno un indirizzo pubblico, per il pre-render
+   e per la sitemap.
+
+   La regola sta qui e non nello script del deploy: chi ha uno
+   slug e chi no è una decisione sola — le domande scritte a mano
+   e quelle degli utenti che hanno ricevuto una risposta — e
+   duplicarla in due posti vuol dire tenerne allineate due. È la
+   stessa scelta già fatta per le guide e per il Magazine. */
+function domandeIndicizzabili() {
+  const migliore = f => f.risposte.find(r => r.accettata) || f.risposte[0];
+  return [...publishedDaily(), ...domandeCommunity()]
+    .filter(f => f.slug && f.risposte.length)
+    .map(f => ({
+      id: f.id,
+      slug: f.slug,
+      titolo: f.domanda,
+      meta: String(migliore(f)?.testo || "").slice(0, 155).replace(/\s+\S*$/, "")
+    }));
+}
+
 function hoursToNextDaily() {
   const next = new Date(new Date(DAILY_EPOCH + "T00:00:00").getTime() + (dayIndex() + 1) * 86400000);
   return Math.max(1, Math.ceil((next - Date.now()) / 3600000));
@@ -333,7 +366,7 @@ function indirizzoPubblico(page, path) {
   }
   if (page === "faq") {
     const f = getFaqById(path && path[1]);
-    if (f && f.slug) return "guide/" + f.slug + "/";
+    if (f && f.slug) return percorsoDomanda(f);
     return null;
   }
   const v = INDIRIZZI[page];
@@ -535,7 +568,18 @@ const SITO = () => location.origin + BASE_SITO;
    Deve coincidere con il canonical: se il grafo dichiara un URL
    e il canonical un altro, Google ha due risposte alla stessa
    domanda e ne sceglie una da sé. */
-const urlGuida = f => SITO() + (f && f.slug ? "guide/" + f.slug + "/" : "bacheca/");
+/* Le guide della redazione stanno sotto /guide/, le domande
+   sotto /bacheca/. Non è cosmesi: sono due cose diverse — una
+   guida è un testo che scriviamo noi, una domanda è di chi l'ha
+   posta e la risposta di chi l'ha firmata — e tenerle in due
+   rami dice a un motore quale dei due sta leggendo prima ancora
+   di aprire la pagina.
+
+   Senza slug non c'è indirizzo pubblico: la pagina esiste dentro
+   l'applicazione ma dichiara noindex, e qui si ricade
+   sull'elenco. */
+const percorsoDomanda = f => f && f.slug ? (f.staff ? "guide/" : "bacheca/") + f.slug + "/" : "bacheca/";
+const urlGuida = f => SITO() + percorsoDomanda(f);
 
 /* Identità dell'editore: dichiarata una volta e richiamata per
    riferimento da tutti gli altri nodi del grafo. */
@@ -613,6 +657,119 @@ function faqJsonLd(faqs) {
             }
           };
         })
+      }
+    ]
+  };
+}
+
+/* Chi firma una risposta, in forma di dato strutturato. */
+function autoreJsonLd(best) {
+  const base = SITO();
+  const a = best ? autoreDi(best) : null;
+  if (!a || a.auto) {
+    return { "@type": "Organization", "name": "Redazione QuotaFacile", "@id": base + "#org" };
+  }
+  const p = { "@type": "Person", "name": a.nome, "jobTitle": a.ruolo };
+  if (a.azienda && !DA_COMPILARE(a.azienda)) p.worksFor = { "@type": "Organization", "name": a.azienda };
+  /* Il numero RUI e' cio' che rende verificabile chi risponde:
+     identifier lo dichiara come identificativo rilasciato da un
+     registro pubblico, non come una stringa qualunque. */
+  if (a.rui && !DA_COMPILARE(a.rui)) {
+    p.identifier = {
+      "@type": "PropertyValue",
+      "propertyID": "Registro Unico degli Intermediari assicurativi (IVASS)",
+      "value": a.rui
+    };
+  }
+  return p;
+}
+
+/* QAPage, non FAQPage.
+   Sono due tipi per due cose diverse, e finora la bacheca usava
+   il secondo per entrambe. FAQPage descrive una pagina in cui e'
+   il sito a scrivere sia la domanda sia la risposta - una guida,
+   appunto. QAPage descrive una domanda posta da qualcuno a cui
+   rispondono altri, con una risposta accettata ed eventuali
+   altre proposte: e' esattamente la bacheca.
+   Non e' pignoleria: da settembre 2023 Google mostra i risultati
+   arricchiti di FAQPage quasi solo a siti governativi e sanitari,
+   mentre quelli di QAPage restano attivi per i siti di domande e
+   risposte. Dichiarare il tipo sbagliato vuol dire rinunciarvi. */
+function qaPageJsonLd(f) {
+  const base = SITO();
+  const url = urlGuida(f);
+  const best = f.risposte.find(r => r.accettata) || f.risposte[0];
+  const altre = f.risposte.filter(r => r !== best);
+
+  const risposta = r => ({
+    "@type": "Answer",
+    "text": r.testo,
+    "url": url,
+    "datePublished": f.data,
+    "upvoteCount": r.voti || 0,
+    "author": autoreJsonLd(r)
+  });
+
+  const domanda = {
+    "@type": "Question",
+    "@id": url + "#domanda",
+    "name": f.domanda,
+    "text": f.domanda,
+    "answerCount": f.risposte.length,
+    "datePublished": f.data,
+    "author": f.daily || f.staff
+      ? { "@type": "Organization", "name": "Redazione QuotaFacile", "@id": base + "#org" }
+      /* Chi scrive in bacheca non lascia un nome, e inventarne uno
+         sarebbe una firma falsa su un contenuto pubblico. */
+      : { "@type": "Person", "name": "Utente QuotaFacile" }
+  };
+  if (best) domanda.acceptedAnswer = risposta(best);
+  if (altre.length) domanda.suggestedAnswer = altre.map(risposta);
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      editoreJsonLd(),
+      {
+        "@type": "QAPage",
+        "@id": url + "#pagina",
+        "inLanguage": "it-IT",
+        "isPartOf": { "@id": base + "#org" },
+        "publisher": { "@id": base + "#org" },
+        "mainEntity": domanda
+      }
+    ]
+  };
+}
+
+/* L'elenco della bacheca non è una FAQPage: è un indice.
+   Dichiararlo per quello che è — una raccolta ordinata di pagine
+   che stanno altrove — evita di promettere a un motore domande e
+   risposte che su questa pagina ci sono solo in anteprima. */
+function elencoJsonLd(faqs) {
+  const base = SITO();
+  const conIndirizzo = faqs.filter(f => f.slug).slice(0, 50);
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      editoreJsonLd(),
+      {
+        "@type": "CollectionPage",
+        "@id": base + "bacheca/#elenco",
+        "name": "Bacheca Q&A — domande e risposte sulle assicurazioni",
+        "inLanguage": "it-IT",
+        "isPartOf": { "@id": base + "#org" },
+        "publisher": { "@id": base + "#org" },
+        "mainEntity": {
+          "@type": "ItemList",
+          "numberOfItems": conIndirizzo.length,
+          "itemListElement": conIndirizzo.map((f, i) => ({
+            "@type": "ListItem",
+            "position": i + 1,
+            "url": urlGuida(f),
+            "name": f.titolo || f.domanda
+          }))
+        }
       }
     ]
   };
@@ -1370,12 +1527,12 @@ function qaCard(f) {
          sitemap. La scheda resta cliccabile tutta grazie
          all'area estesa in CSS. -->
     <h3 class="qa-title"><a href="#/faq/${f.id}">${esc(f.domanda)}</a></h3>
-    ${best ? `<p class="qa-excerpt">${esc(best.testo)}</p>` : `<p class="qa-excerpt" style="font-style:italic">Ancora senza risposta: sei un intermediario? Rispondi e guadagna punti.</p>`}
+    ${best ? `<p class="qa-excerpt">${esc(best.testo)}</p>` : `<p class="qa-excerpt" style="font-style:italic">Ancora senza risposta: sei un intermediario? Rispondi tu.</p>`}
     <div class="qa-foot">
       ${a ? (a.auto
         ? `<span class="qa-author"><span class="mini-avatar mini-qf">QF</span>${esc(a.nome)} <span class="level-badge badge-auto">risposta automatica</span></span>`
         : `<span class="qa-author"><span class="mini-avatar">${esc(initials(a.nome))}</span>${esc(a.nome)} ${etichettaAutore(a)}</span>`) : `<span></span>`}
-      ${best ? `<span class="pts">▲ ${best.voti} utile</span>` : `<span class="pts">+10 pt per chi risponde</span>`}
+      ${best ? `<span class="pts">▲ ${best.voti} utile</span>` : `<span class="pts">in attesa di risposta</span>`}
     </div>
   </article>`;
 }
@@ -1388,55 +1545,83 @@ views.bacheca = () => {
   const list = merged.filter(f => boardFilter === "Tutte" || f.cat === boardFilter);
   const leaders = [...DB.brokers, ...(DB.proProfile ? [DB.proProfile] : [])].sort((a, b) => b.punti - a.punti).slice(0, 5);
   const nDaily = dailyPublishedCount();
-  setJsonLd(faqJsonLd(list));
+  setJsonLd(elencoJsonLd(merged));
   return `
   <section class="section">
     <div class="container">
       <div class="section-head">
-        <span class="eyebrow">Bacheca Q&amp;A · il sapere assicurativo, aperto</span>
+        <span class="eyebrow">Bacheca Q&amp;A</span>
         <h1 class="titolo-sezione">Domande vere, risposte firmate</h1>
-        <p class="muted">Ogni giorno pubblichiamo una nuova domanda con risposta della redazione; gli intermediari integrano, guadagnano punti e salgono in classifica.</p>
+        <p class="muted">Qui chiunque può pubblicare una domanda di assicurazioni, gratis e senza
+        registrarsi. La domanda compare in questa pagina, leggibile da tutti. A risponderti può
+        essere la <strong>redazione di QuotaFacile</strong> oppure uno degli
+        <strong>intermediari iscritti</strong>: ogni risposta è firmata con nome, ruolo e numero
+        RUI di chi la scrive, e passa da una verifica prima di diventare pubblica. Non promettiamo
+        tempi — dipende da chi legge e da quanto è specifica la domanda.</p>
       </div>
-      <div class="daily-counter card">
-        <div>
-          <strong>☀️ Domanda del giorno ${nDaily} di ${DAILY_TOTAL}</strong>
-          <div class="muted" style="font-size:.8rem">Prossima domanda tra ~${hoursToNextDaily()}h · una al giorno, tutti i giorni</div>
+
+      <!-- Il modulo sta in alto, non in fondo alla lista.
+           Chi arriva qui da una ricerca ha una domanda in testa
+           adesso: se per scriverla deve prima scorrere venticinque
+           schede, la scrive altrove. -->
+      <div class="card chiedi-card">
+        <div class="chiedi-testa">
+          <h2 style="margin:0">Fai la tua domanda</h2>
+          <span class="chiedi-gratis">gratis, senza registrarsi</span>
         </div>
-        <div class="progressbar" style="flex:1;max-width:260px"><i style="width:${Math.round(nDaily / DAILY_TOTAL * 100)}%"></i></div>
+        <ol class="chiedi-passi">
+          <li><strong>Scrivi la domanda.</strong> Compare subito in bacheca, in fondo a questa pagina.</li>
+          <li><strong>Risponde la redazione o un intermediario iscritto.</strong> La risposta porta il nome di chi la firma e viene verificata prima di essere pubblicata.</li>
+          <li><strong>Resta consultabile.</strong> La domanda e la sua risposta restano qui, per chiunque avrà lo stesso dubbio.</li>
+        </ol>
+        <form id="ask-form" class="form-grid">
+          <div class="field full"><label for="ask-q">La tua domanda</label><textarea id="ask-q" required placeholder="Es. Conviene la kasko su un'auto di 8 anni?"></textarea></div>
+          <div class="field"><label for="ask-cat">Categoria</label>
+            <select id="ask-cat">${["Auto","Casa","Vita","Impresa","Salute","Viaggi"].map(c => `<option>${c}</option>`).join("")}</select>
+          </div>
+          <div class="field full">
+            ${consentBox("ask-consenso", `Ho letto l'<a href="#/privacy">informativa privacy</a> e acconsento alla pubblicazione della domanda in bacheca. So che sarà visibile pubblicamente e indicizzabile dai motori di ricerca: non inserisco dati personali miei o di terzi.`)}
+          </div>
+          <div class="field" style="justify-content:flex-end"><button class="btn btn-primary" type="submit">Pubblica la domanda</button></div>
+        </form>
       </div>
+
+      <div class="daily-counter card">
+        ${dailyEsaurite() ? `
+          <div>
+            <strong>☀️ ${nDaily} domande del giorno pubblicate</strong>
+            <div class="muted" style="font-size:.8rem">Il ciclo è concluso: restano tutte qui sotto, consultabili. Le prossime arriveranno quando ci sarà altro da dire, non per riempire un contatore.</div>
+          </div>`
+        : `
+          <div>
+            <strong>☀️ Domanda del giorno ${nDaily} di ${dailyTotale()}</strong>
+            <div class="muted" style="font-size:.8rem">Prossima domanda tra ~${hoursToNextDaily()}h · una al giorno, con risposta della redazione</div>
+          </div>
+          <div class="progressbar" style="flex:1;max-width:260px"><i style="width:${Math.round(nDaily / dailyTotale() * 100)}%"></i></div>`}
+      </div>
+
       <div class="board-layout">
         <div>
           <div class="filterbar">
             ${cats.map(c => `<button class="chip ${c === boardFilter ? "active" : ""}" data-boardfilter="${c}">${c}</button>`).join("")}
           </div>
           ${list.map(f => qaCard(f)).join("") || `<p class="muted">Nessuna domanda in questa categoria.</p>`}
-          <div class="card" style="margin-top:1.4rem">
-            <h3>Hai un dubbio assicurativo?</h3>
-            <p class="muted" style="font-size:.9rem">Pubblicalo: un intermediario verificato ti risponderà pubblicamente.</p>
-            <form id="ask-form" class="form-grid">
-              <div class="field full"><label for="ask-q">La tua domanda</label><textarea id="ask-q" required placeholder="Es. Conviene la kasko su un'auto di 8 anni?"></textarea></div>
-              <div class="field"><label for="ask-cat">Categoria</label>
-                <select id="ask-cat">${["Auto","Casa","Vita","Impresa","Salute","Viaggi"].map(c => `<option>${c}</option>`).join("")}</select>
-              </div>
-              <div class="field full">
-                ${consentBox("ask-consenso", `Ho letto l'<a href="#/privacy">informativa privacy</a> e acconsento alla pubblicazione della domanda in bacheca. So che sarà visibile pubblicamente e indicizzabile dai motori di ricerca: non inserisco dati personali miei o di terzi.`)}
-              </div>
-              <div class="field" style="justify-content:flex-end"><button class="btn btn-primary" type="submit">Pubblica la domanda</button></div>
-            </form>
-          </div>
         </div>
         <aside>
           <div class="card leader-card">
             <h3>🏆 Classifica esperti</h3>
-            <p class="muted" style="font-size:.8rem;margin-top:-.3rem">Aggiornata in tempo reale</p>
-            ${leaders.map((b, i) => `
+            <p class="muted" style="font-size:.8rem;margin-top:-.3rem">Chi risponde in bacheca, e quanto</p>
+            ${leaders.length ? leaders.map((b, i) => `
               <div class="leader-row">
                 <span class="leader-rank ${i === 0 ? "gold" : ""}">${i + 1}</span>
                 <span class="mini-avatar">${esc(initials(b.nome))}</span>
                 <span class="leader-info"><strong>${esc(b.nome)}${b.id === "me" ? " (tu)" : ""}</strong><span>${esc(b.ruolo)} · ${b.risposte || 0} risposte</span></span>
-                <span class="leader-pts">${b.punti} pt</span>
-              </div>`).join("")}
-            <a href="#/professionisti" class="btn btn-outline btn-sm btn-block" style="margin-top:1rem">Vuoi entrare in classifica?</a>
+                <span class="leader-pts">${b.punti ?? 0} pt</span>
+              </div>`).join("")
+            /* Un titolo sopra il nulla sembra una pagina rotta. Finché
+               non c'è nessun iscritto, la scheda dice com'è. */
+            : `<p class="muted" style="font-size:.88rem">Ancora nessun intermediario iscritto: la classifica si riempie da sé quando i primi cominciano a rispondere.</p>`}
+            <a href="#/professionisti" class="btn btn-outline btn-sm btn-block" style="margin-top:1rem">Come si entra in classifica</a>
           </div>
         </aside>
       </div>
@@ -1950,7 +2135,10 @@ views.faqDetail = (id) => {
         !window.QFBacheca?.stato.caricata) return null;
     return `<section class="section"><div class="container"><h2>Domanda non trovata</h2><a href="#/bacheca" class="btn btn-outline">← Torna alla bacheca</a></div></section>`;
   }
-  const ld = faqJsonLd([f]);
+  /* Una guida è scritta da noi, domanda compresa: FAQPage, più
+     l'Article che dice chi l'ha scritta e quando. Una domanda
+     della bacheca è di chi l'ha posta: QAPage. */
+  const ld = f.staff ? faqJsonLd([f]) : qaPageJsonLd(f);
   /* Niente gradino per la categoria: non esiste una pagina di
      categoria, e metterla porterebbe allo stesso indirizzo del
      gradino precedente. Un percorso con due tappe identiche
@@ -1959,7 +2147,7 @@ views.faqDetail = (id) => {
   ld["@graph"].push(breadcrumbJsonLd([
     { nome: "Home", rotta: "home" },
     { nome: "Bacheca Q&A", rotta: "bacheca" },
-    { nome: f.titolo || f.domanda, percorso: (f.slug ? "guide/" + f.slug + "/" : "bacheca/") }
+    { nome: f.titolo || f.domanda, percorso: percorsoDomanda(f) }
   ]));
   /* Una guida e' un articolo, e dichiararlo cambia cosa i motori
      — di ricerca e generativi — sanno farci: chi l'ha scritta,
@@ -2021,11 +2209,11 @@ views.faqDetail = (id) => {
       ${guideCorrelate(f)}
 
       <div class="card" style="margin-top:1.8rem">
-        <h3>Sei un intermediario? ${f.daily ? "Integra la risposta automatica" : "Rispondi"} (+10 pt)</h3>
+        <h3>Sei un intermediario? ${f.daily ? "Integra la risposta automatica" : "Rispondi"}</h3>
         ${pro ? `
         <form id="answer-form">
           <div class="field full"><label for="ans-t">La tua risposta pubblica, firmata ${esc(pro.nome)}</label><textarea id="ans-t" required placeholder="${f.daily ? "Aggiungi esperienza pratica, casi concreti, cosa verificare in polizza..." : "Scrivi una risposta chiara e completa..."}"></textarea></div>
-          <button class="btn btn-primary" style="margin-top:.8rem" type="submit">Pubblica risposta · +10 pt</button>
+          <button class="btn btn-primary" style="margin-top:.8rem" type="submit">Pubblica risposta</button>
         </form>` : `
         <p class="muted" style="font-size:.9rem">Crea prima il tuo profilo nell'Area Pro: le risposte sono firmate con la tua QuotaPass.</p>
         <a href="#/area-pro" class="btn btn-outline">Vai all'Area Pro →</a>`}
@@ -2230,7 +2418,7 @@ function proDashboardHTML(p) {
             <select id="pf-cat">${["Auto","Casa","Vita","Impresa","Salute","Viaggi"].map(c => `<option>${c}</option>`).join("")}</select>
           </div>
           <div class="field" style="margin-top:.6rem"><label for="pf-a">La tua risposta</label><textarea id="pf-a" required placeholder="Rispondi in modo chiaro e completo..."></textarea></div>
-          <button class="btn btn-gold btn-block" style="margin-top:.9rem" type="submit">Pubblica FAQ · +10 pt</button>
+          <button class="btn btn-gold btn-block" style="margin-top:.9rem" type="submit">Pubblica FAQ</button>
         </form>
       </div>
     </div>
@@ -2250,7 +2438,7 @@ function proBoardHTML() {
               : f.daily ? `Domanda del giorno #${f.num} · risposta automatica da integrare`
               : (f.risposte.length ? f.risposte.length + " risposte di altri intermediari" : "Ancora senza risposta")} · ${esc(f.cat)}</span>
       </span>
-      <span class="pts" style="white-space:nowrap">+10 pt</span>
+      <span class="pts" style="white-space:nowrap">—</span>
     </div>`;
   return `
   <div class="card" style="margin-bottom:1.2rem">
@@ -2298,8 +2486,6 @@ views.areaPro = () => {
   }
 
   const punti = p.punti ?? 0;
-  const next = punti >= 300 ? 300 : punti >= 150 ? 300 : punti >= 50 ? 150 : 50;
-  const pct = Math.min(100, Math.round(punti / next * 100));
   return `
   <section class="section">
     <div class="container">
@@ -2308,12 +2494,18 @@ views.areaPro = () => {
         <h1 class="titolo-sezione">Ciao ${esc(p.nome.split(" ")[0])}, ecco la tua vetrina</h1>
       </div>
 
+      <!-- I punti sono fermi, e qui c'è scritto. La versione
+           precedente diceva "ti mancano N punti al livello
+           Consulente, rispondi in bacheca per salire": una barra
+           che avanza verso un livello che non dà niente, perché
+           niente di ciò che i livelli promettevano è costruito.
+           Meglio dire che il conteggio è sospeso che far salire
+           un numero verso una porta che non si apre. -->
       <div class="gami-banner">
         <span class="icon">🏅</span>
         <div style="flex:1">
-          <strong>${livello(punti)} · ${punti} punti</strong>
-          <div class="muted" style="font-size:.8rem">${punti >= 300 ? "Sei un Top Advisor: profilo in evidenza in home!" : `Ti mancano ${next - punti} punti al livello ${livello(next)}. Rispondi in bacheca per salire.`}</div>
-          <div class="progressbar"><i style="width:${pct}%"></i></div>
+          <strong>${punti} punti</strong>
+          <div class="muted" style="font-size:.8rem">Il conteggio è sospeso: i punti non salgono finché non c'è qualcosa di concreto che vanno a sbloccare. Le risposte che pubblichi restano firmate e pubbliche come prima.</div>
         </div>
         <a href="#/bacheca" class="btn btn-gold btn-sm">Rispondi ora</a>
       </div>
@@ -2924,14 +3116,18 @@ function bind() {
 
     const esito = await window.QFBacheca.nuovaRisposta(dati);
     if (!esito.ok) {
-      if (btn) { btn.disabled = false; btn.textContent = "Pubblica risposta · +10 pt"; }
+      if (btn) { btn.disabled = false; btn.textContent = "Pubblica risposta"; }
       toast(esito.errore || "Risposta non inviata.");
       return;
     }
-    DB.proProfile.punti += 10;
+    /* I punti sono fermi: il meccanismo che li trasformava in
+       qualcosa - profilo in evidenza, priorita' - non e'
+       costruito, e un numero che sale senza portare a niente e'
+       una promessa travestita da premio. Restano a zero finche'
+       non c'e' qualcosa di vero dietro. */
     DB.proProfile.risposte = (DB.proProfile.risposte || 0) + 1;
     saveDB(); render();
-    toast("Risposta inviata! Sarà pubblica dopo la verifica. +10 punti 🏅");
+    toast("Risposta inviata: sarà pubblica dopo la verifica.");
   });
 
   /* profilo pro: salvataggio + anteprima live */
@@ -3002,10 +3198,14 @@ function bind() {
       data: new Date().toISOString().slice(0, 10), domanda: $("#pf-q").value.trim(),
       risposte: [{ autore: "me", testo: $("#pf-a").value.trim(), voti: 0, accettata: true }]
     });
-    DB.proProfile.punti += 10;
+    /* I punti sono fermi: il meccanismo che li trasformava in
+       qualcosa - profilo in evidenza, priorita' - non e'
+       costruito, e un numero che sale senza portare a niente e'
+       una promessa travestita da premio. Restano a zero finche'
+       non c'e' qualcosa di vero dietro. */
     DB.proProfile.risposte = (DB.proProfile.risposte || 0) + 1;
     saveDB();
-    toast("FAQ pubblicata in bacheca! +10 punti 🏅");
+    toast("FAQ pubblicata in bacheca.");
     location.hash = "#/bacheca";
   });
 }
@@ -3017,6 +3217,7 @@ window.QF = {
   get DB() { return DB; },
   saveDB, render, toast, esc, initials, livello, qpass, broker,
   staffFaqs, publishedDaily, dailyPublishedCount, getFaqById,
+  domandeIndicizzabili,
   contaRisposte, sincronizzaBrokers, campo, DA_COMPILARE, ruiLabel,
   /* La radice del sito. Serve a chi carica un file da assets/ e
      non può scrivere un percorso assoluto: in locale il sito sta

@@ -131,6 +131,13 @@
         id: "q" + d.id,
         uuid: d.id,
         cat: d.categoria,
+        /* Lo slug arriva dal database, e il database lo assegna
+           alla prima risposta pubblicata: finché non c'è, la
+           domanda non ha un indirizzo pubblico. Una pagina con
+           la domanda e il vuoto sotto è contenuto sottile, e
+           Google lo conta contro tutto il sito, non solo contro
+           quella pagina. */
+        slug: d.slug || null,
         data: (d.creato_il || "").slice(0, 10),
         domanda: d.domanda,
         remota: true,

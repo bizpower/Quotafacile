@@ -205,6 +205,62 @@ for each row execute function public.domande_assegna_slug();
 create unique index if not exists domande_slug_idx
   on public.domande (slug) where slug is not null;
 
+-- ------------------------------------------------------------
+-- Lo slug delle domande degli utenti
+--
+-- Il trigger qui sopra assegna l'indirizzo alle sole guide. Una
+-- domanda posta da un utente lo prende più tardi: quando riceve
+-- la prima risposta pubblicata, non quando viene posta.
+--
+-- Il motivo non è estetico. Una pagina con la domanda e il vuoto
+-- sotto è contenuto sottile, e Google lo conta contro tutto il
+-- sito, non solo contro quella pagina. Finché non c'è una
+-- risposta la domanda resta visibile in bacheca ma senza slug:
+-- niente indirizzo pubblico, niente canonical, fuori dalla
+-- sitemap. L'applicazione la mostra, l'indice no.
+--
+-- Il trigger sta su risposte e non su domande perché il fatto che
+-- lo fa scattare — "esiste una risposta pubblicata" — riguarda le
+-- risposte. Una volta assegnato, lo slug non cambia più.
+create or replace function public.domande_slug_alla_prima_risposta()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare
+  d         record;
+  base      text;
+  tentativo text;
+begin
+  if new.stato <> 'pubblicata' or new.domanda_id is null then
+    return new;
+  end if;
+
+  select id, tipo, slug, domanda into d
+    from public.domande where id = new.domanda_id;
+
+  if not found or d.tipo <> 'utente' or d.slug is not null then
+    return new;
+  end if;
+
+  base := coalesce(public.slug_da_titolo(d.domanda), 'domanda');
+
+  tentativo := base;
+  if exists (select 1 from public.domande x where x.slug = tentativo) then
+    tentativo := base || '-' || left(replace(d.id::text, '-', ''), 6);
+  end if;
+
+  update public.domande set slug = tentativo
+   where id = d.id and slug is null;
+
+  return new;
+end $$;
+
+revoke execute on function public.domande_slug_alla_prima_risposta()
+  from public, anon, authenticated;
+
+drop trigger if exists risposte_slug_domanda on public.risposte;
+create trigger risposte_slug_domanda
+after insert or update of stato on public.risposte
+for each row execute function public.domande_slug_alla_prima_risposta();
+
 create table if not exists public.risposte (
   id               uuid primary key default gen_random_uuid(),
   creato_il        timestamptz not null default now(),

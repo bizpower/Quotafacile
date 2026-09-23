@@ -289,6 +289,48 @@ a.chip { display: inline-block; text-decoration: none; }
   border-color: #F0DDB6; background: linear-gradient(120deg, var(--gold-100), #fff);
 }
 
+/* ---- Il modulo per chiedere, in cima alla bacheca ----
+   Si distingue dalle schede delle domande con il bordo verde e
+   uno sfondo appena diverso: chi arriva deve capire in un colpo
+   d'occhio dove si scrive e dove si legge. */
+.chiedi-card {
+  margin-bottom: 1.6rem;
+  border: 2px solid var(--green-600);
+  background: linear-gradient(140deg, var(--green-50), var(--card) 55%);
+}
+.chiedi-testa {
+  display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap;
+  margin-bottom: .8rem;
+}
+.chiedi-gratis {
+  font-size: .75rem; font-weight: 700; letter-spacing: .03em;
+  color: var(--green-800); background: var(--green-100);
+  padding: .2rem .6rem; border-radius: 999px;
+}
+/* I tre passi sono numerati perché sono una sequenza, non un
+   elenco di caratteristiche: dicono cosa succede dopo che hai
+   premuto il bottone, che è la domanda vera di chi sta per
+   scrivere a degli sconosciuti. */
+.chiedi-passi {
+  list-style: none; counter-reset: passo;
+  margin: 0 0 1.1rem; padding: 0;
+  display: grid; gap: .5rem;
+}
+.chiedi-passi li {
+  counter-increment: passo;
+  position: relative; padding-left: 2rem;
+  font-size: .88rem; line-height: 1.5; color: var(--ink-soft);
+}
+.chiedi-passi li::before {
+  content: counter(passo);
+  position: absolute; left: 0; top: .05rem;
+  display: grid; place-items: center;
+  width: 1.4rem; height: 1.4rem; border-radius: 50%;
+  background: var(--green-800); color: #fff;
+  font-size: .72rem; font-weight: 700;
+}
+.chiedi-passi strong { color: var(--ink); }
+
 /* Dashboard pro: lead */
 .stats-row-4 { grid-template-columns: repeat(4, 1fr); }
 .lead-row { display: flex; align-items: center; gap: .8rem; padding: .65rem 0; border-bottom: 1px dashed var(--line); }
