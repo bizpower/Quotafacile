@@ -109,7 +109,31 @@ async function nuovaDomanda(d: Record<string, unknown>) {
   return { id: data.id };
 }
 
-async function nuovaRisposta(d: Record<string, unknown>) {
+/* Il profilo di chi firma, quando ha un account.
+   Si ricava dal token, mai dal corpo della richiesta: se
+   arrivasse da un campo JSON, chiunque potrebbe firmare a nome di
+   un altro e fargli guadagnare - o perdere - quello che ne segue.
+   Chi non ha un account puo' rispondere lo stesso: la risposta
+   resta in attesa di approvazione come tutte le altre, solo senza
+   un profilo a cui attribuirla. */
+async function profiloDiChiFirma(req: Request): Promise<string | null> {
+  const auth = req.headers.get("Authorization") || "";
+  if (!auth.startsWith("Bearer ")) return null;
+  try {
+    const comeLui = createClient(
+      Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: auth } } });
+    const { data: u } = await comeLui.auth.getUser();
+    if (!u?.user) return null;
+    const { data } = await db.from("pro_profili")
+      .select("id").eq("utente_id", u.user.id).maybeSingle();
+    return data?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function nuovaRisposta(d: Record<string, unknown>, req: Request) {
   const testoRisposta = testo(d.testo, 6000);
   const autore = testo(d.autoreNome, 200);
   if (!testoRisposta || testoRisposta.length < 30) {
@@ -132,6 +156,7 @@ async function nuovaRisposta(d: Record<string, unknown>) {
     autore_rui: testo(d.autoreRui, 40),
     autore_email: testo(d.autoreEmail, 200),
     testo: testoRisposta,
+    profilo_id: await profiloDiChiFirma(req),
     // in attesa per scelta: senza autenticazione chiunque
     // potrebbe firmarsi con il nome di un intermediario reale
     stato: "in_attesa",
@@ -153,8 +178,8 @@ async function voto(d: Record<string, unknown>) {
   return { voti: data?.voti ?? 0, gia: error?.code === "23505" };
 }
 
-const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
-  domanda: nuovaDomanda, risposta: nuovaRisposta, voto,
+const AZIONI: Record<string, (d: Record<string, unknown>, req: Request) => Promise<unknown>> = {
+  domanda: (d) => nuovaDomanda(d), risposta: nuovaRisposta, voto: (d) => voto(d),
 };
 
 Deno.serve(async (req: Request) => {
@@ -167,7 +192,7 @@ Deno.serve(async (req: Request) => {
       const body = await req.json();
       const azione = AZIONI[String(body?.azione ?? "")];
       if (!azione) throw new ErroreCliente("Azione non riconosciuta");
-      return rispondi({ ok: true, ...(await azione(body.dati ?? {}) as object) });
+      return rispondi({ ok: true, ...(await azione(body.dati ?? {}, req) as object) });
     }
 
     return rispondi({ ok: false, errore: "Metodo non consentito" }, 405);

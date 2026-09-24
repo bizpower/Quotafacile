@@ -67,7 +67,7 @@ DB.staffVotes = DB.staffVotes || {};
    Punti e risposte accumulati vengono conservati per id. */
 function sincronizzaBrokers() {
   const precedenti = Object.fromEntries((DB.brokers || []).map(b => [b.id, b]));
-  DB.brokers = (window.INTERMEDIARI || []).map(i => {
+  const dalRepo = (window.INTERMEDIARI || []).map(i => {
     /* Lo stato di verifica deciso dall'Admin ha la precedenza:
        è il risultato di un controllo umano sul registro IVASS. */
     const stato = (DB.verifiche || {})[i.id] || i.statoVerifica;
@@ -79,6 +79,21 @@ function sincronizzaBrokers() {
       risposte: precedenti[i.id]?.risposte ?? i.risposte ?? 0
     };
   });
+
+  /* In vetrina ci sono due provenienze: le schede editoriali del
+     repository e i profili di chi si è registrato da sé. Per chi
+     guarda sono la stessa cosa — un intermediario con un numero
+     RUI riscontrato — e mescolarle qui evita di avere due elenchi
+     in pagina che dicono la stessa cosa in due riquadri diversi.
+
+     L'ordine mette davanti chi è in evidenza. È una collocazione
+     a pagamento, e più sotto la pagina lo dichiara: l'art. 22-bis
+     del Codice del consumo lo impone, e anche senza sarebbe il
+     minimo verso chi legge una lista credendola un ordinamento
+     per merito. */
+  const registrati = window.QF_PRO?.vetrina() || [];
+  DB.brokers = [...dalRepo, ...registrati]
+    .sort((a, b) => (b.inEvidenza ? 1 : 0) - (a.inEvidenza ? 1 : 0) || (b.punti ?? 0) - (a.punti ?? 0));
 }
 DB.staffCustom = DB.staffCustom || [];
 DB.staffHidden = DB.staffHidden || [];
@@ -886,6 +901,13 @@ function qpass(b, flat = false) {
   <div class="qpass ${flat ? "flat" : ""}" role="img" aria-label="Tessera di ${esc(b.nome)}">
     <div class="qpass-top">
       <span class="qpass-logo">Quota<em>Pass</em></span>
+      <!-- Due distintivi diversi, e non vanno confusi: "Verificato
+           RUI" dice che il numero è stato riscontrato sul registro
+           pubblico, "In evidenza" dice che quel profilo ha un
+           abbonamento. Il primo è un controllo, il secondo è una
+           collocazione pagata: metterli con lo stesso peso
+           farebbe sembrare una verifica quello che è un acquisto. -->
+      ${b.inEvidenza ? `<span class="qpass-evidenza" title="Profilo con abbonamento: compare più in alto negli elenchi">★ In evidenza</span>` : ""}
       ${b.verificato ? `<span class="qpass-verified">✓ Verificato RUI</span>` : `<span class="qpass-verified" style="opacity:.55">In verifica</span>`}
     </div>
     <div>
@@ -1014,7 +1036,15 @@ views.nonTrovato = () => `
   </section>`;
 
 views.home = () => {
-  const featured = [...DB.brokers].sort((a, b) => b.punti - a.punti).slice(0, 3);
+  /* I tre in vetrina sulla home: prima chi ha il piano Pro, poi i
+     punti. È la differenza concreta fra Base e Pro — Base porta
+     in alto nella lista degli intermediari, Pro anche qui — e
+     senza questa riga sarebbe una differenza scritta solo sulla
+     pagina dei prezzi. Anche qui l'ordine è dichiarato: la nota
+     sotto le tessere lo dice. */
+  const featured = [...DB.brokers]
+    .sort((a, b) => (b.piano === "pro" ? 1 : 0) - (a.piano === "pro" ? 1 : 0) || (b.punti ?? 0) - (a.punti ?? 0))
+    .slice(0, 3);
   const topFaq = [...staffFaqs().slice(0, 2), publishedDaily()[0], ...domandeCommunity().filter(f => f.risposte.length)].filter(Boolean).slice(0, 3);
   /* Nel grafo finiscono sia le guide in vetrina sia le domande
      di identità: sono tutte visibili in pagina, ed è la
@@ -1231,34 +1261,35 @@ const PIANI = [
     ],
     azione: { testo: "Crea la QuotaPass", href: "#/area-pro" }
   },
-  /* I due piani a pagamento sono annunciati, non attivi: non
-     esistono su Stripe e non c'è codice che li faccia valere.
-     Quindi si dice "in arrivo" e il bottone non finge di poterli
-     attivare — e l'elenco delle funzioni porta scritto che è in
-     definizione, perché lo è. Pubblicare un listino che promette
-     cose non costruite è il modo più rapido di perdere la fiducia
-     del primo che paga e non le trova. */
+  /* Le voci elencate qui sono quelle che il codice fa davvero, e
+     l'elenco è corto per quello. Prima ne prometteva quattro per
+     piano — "richieste della tua provincia", "priorità nello
+     smistamento", "statistiche del profilo" — e nessuna esisteva.
+     Un listino che promette cose non costruite è il modo più
+     rapido di perdere la fiducia del primo che paga e non le
+     trova, e la prima cosa che verifica chi paga è proprio la
+     riga che l'ha convinto. */
   {
     id: "base", nome: "Base", prezzo: "8,99", cadenza: "al mese, IVA esclusa",
-    inArrivo: true,
-    sommario: "Per chi vuole essere trovato, non solo essere presente.",
+    prova: 30,
+    sommario: "Per essere trovato, non solo per esserci.",
     voci: [
       "Tutto quello che c'è nel piano gratuito",
-      "Profilo in evidenza nella lista, sopra i profili gratuiti",
-      "Richieste di preventivo della tua provincia",
-      "Statistiche del profilo: quante volte è stato aperto"
-    ]
+      "Profilo in evidenza nella Lista Intermediari, sopra i profili gratuiti",
+      "Il contrassegno ★ In evidenza sulla tua QuotaPass"
+    ],
+    azione: { testo: "Prova 30 giorni gratis", piano: "base" }
   },
   {
     id: "pro", nome: "Pro", prezzo: "19,99", cadenza: "al mese, IVA esclusa",
-    inArrivo: true,
-    sommario: "Per chi lavora sui contatti in entrata come canale vero.",
+    prova: 30,
+    sommario: "Per chi sulla bacheca ci lavora.",
     voci: [
       "Tutto quello che c'è in Base",
-      "Priorità nello smistamento delle richieste",
-      "Specializzazioni senza limite di numero",
-      "Profilo fra gli intermediari in evidenza in home"
-    ]
+      "Profilo fra i tre intermediari in vetrina sulla home",
+      "Punti doppi in bacheca: ogni risposta pubblicata ne vale 20 invece di 10"
+    ],
+    azione: { testo: "Prova 30 giorni gratis", piano: "pro" }
   }
 ];
 
@@ -1281,17 +1312,18 @@ views.professionisti = () => {
         "serviceType": "Piattaforma di visibilità e contatti per intermediari assicurativi",
         "areaServed": { "@type": "Country", "name": "Italia" },
         "provider": { "@id": SITO() + "#org" },
-        /* availability PreOrder e non InStock: i due piani hanno
-           un prezzo deciso ma non si possono ancora sottoscrivere,
-           e dichiararli disponibili sarebbe dichiarare il falso a
-           un motore di ricerca — che poi lo mostra come tale. */
+        /* Ora si sottoscrivono davvero, quindi InStock. Finché non
+           si potevano attivare erano dichiarati PreOrder: un
+           motore di ricerca mostra la disponibilità come la trova
+           scritta, e dichiarare disponibile ciò che non lo è
+           significa farglielo ripetere. */
         "offers": PIANI.filter(p => p.prezzo).map(p => ({
           "@type": "Offer",
           "name": "Piano " + p.nome,
           "price": p.prezzo.replace(",", "."),
           "priceCurrency": "EUR",
           "valueAddedTaxIncluded": false,
-          "availability": p.inArrivo ? "https://schema.org/PreOrder" : "https://schema.org/InStock",
+          "availability": "https://schema.org/InStock",
           "description": p.sommario,
           "url": SITO() + "professionisti/"
         }))
@@ -1399,8 +1431,8 @@ views.professionisti = () => {
 
       <div class="piani-griglia">
         ${PIANI.map(p => `
-          <div class="piano ${p.inArrivo ? "piano-arrivo" : ""}">
-            ${p.inArrivo ? `<span class="piano-nastro piano-nastro-attesa">In arrivo</span>` : ""}
+          <div class="piano">
+            ${p.prova ? `<span class="piano-nastro">${p.prova} giorni gratis</span>` : ""}
             <h3 class="piano-nome">${esc(p.nome)}</h3>
             <p class="piano-prezzo">
               ${p.prezzo
@@ -1411,10 +1443,10 @@ views.professionisti = () => {
             <ul class="piano-voci">
               ${p.voci.map(v => `<li>${esc(v)}</li>`).join("")}
             </ul>
-            ${p.inArrivo
-              ? `<p class="privacy-hint">Non è ancora attivabile: il prezzo è deciso, l'elenco delle
-                 funzioni è in definizione e può cambiare prima dell'attivazione.</p>
-                 <span class="piano-btn piano-btn-attesa">Attivazione a breve</span>`
+            ${p.azione.piano
+              ? `<p class="privacy-hint">Carta richiesta subito, nessun addebito per ${p.prova} giorni.
+                 Disdici quando vuoi dalla tua area: se disdici entro la prova non paghi nulla.</p>
+                 <button class="btn btn-primary piano-btn" data-abbona="${esc(p.azione.piano)}">${esc(p.azione.testo)}</button>`
               : `<a class="btn btn-outline piano-btn" href="${esc(p.azione.href)}">${esc(p.azione.testo)}</a>`}
           </div>`).join("")}
 
@@ -1483,6 +1515,19 @@ views.intermediari = () => {
     <div class="container">
       <div class="section-head"><span class="eyebrow">Directory</span><h1 class="titolo-sezione">Trova il tuo intermediario assicurativo</h1>
       <p class="muted">Ogni QuotaPass mostra ruolo, città, numero RUI e specializzazioni. Contatta direttamente chi preferisci.</p></div>
+      <!-- L'ordine di un elenco sembra sempre un giudizio, e qui
+           non lo è: chi ha un abbonamento sta più in alto. L'art.
+           22-bis del Codice del consumo impone di dirlo, e anche
+           senza quella norma sarebbe il minimo verso chi legge. Il
+           badge "Verificato RUI" invece non si compra: quello
+           resta il riscontro sul registro pubblico. -->
+      <p class="privacy-hint" style="margin:-.6rem 0 1rem">
+        <strong>Come è ordinata questa lista.</strong> I profili contrassegnati
+        <em>★ In evidenza</em> hanno un abbonamento a pagamento e compaiono più in alto: è una
+        collocazione acquistata, non un giudizio sulla qualità. Il badge <em>✓ Verificato RUI</em>
+        non si acquista — dice solo che il numero è stato riscontrato sul
+        <a href="https://servizi.ivass.it/RuirPubblica/" target="_blank" rel="noopener">registro pubblico IVASS</a>.
+      </p>
       <div class="filterbar">
         ${cats.map(c => `<button class="chip ${c === dirFilter ? "active" : ""}" data-filter="${c}">${c}</button>`).join("")}
       </div>
@@ -3063,6 +3108,25 @@ function bind() {
     b.addEventListener("click", () => { dirFilter = b.dataset.filter; render(); }));
   document.querySelectorAll("[data-boardfilter]").forEach(b =>
     b.addEventListener("click", () => { boardFilter = b.dataset.boardfilter; render(); }));
+  /* ---- attivare un abbonamento ----
+     Senza un account non c'è niente a cui agganciare
+     l'abbonamento: si manda a registrarsi invece di aprire un
+     pagamento che poi non saprebbe a chi attribuirsi. */
+  document.querySelectorAll("[data-abbona]").forEach(b =>
+    b.addEventListener("click", async () => {
+      const piano = b.dataset.abbona;
+      if (!window.QF_PRO?.autenticato()) {
+        proModo = "registrati";
+        location.hash = "#/area-pro";
+        toast("Crea il tuo account: l'abbonamento si aggancia a quello.");
+        return;
+      }
+      const testoPrec = b.textContent;
+      b.disabled = true; b.textContent = "Apro il pagamento…";
+      const esito = await window.QF_PRO.checkout(piano);
+      if (!esito.ok) { b.disabled = false; b.textContent = testoPrec; toast(esito.errore); }
+    }));
+
   /* ---- la porta dell'Area Pro ---- */
   document.querySelectorAll("[data-promodo]").forEach(b =>
     b.addEventListener("click", () => { proModo = b.dataset.promodo; render(); }));
@@ -3566,5 +3630,10 @@ window.QFMagazine?.carica();
    che nel frattempo può essere arrivata la verifica del RUI, o
    può essere cambiato lo stato dell'abbonamento, e quello che
    vale è cosa dice il server adesso. */
-window.QF_PRO?.ascolta(() => render());
+window.QF_PRO?.ascolta(() => { sincronizzaBrokers(); render(); });
 if (window.QF_PRO?.autenticato()) window.QF_PRO.ripristina();
+/* La vetrina pubblica: chi si è registrato da sé non sta nel
+   repository, e senza questa lettura un abbonato pagherebbe per
+   una visibilità che non riceve — che è il modo peggiore di
+   accendere un pagamento. */
+window.QF_PRO?.caricaVetrina();

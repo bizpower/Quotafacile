@@ -318,6 +318,54 @@
     return { ok: true };
   }
 
+  /* ---------------- La vetrina pubblica ----------------
+     I profili che hanno chiesto di comparire e che hanno superato
+     il riscontro del RUI. Non serve essere entrati: è una lettura
+     aperta, e la Row Level Security lascia uscire solo le righe
+     pubbliche e verificate, con le colonne elencate nella grant —
+     l'identificativo dell'utenza e il cliente Stripe restano
+     dentro.
+
+     L'ordine lo dà il database: prima chi è in evidenza, poi i
+     punti. Ordinare nel browser vorrebbe dire scaricare tutto e
+     rifare il lavoro che un indice fa già. */
+  const CAMPI_VETRINA = "id,nome,ruolo,azienda,rui_numero,rui_sezione,citta," +
+    "telefono,email,bio,specializzazioni,punti,risposte,stato_verifica,in_evidenza,piano";
+
+  let vetrina = null;
+
+  async function caricaVetrina() {
+    if (vetrina) return vetrina;
+    try {
+      const r = await grezza(URL_BASE + "/rest/v1/pro_profili?select=" + CAMPI_VETRINA +
+        "&pubblico=is.true&stato_verifica=eq.verificato" +
+        "&order=in_evidenza.desc,punti.desc&limit=200",
+        { headers: { apikey: CHIAVE_PUBBLICA } });
+      if (!r.ok) return [];
+      vetrina = (await r.json()).map(r2 => ({
+        id: "pp-" + r2.id,
+        nome: r2.nome,
+        ruolo: r2.ruolo || "Intermediario",
+        azienda: r2.azienda || "",
+        rui: r2.rui_numero || "",
+        ruiSezione: r2.rui_sezione || "",
+        citta: r2.citta || "",
+        tel: r2.telefono || "",
+        email: r2.email || "",
+        bio: r2.bio || "",
+        spec: r2.specializzazioni || [],
+        punti: r2.punti ?? 0,
+        risposte: r2.risposte ?? 0,
+        statoVerifica: r2.stato_verifica,
+        verificato: r2.stato_verifica === "verificato" && !!r2.rui_numero,
+        inEvidenza: r2.in_evidenza === true,
+        piano: r2.piano || null
+      }));
+      avvisa();
+      return vetrina;
+    } catch (e) { return []; }
+  }
+
   const abbonamentoAttivo = () => {
     const a = stato.abbonamento;
     if (!a || !ATTIVI.includes(a.stato)) return false;
@@ -330,6 +378,13 @@
     ripristina, entra, registrati, esci,
     caricaProfilo, salvaProfilo,
     checkout, portale, abbonamentoAttivo,
+    caricaVetrina, vetrina: () => vetrina || [],
+    /* Il token, per chi deve firmare una richiesta a un'altra
+       funzione: la bacheca lo usa per sapere chi ha scritto una
+       risposta. Torna null se non c'è sessione o se non si è
+       riusciti a rinnovarla — chi risponde senza account risponde
+       lo stesso, solo senza un profilo a cui attribuirla. */
+    token: async () => (await tokenValido()) ? sessione.access_token : null,
     ascolta: fn => { ascoltatori.push(fn); return () => ascoltatori.splice(ascoltatori.indexOf(fn), 1); }
   };
 })();

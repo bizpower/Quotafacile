@@ -1889,6 +1889,75 @@ grant update (nome, ruolo, azienda, rui_numero, rui_sezione, citta,
               telefono, email, bio, specializzazioni, pubblico)
   on public.pro_profili to authenticated;
 
+-- ------------------------------------------------------------
+-- Cosa si compra davvero
+--
+-- pro_abbonamenti non è leggibile da fuori e non deve diventarlo:
+-- contiene identificativi Stripe e date di pagamento. Ma la
+-- vetrina è pubblica e deve poter ordinare i profili, e il
+-- contrassegno deve poter comparire. Quindi il webhook riassume
+-- lo stato in due colonne mostrabili, e non esce nient'altro.
+alter table public.pro_profili
+  add column if not exists in_evidenza boolean not null default false,
+  add column if not exists piano       text;
+
+drop index if exists public.pro_profili_pubblici_idx;
+create index if not exists pro_profili_vetrina_idx
+  on public.pro_profili (pubblico, in_evidenza desc, punti desc) where pubblico;
+
+-- ------------------------------------------------------------
+-- I punti tornano, ma non nel browser
+--
+-- Prima si incrementavano in JavaScript: valevano quanto chi li
+-- contava, cioè niente. Perché contino serve sapere di chi è una
+-- risposta, e risposte non aveva un legame con il profilo — solo
+-- il nome scritto dentro, che chiunque può scrivere uguale.
+alter table public.risposte
+  add column if not exists profilo_id uuid references public.pro_profili(id) on delete set null,
+  add column if not exists punti_assegnati boolean not null default false;
+
+create index if not exists risposte_profilo_idx
+  on public.risposte (profilo_id) where profilo_id is not null;
+
+-- L'assegnazione sta in una funzione perché tocca due tabelle e
+-- deve essere atomica: se aggiornasse i punti e poi fallisse sul
+-- segno "già assegnati", la pubblicazione successiva li darebbe
+-- di nuovo. Il moltiplicatore dei piani è qui e in nessun altro
+-- posto: cambiarlo è una riga.
+create or replace function public.pro_assegna_punti(p_risposta uuid)
+returns integer language plpgsql security definer set search_path = '' as $$
+declare
+  r        record;
+  moltipl  integer;
+  quanti   integer;
+begin
+  select id, profilo_id, punti_assegnati into r
+    from public.risposte where id = p_risposta for update;
+
+  if not found or r.profilo_id is null or r.punti_assegnati then
+    return 0;
+  end if;
+
+  select case when p.in_evidenza and p.piano = 'pro'  then 2
+              when p.in_evidenza and p.piano = 'base' then 1
+              else 1 end
+    into moltipl
+    from public.pro_profili p where p.id = r.profilo_id;
+
+  if moltipl is null then return 0; end if;
+  quanti := 10 * moltipl;
+
+  update public.pro_profili
+     set punti    = least(punti + quanti, 32000),
+         risposte = least(risposte + 1, 32000)
+   where id = r.profilo_id;
+
+  update public.risposte set punti_assegnati = true where id = r.id;
+  return quanti;
+end $$;
+
+revoke execute on function public.pro_assegna_punti(uuid) from public, anon, authenticated;
+
 -- L'abbonamento si legge, non si scrive: la verità sta su Stripe e
 -- la riallinea il webhook con la service role.
 grant select on public.pro_abbonamenti to authenticated;

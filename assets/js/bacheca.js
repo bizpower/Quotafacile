@@ -54,9 +54,19 @@
     const stop = new AbortController();
     const t = setTimeout(() => stop.abort(), 12000);
     try {
+      /* Se chi scrive è entrato con il proprio account, la
+         richiesta porta il suo token. Serve al server per sapere
+         di chi è la risposta — e quindi a chi vanno i punti —
+         senza fidarsi di un nome scritto nel corpo, che chiunque
+         può scrivere uguale a quello di un altro. Chi non ha un
+         account scrive lo stesso: il token semplicemente non c'è. */
+      const intestazioni = corpo ? { "Content-Type": "application/json" } : {};
+      const gettone = await window.QF_PRO?.token?.();
+      if (gettone) intestazioni.Authorization = "Bearer " + gettone;
+
       const r = await fetch(API, {
         method: metodo,
-        headers: corpo ? { "Content-Type": "application/json" } : undefined,
+        headers: Object.keys(intestazioni).length ? intestazioni : undefined,
         body: corpo ? JSON.stringify(corpo) : undefined,
         signal: stop.signal
       });

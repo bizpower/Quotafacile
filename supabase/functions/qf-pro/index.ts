@@ -378,6 +378,28 @@ async function salvaAbbonamento(sub: Record<string, unknown>) {
     aggiornato_il: new Date().toISOString(),
   }, { onConflict: "stripe_subscription_id" });
   if (error) throw new Error(error.message);
+
+  /* Il riassunto pubblicabile.
+     pro_abbonamenti non è leggibile da fuori e non deve
+     diventarlo: contiene identificativi Stripe e date di
+     pagamento. Ma la vetrina è pubblica e deve poter ordinare i
+     profili, e il badge deve poter comparire. Quindi lo stato si
+     riassume in due colonne del profilo — "è in evidenza" e
+     "quale piano" — e non esce nient'altro.
+
+     Il piano si legge dai metadati, e in mancanza dal prezzo: un
+     abbonamento creato a mano dal pannello di Stripe non porta
+     metadati, ma il prezzo ce l'ha sempre. */
+  const attivo = stato === "trialing" || stato === "active";
+  const idPrezzo = voce?.price?.id;
+  const piano = (meta.piano === "base" || meta.piano === "pro") ? meta.piano
+    : idPrezzo === PREZZI.pro ? "pro"
+    : idPrezzo === PREZZI.base ? "base"
+    : null;
+
+  await db.from("pro_profili")
+    .update({ in_evidenza: attivo, piano: attivo ? piano : null })
+    .eq("id", profiloId);
 }
 
 async function webhook(req: Request) {
