@@ -1706,6 +1706,22 @@ create table if not exists public.pro_profili (
   aggiornato_il timestamptz not null default now()
 );
 
+-- L'identificativo del cliente su Stripe. Il cliente si crea una
+-- volta sola: senza questa colonna ogni apertura del checkout ne
+-- creerebbe uno nuovo, e la stessa persona comparirebbe su Stripe
+-- cinque volte con cinque carte e nessun filo che le unisce. È
+-- anche la strada per risalire dal cliente al profilo quando un
+-- evento arriva senza metadati — un abbonamento creato a mano dal
+-- pannello di Stripe, per esempio.
+--
+-- Non è fra le colonne aggiornabili dall'interessato: la scrive
+-- solo qf-pro con il ruolo di servizio.
+alter table public.pro_profili
+  add column if not exists stripe_cliente_id text;
+
+create unique index if not exists pro_profili_stripe_cliente_idx
+  on public.pro_profili (stripe_cliente_id) where stripe_cliente_id is not null;
+
 alter table public.pro_profili
   drop constraint if exists pro_profili_utente_id_fkey;
 alter table public.pro_profili
