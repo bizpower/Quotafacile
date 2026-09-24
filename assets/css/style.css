@@ -727,6 +727,16 @@ a.chip { display: inline-block; text-decoration: none; }
 .admin-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .9rem; }
 
 /* Moderazione */
+/* Lo stato dell'abbonamento nell'Area Pro. Il colore del bordo
+   dice la cosa più importante prima di leggere: verde va bene,
+   rosso c'è un addebito da sistemare, grigio è finito o non è
+   mai partito. */
+.abbo-card { margin-bottom: 1.2rem; border-left: 3px solid var(--line); }
+.abbo-card.abbo-green { border-left-color: var(--green-600); }
+.abbo-card.abbo-rosso { border-left-color: #C0392B; background: #FDF6F5; }
+.abbo-card.abbo-grigio { border-left-color: var(--ink-soft); }
+.abbo-testa { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+
 .admin-q { margin-bottom: 1rem; }
 /* L'editor di titolo e descrizione di una domanda: sta dentro la
    scheda della domanda e deve leggersi come un pannello che si

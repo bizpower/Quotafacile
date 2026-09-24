@@ -2481,38 +2481,157 @@ function proBoardHTML() {
   </div>`;
 }
 
-views.areaPro = () => {
-  setJsonLd(null);
-  const p = DB.proProfile;
-  const preview = p || { nome: "Il tuo nome", ruolo: "Broker", azienda: "La tua azienda", rui: "•••••••••", citta: "Città", spec: ["Le tue", "specializzazioni"], verificato: false };
+/* Lo stato dell'abbonamento, detto come sta.
 
-  /* Onboarding: nessun profilo → solo form + anteprima */
-  if (!p) {
+   Il dato arriva da pro_abbonamenti, che scrive solo il webhook
+   di Stripe: qui non si decide niente, si riporta. Le date sono
+   quelle che Stripe considera vere, e "annulla a fine periodo"
+   compare perché chi ha disdetto deve vedere fino a quando ha
+   ancora quello che ha pagato — non una schermata che finge che
+   sia già finito. */
+const ABBONAMENTO_STATI = {
+  trialing: ["Prova gratuita", "green"],
+  active: ["Attivo", "green"],
+  past_due: ["Pagamento non riuscito", "rosso"],
+  unpaid: ["Non pagato", "rosso"],
+  paused: ["In pausa", "grigio"],
+  canceled: ["Disdetto", "grigio"],
+  incomplete: ["Da completare", "grigio"],
+  incomplete_expired: ["Scaduto senza completarsi", "grigio"]
+};
+
+function abbonamentoHTML(p) {
+  const a = p.abbonamento;
+  const data = s => s ? new Date(s).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" }) : "—";
+
+  if (!a) {
     return `
-    <section class="section">
-      <div class="container">
-        <div class="section-head">
-          <span class="eyebrow">Area professionisti</span>
-          <h1 class="titolo-sezione">Crea la tua QuotaPass</h1>
-          <p class="muted">Gratis, in 3 minuti. Subito dopo sblocchi dashboard, bacheca e statistiche.</p>
-        </div>
-        <div class="pro-layout">
-          ${proFormHTML(null)}
-          <div class="pro-preview">
-            <div id="pass-preview" style="width:100%;display:flex;justify-content:center">${qpass(preview, true)}</div>
-          </div>
-        </div>
+    <div class="card abbo-card">
+      <div class="abbo-testa">
+        <strong>Nessun abbonamento attivo</strong>
+        <span class="pill">QuotaPass gratuita</span>
       </div>
-    </section>`;
+      <p class="muted" style="font-size:.88rem;margin:.4rem 0 0">Il profilo, le risposte in bacheca e la
+      presenza nella lista intermediari restano gratuiti e lo resteranno. I piani a pagamento sono
+      sulla <a href="#/professionisti#piani">pagina per i professionisti</a>.</p>
+    </div>`;
   }
 
+  const [etichetta, colore] = ABBONAMENTO_STATI[a.stato] || [a.stato, "grigio"];
+  const scade = a.periodo_fine;
+  return `
+  <div class="card abbo-card abbo-${colore}">
+    <div class="abbo-testa">
+      <strong>Abbonamento: ${esc(etichetta)}</strong>
+      ${a.annulla_a_fine_periodo ? `<span class="pill">si chiude il ${esc(data(scade))}</span>` : ""}
+    </div>
+    <p class="muted" style="font-size:.88rem;margin:.4rem 0 .8rem">
+      ${a.stato === "trialing"
+        ? `Prova gratuita fino al <strong>${esc(data(scade))}</strong>. Da quel giorno parte l'addebito, salvo disdetta.`
+        : a.stato === "active" && !a.annulla_a_fine_periodo
+          ? `Rinnovo il <strong>${esc(data(scade))}</strong>.`
+          : a.stato === "past_due" || a.stato === "unpaid"
+            ? `L'ultimo addebito non è andato a buon fine: aggiorna la carta per non perdere l'abbonamento.`
+            : `Periodo coperto fino al <strong>${esc(data(scade))}</strong>.`}
+    </p>
+    <button class="btn btn-outline btn-sm" id="pro-portale">Gestisci abbonamento, carta e disdetta</button>
+  </div>`;
+}
+
+/* La porta dell'Area Pro.
+
+   Prima non c'era: chi apriva questa pagina compilava un modulo e
+   il profilo nasceva nel localStorage del suo browser. Da un altro
+   dispositivo non esisteva, svuotando la cache spariva, e lo stato
+   "abbonato" sarebbe stato una riga che chiunque si riscriveva
+   dalla console. Ora l'identità è un'utenza vera. */
+let proModo = "entra";   // entra | registrati
+
+function proPortaHTML() {
+  const reg = proModo === "registrati";
+  const RUOLI = ["Agente", "Broker", "Collaboratore", "Subagente", "Intermediario"];
+  return `
+  <section class="section">
+    <div class="container" style="max-width:${reg ? "720px" : "460px"}">
+      <div class="section-head">
+        <span class="eyebrow">Area professionisti</span>
+        <h1 class="titolo-sezione">${reg ? "Crea la tua QuotaPass" : "Entra nella tua area"}</h1>
+        <p class="muted">${reg
+          ? "Gratis. Il profilo compare in vetrina solo quando lo chiedi tu e solo dopo il riscontro del numero RUI sul registro pubblico IVASS."
+          : "Con l'email e la password che hai scelto alla registrazione."}</p>
+      </div>
+      <div class="card">
+        ${reg ? `
+        <form id="pro-reg-form" class="form-grid">
+          <div class="field"><label for="r-nome">Nome e cognome *</label><input id="r-nome" required placeholder="Laura Bianchi"></div>
+          <div class="field"><label for="r-ruolo">Ruolo *</label>
+            <select id="r-ruolo">${RUOLI.map(r => `<option>${r}</option>`).join("")}</select></div>
+          <div class="field"><label for="r-email">Email *</label><input id="r-email" type="email" required autocomplete="email" placeholder="nome@studio.it"></div>
+          <div class="field"><label for="r-pass">Password *</label><input id="r-pass" type="password" required minlength="10" autocomplete="new-password" placeholder="almeno 10 caratteri"></div>
+          <div class="field"><label for="r-rui">Numero RUI</label><input id="r-rui" placeholder="E000123456"></div>
+          <div class="field"><label for="r-rui-sez">Sezione RUI</label>
+            <select id="r-rui-sez"><option value="">—</option>${["A","B","C","D","E","F"].map(s => `<option>${s}</option>`).join("")}</select></div>
+          <div class="field"><label for="r-azienda">Azienda o studio</label><input id="r-azienda" placeholder="Bianchi Assicurazioni srl"></div>
+          <div class="field"><label for="r-citta">Città</label><input id="r-citta" placeholder="Milano"></div>
+          <div class="field full">
+            ${consentBox("r-rui-ok", `Dichiaro di essere iscritto al <strong>RUI</strong> (registro IVASS) e che i dati inseriti sono veri. So che il badge «Verificato» viene concesso solo dopo il riscontro sul registro pubblico.`)}
+          </div>
+          <div class="field full">
+            ${consentBox("r-terms", `Ho letto e accetto i <a href="#/termini">Termini</a> e l'<a href="#/privacy">informativa privacy</a>.`)}
+          </div>
+          <div class="field full"><button class="btn btn-primary btn-block" type="submit">Crea l'account</button></div>
+        </form>
+        <button class="footer-linkbtn" style="color:var(--ink-soft);margin-top:1rem;text-align:center;width:100%" data-promodo="entra">
+          Ho già un account, entro
+        </button>`
+        : `
+        <form id="pro-entra-form">
+          <div class="field"><label for="e-email">Email</label><input id="e-email" type="email" required autocomplete="email"></div>
+          <div class="field" style="margin-top:.6rem"><label for="e-pass">Password</label><input id="e-pass" type="password" required autocomplete="current-password"></div>
+          <button class="btn btn-primary btn-block" style="margin-top:1rem" type="submit">Entra</button>
+        </form>
+        <button class="footer-linkbtn" style="color:var(--ink-soft);margin-top:1rem;text-align:center;width:100%" data-promodo="registrati">
+          Non ho ancora un account: registrami
+        </button>`}
+        <p class="privacy-hint" style="margin-top:1rem">
+          La password viene verificata dal server, non da questa pagina. L'accesso resta valido su
+          questo dispositivo finché non esci: è il tuo, non quello di un ufficio.
+        </p>
+      </div>
+    </div>
+  </section>`;
+}
+
+views.areaPro = () => {
+  setJsonLd(null);
+
+  if (!window.QF_PRO?.autenticato()) return proPortaHTML();
+
+  const s = window.QF_PRO.stato;
+  if (!s.caricato) {
+    return `<section class="section"><div class="container"><div class="card"><p class="muted">Carico la tua area…</p></div></div></section>`;
+  }
+  if (!s.profilo) {
+    return `
+    <section class="section"><div class="container" style="max-width:520px">
+      <div class="legal-warning" role="alert">
+        <strong>Area non disponibile.</strong> ${esc(s.errore || "")}
+        <br><button class="btn btn-outline btn-sm" style="margin-top:.6rem" id="pro-esci">Esci</button>
+      </div>
+    </div></section>`;
+  }
+
+  const p = s.profilo;
   const punti = p.punti ?? 0;
   return `
   <section class="section">
     <div class="container">
-      <div class="section-head" style="margin-bottom:1.4rem">
-        <span class="eyebrow">Area professionisti</span>
-        <h1 class="titolo-sezione">Ciao ${esc(p.nome.split(" ")[0])}, ecco la tua vetrina</h1>
+      <div class="admin-top" style="margin-bottom:1.4rem">
+        <div>
+          <span class="eyebrow">Area professionisti</span>
+          <h1 class="titolo-sezione" style="margin:0">Ciao ${esc(p.nome.split(" ")[0])}, ecco la tua vetrina</h1>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="pro-esci">Esci</button>
       </div>
 
       <!-- I punti sono fermi, e qui c'è scritto. La versione
@@ -2530,6 +2649,8 @@ views.areaPro = () => {
         </div>
         <a href="#/bacheca" class="btn btn-gold btn-sm">Rispondi ora</a>
       </div>
+
+      ${abbonamentoHTML(p)}
 
       <div class="filterbar" role="tablist" aria-label="Sezioni area pro">
         <button class="chip ${proTab === "dashboard" ? "active" : ""}" data-protab="dashboard" role="tab">📊 Dashboard</button>
@@ -2942,6 +3063,80 @@ function bind() {
     b.addEventListener("click", () => { dirFilter = b.dataset.filter; render(); }));
   document.querySelectorAll("[data-boardfilter]").forEach(b =>
     b.addEventListener("click", () => { boardFilter = b.dataset.boardfilter; render(); }));
+  /* ---- la porta dell'Area Pro ---- */
+  document.querySelectorAll("[data-promodo]").forEach(b =>
+    b.addEventListener("click", () => { proModo = b.dataset.promodo; render(); }));
+
+  $("#pro-entra-form")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = "Verifica…"; }
+    const esito = await window.QF_PRO.entra($("#e-email").value, $("#e-pass").value);
+    if (!esito.ok) {
+      if (btn) { btn.disabled = false; btn.textContent = "Entra"; }
+      toast(esito.errore || "Accesso non riuscito.");
+      return;
+    }
+    proTab = "dashboard";
+    render();
+  });
+
+  $("#pro-reg-form")?.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (!$("#r-rui-ok").checked || !$("#r-terms").checked) {
+      toast("Servono la dichiarazione di iscrizione al RUI e l'accettazione dei Termini.");
+      return;
+    }
+    const btn = e.target.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.textContent = "Creazione…"; }
+
+    const dati = {
+      nome: $("#r-nome").value.trim(),
+      ruolo: $("#r-ruolo").value,
+      email: $("#r-email").value.trim(),
+      password: $("#r-pass").value,
+      rui: $("#r-rui").value.trim(),
+      ruiSezione: $("#r-rui-sez").value,
+      azienda: $("#r-azienda").value.trim(),
+      citta: $("#r-citta").value.trim()
+    };
+    const esito = await window.QF_PRO.registrati(dati);
+    if (!esito.ok) {
+      if (btn) { btn.disabled = false; btn.textContent = "Crea l'account"; }
+      toast(esito.errore || "Registrazione non riuscita.");
+      return;
+    }
+    /* Il consenso si registra dopo, non prima: se la creazione
+       fallisce resterebbe agli atti un consenso senza account. */
+    registraConsenso("registrazione-pro", "Dichiarazione iscrizione RUI + accettazione Termini e informativa privacy");
+    window.QFMailer?.invia("iscrizione-pro", {
+      nome: dati.nome, ruolo: dati.ruolo, azienda: dati.azienda || null,
+      rui: dati.rui || null, ruiSezione: dati.ruiSezione || null,
+      citta: dati.citta || null, telefono: null, email: dati.email,
+      spec: [], bio: null, consensoRui: true, consensoTermini: true
+    });
+    proTab = "profilo";
+    render();
+    toast("Account creato. Completa il profilo: la vetrina si attiva dopo il riscontro del RUI.");
+  });
+
+  $("#pro-esci")?.addEventListener("click", async () => {
+    await window.QF_PRO.esci();
+    proModo = "entra";
+    render();
+    toast("Sei uscito.");
+  });
+
+  $("#pro-portale")?.addEventListener("click", async e => {
+    const btn = e.currentTarget;
+    btn.disabled = true; btn.textContent = "Apro Stripe…";
+    const esito = await window.QF_PRO.portale();
+    if (!esito.ok) {
+      btn.disabled = false; btn.textContent = "Gestisci abbonamento, carta e disdetta";
+      toast(esito.errore);
+    }
+  });
+
   document.querySelectorAll("[data-protab]").forEach(b =>
     b.addEventListener("click", () => { proTab = b.dataset.protab; render(); }));
 
@@ -3171,6 +3366,11 @@ function bind() {
       email: $("#p-email").value.trim(),
       bio: $("#p-bio").value.trim(),
       spec: $("#p-spec").value.split(",").map(s => s.trim()).filter(Boolean).slice(0, 3),
+      /* La sezione RUI si dichiara alla registrazione e questo
+         modulo non la contiene. Senza riportarla qui, ogni
+         salvataggio la cancellerebbe: un campo che il modulo non
+         mostra non è un campo che l'utente ha scelto di svuotare. */
+      ruiSezione: DB.proProfile?.ruiSezione || null,
       verificato: false,
       punti: DB.proProfile?.punti ?? 0,
       risposte: DB.proProfile?.risposte ?? 0
@@ -3180,40 +3380,25 @@ function bind() {
       if (!prev.spec.length) prev.spec = ["Le tue", "specializzazioni"];
       $("#pass-preview").innerHTML = qpass(prev, true);
     });
-    proForm.addEventListener("submit", e => {
+    /* Il salvataggio va al server, non più al localStorage: il
+       profilo è una riga di pro_profili e il database lascia
+       scrivere solo le colonne che riguardano chi le scrive. Il
+       badge "Verificato" non è fra quelle — dichiararsi verificati
+       senza il riscontro sul registro pubblico sarebbe
+       un'attestazione non veritiera, e ora non è più questione di
+       buona volontà del browser: il permesso non c'è. */
+    proForm.addEventListener("submit", async e => {
       e.preventDefault();
-      const wasNew = !DB.proProfile;
-      if (wasNew) {
-        if (!$("#pro-rui").checked || !$("#pro-terms").checked) {
-          toast("Devi dichiarare l'iscrizione al RUI e accettare i Termini per creare il profilo.");
-          return;
-        }
-        registraConsenso("registrazione-pro", "Dichiarazione iscrizione RUI + accettazione Termini e informativa privacy");
-      }
-      const statoPrec = DB.proProfile?.statoVerifica;
-      DB.proProfile = collect();
-      /* Il badge "Verificato RUI" viene assegnato solo dopo il riscontro
-         sul registro pubblico IVASS, mai in automatico: dichiararsi
-         verificati senza controllo sarebbe un'attestazione non veritiera. */
-      DB.proProfile.statoVerifica = statoPrec || "in_attesa";
-      DB.proProfile.verificato = DB.proProfile.statoVerifica === "verificato";
-      /* Nessun lead fittizio: la dashboard mostra solo contatti reali.
-         Popolarla con dati inventati falserebbe le metriche di business
-         mostrate al professionista. */
+      const btn = e.target.querySelector('button[type="submit"]');
+      if (btn) { btn.disabled = true; btn.textContent = "Salvataggio…"; }
+
+      const esito = await window.QF_PRO.salvaProfilo(collect());
+      if (btn) { btn.disabled = false; btn.textContent = "Salva il profilo"; }
+      if (!esito.ok) { toast(esito.errore || "Profilo non salvato."); return; }
+
       proTab = "dashboard";
-      saveDB(); render();
-      toast(wasNew ? "QuotaPass creata! Benvenuto su QuotaFacile 🎉" : "Profilo aggiornato.");
-      if (wasNew) {
-        const p = DB.proProfile;
-        window.QFMailer.invia("iscrizione-pro", {
-          nome: p.nome, ruolo: p.ruolo, azienda: p.azienda,
-          rui: p.rui, ruiSezione: p.ruiSezione || null,
-          operaPerConto: p.operaPerConto || null,
-          citta: p.citta, telefono: p.tel, email: p.email,
-          spec: p.spec || [], bio: p.bio || null,
-          consensoRui: true, consensoTermini: true
-        });
-      }
+      render();
+      toast("Profilo aggiornato.");
     });
   }
 
@@ -3375,3 +3560,11 @@ window.QFBacheca?.onAggiorna(() => render());
 window.QFMagazine?.onAggiorna(() => render());
 window.QFBacheca?.carica();
 window.QFMagazine?.carica();
+
+/* L'Area Pro: se c'è una sessione, il profilo si rilegge dal
+   database a ogni caricamento. Non è una cache da scaldare — è
+   che nel frattempo può essere arrivata la verifica del RUI, o
+   può essere cambiato lo stato dell'abbonamento, e quello che
+   vale è cosa dice il server adesso. */
+window.QF_PRO?.ascolta(() => render());
+if (window.QF_PRO?.autenticato()) window.QF_PRO.ripristina();
