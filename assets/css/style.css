@@ -171,6 +171,19 @@ p { line-height: 1.6; }
   background: rgba(226,166,61,.16); color: var(--gold-500);
   border: 1px solid rgba(226,166,61,.5); padding: .25rem .6rem; border-radius: 999px;
 }
+/* ---- Il contrassegno dell'abbonamento sulla QuotaPass ----
+   Oro, non verde: il verde su questa tessera è già del badge
+   "Verificato RUI", che è un controllo fatto sul registro
+   pubblico. Dare lo stesso colore a una collocazione acquistata
+   le farebbe prendere in prestito una credibilità che non ha. */
+.qpass-evidenza {
+  font-size: .62rem; font-weight: 800; letter-spacing: .04em;
+  padding: .18rem .45rem; border-radius: 999px;
+  background: rgba(212, 160, 23, .22); color: #F0D080;
+  border: 1px solid rgba(212, 160, 23, .45);
+  white-space: nowrap;
+}
+.qpass.flat .qpass-evidenza { background: var(--gold-100); color: #8A5F12; border-color: var(--gold-500); }
 .qpass-chip { width: 38px; height: 28px; border-radius: 6px; background: linear-gradient(135deg, #E9C77F, var(--gold-500)); position: relative; margin: .3rem 0; }
 .qpass-chip::after { content: ""; position: absolute; inset: 6px 8px; border: 1px solid rgba(11,46,29,.35); border-radius: 3px; }
 .qpass-identity { display: flex; align-items: center; gap: .8rem; }
@@ -727,6 +740,16 @@ a.chip { display: inline-block; text-decoration: none; }
 .admin-actions { display: flex; gap: .4rem; flex-wrap: wrap; margin-top: .9rem; }
 
 /* Moderazione */
+/* Lo stato dell'abbonamento nell'Area Pro. Il colore del bordo
+   dice la cosa più importante prima di leggere: verde va bene,
+   rosso c'è un addebito da sistemare, grigio è finito o non è
+   mai partito. */
+.abbo-card { margin-bottom: 1.2rem; border-left: 3px solid var(--line); }
+.abbo-card.abbo-green { border-left-color: var(--green-600); }
+.abbo-card.abbo-rosso { border-left-color: #C0392B; background: #FDF6F5; }
+.abbo-card.abbo-grigio { border-left-color: var(--ink-soft); }
+.abbo-testa { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+
 .admin-q { margin-bottom: 1rem; }
 /* L'editor di titolo e descrizione di una domanda: sta dentro la
    scheda della domanda e deve leggersi come un pannello che si
@@ -2051,3 +2074,4 @@ a.chip { display: inline-block; text-decoration: none; }
   .mag-barra::-webkit-scrollbar { display: none; }
   .mag-barra-b { flex: 0 0 auto; min-height: 40px; }
 }
+

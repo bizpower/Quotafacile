@@ -146,6 +146,25 @@ async function cambiaChiave(d: Record<string, unknown>) {
   return { cambiata: true, aggiornatoIl };
 }
 
+/* I punti li assegna il database, non questa funzione.
+   Il calcolo tocca due tabelle e deve essere atomico: se
+   aggiornasse i punti e poi fallisse sul segno "gia' assegnati",
+   la pubblicazione successiva li darebbe di nuovo. Il
+   moltiplicatore dei piani sta li' dentro, in un punto solo.
+
+   Una risposta senza profilo - chi ha risposto senza account -
+   non produce punti e non e' un errore: torna zero. */
+async function assegnaPunti(rispostaId: string): Promise<number> {
+  const { data, error } = await db.rpc("pro_assegna_punti", { p_risposta: rispostaId });
+  if (error) {
+    // I punti sono un accessorio: se falliscono, la moderazione
+    // resta fatta. Perderli in silenzio no, per questo il log.
+    console.error("[qf-admin] punti non assegnati", rispostaId, error.message);
+    return 0;
+  }
+  return Number(data ?? 0);
+}
+
 async function moderaRisposta(d: Record<string, unknown>) {
   const id = testo(d.id, 40);
   const decisione = String(d.decisione ?? "");
@@ -153,7 +172,7 @@ async function moderaRisposta(d: Record<string, unknown>) {
 
   if (decisione === "pubblica") {
     await db.from("risposte").update({ stato: "pubblicata", motivo_rimozione: null, moderata_il: new Date().toISOString() }).eq("id", id);
-    return { stato: "pubblicata" };
+    return { stato: "pubblicata", punti: await assegnaPunti(id) };
   }
   if (decisione === "rimuovi") {
     // La motivazione non è burocrazia: l'art. 17 del DSA impone
@@ -174,7 +193,7 @@ async function moderaRisposta(d: Record<string, unknown>) {
       await (r.domanda_id ? q.eq("domanda_id", r.domanda_id) : q.eq("domanda_chiave", r.domanda_chiave));
     }
     await db.from("risposte").update({ migliore: true, stato: "pubblicata" }).eq("id", id);
-    return { migliore: true };
+    return { migliore: true, punti: await assegnaPunti(id) };
   }
   throw new Error("Decisione non riconosciuta");
 }
