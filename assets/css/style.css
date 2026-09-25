@@ -571,26 +571,48 @@ a.chip { display: inline-block; text-decoration: none; }
 .linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--green-800); cursor: pointer; text-decoration: underline; }
 
 /* ---------- Cookie banner ---------- */
+/* In sottoimpressione, non in mezzo alla pagina.
+   Prima era un riquadro bianco pieno da 640 punti con un titolo
+   grande e tre bottoni larghi: la prima cosa che si vedeva
+   arrivando, e copriva mezzo schermo sul telefono. Ora è una
+   striscia in basso, più stretta, su fondo semitrasparente con
+   sfocatura: si legge sopra il contenuto invece di sostituirlo.
+
+   Quello che NON è cambiato, di proposito: i tre bottoni sono
+   tre, hanno lo stesso peso, e "Rifiuta" non è più piccolo né
+   più pallido di "Accetta". Rendere il rifiuto meno raggiungibile
+   dell'accettazione è esattamente ciò che il Garante contesta nei
+   provvedimenti sui cookie wall, e un banner più discreto non è
+   una scusa per renderlo più furbo. */
 .cc-banner {
   position: fixed; z-index: 200; left: 1rem; right: 1rem; bottom: 1rem;
-  max-width: 640px; margin-inline: auto;
-  background: #fff; border: 1px solid var(--line); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-strong); padding: 1.5rem 1.6rem 1.2rem;
+  max-width: 520px; margin-inline: auto;
+  background: rgba(255, 255, 255, .92); backdrop-filter: blur(12px);
+  border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: var(--shadow-med); padding: .9rem 1.1rem .8rem;
   animation: rise .35s var(--ease) both;
 }
-.cc-banner h2 { font-size: 1.15rem; margin-bottom: .4rem; }
-.cc-banner p { font-size: .88rem; line-height: 1.6; color: var(--ink-soft); margin: 0 0 1rem; }
+/* La ✕ galleggia invece di stare sopra il testo.
+   Posizionata in assoluto, su un riquadro ora stretto, finiva
+   sopra le prime parole del paragrafo — e sul telefono, dove il
+   tocco è di 44 punti, ne copriva tre. Facendola galleggiare il
+   testo le scorre intorno da solo, senza sprecare margine su
+   tutte le righe. Sta prima del titolo nel markup, quindi il
+   punto da cui il testo la evita è quello giusto. */
+.cc-banner .cc-x { position: static; float: right; margin: -.2rem -.3rem .2rem .5rem; }
+.cc-banner h2 { font-size: .92rem; margin-bottom: .25rem; }
+.cc-banner p { font-size: .78rem; line-height: 1.5; color: var(--ink-soft); margin: 0 0 .7rem; }
 .cc-banner a { text-decoration: underline; }
-.cc-actions { display: flex; gap: .6rem; flex-wrap: wrap; }
-.cc-actions .btn { flex: 1 1 auto; min-width: 140px; padding: .7rem 1rem; font-size: .92rem; }
+.cc-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.cc-actions .btn { flex: 1 1 auto; min-width: 96px; padding: .5rem .7rem; font-size: .82rem; }
 /* Niente opacity: --ink-soft su bianco sta a 6.8:1, ma al 80%
    di opacità il browser lo fonde col fondo e scende a 4.2:1,
    sotto la soglia. Su un testo di .74rem è proprio dove serve
    di più. */
-.cc-note { font-size: .74rem !important; margin: .8rem 0 0 !important; }
+.cc-note { font-size: .68rem !important; margin: .55rem 0 0 !important; }
 .cc-x {
-  position: absolute; top: .7rem; right: .8rem; width: 32px; height: 32px; border-radius: 50%;
-  border: 0; background: var(--bg); color: var(--ink-soft); font-size: .85rem; cursor: pointer;
+  position: absolute; top: .45rem; right: .5rem; width: 28px; height: 28px; border-radius: 50%;
+  border: 0; background: var(--bg); color: var(--ink-soft); font-size: .8rem; cursor: pointer;
 }
 .cc-x:hover { background: var(--green-50); color: var(--green-800); }
 
@@ -647,8 +669,19 @@ a.chip { display: inline-block; text-decoration: none; }
 .answer-foot { display: flex; justify-content: flex-end; margin-top: .4rem; }
 
 @media (max-width: 560px) {
-  .cc-banner { left: .6rem; right: .6rem; bottom: .6rem; padding: 1.3rem 1.1rem 1rem; }
-  .cc-actions .btn { flex: 1 1 100%; }
+  /* Sopra la barra delle schede (66 punti di altezza), non sopra
+     i suoi bottoni: prima
+     il banner la copriva del tutto, e finché non si rispondeva ai
+     cookie il telefono restava senza navigazione. */
+  .cc-banner {
+    left: .6rem; right: .6rem;
+    bottom: calc(74px + env(safe-area-inset-bottom));
+    padding: .8rem .9rem .7rem;
+  }
+  /* I tre bottoni restano in riga: impilati facevano una colonna
+     alta mezzo schermo. Con min-width a zero si stringono invece
+     di andare a capo, e le etichette sono corte apposta. */
+  .cc-actions .btn { flex: 1 1 0; min-width: 0; padding: .55rem .4rem; }
   .cc-modal-foot .btn { flex: 1 1 100%; }
 }
 
