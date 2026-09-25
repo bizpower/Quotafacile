@@ -95,18 +95,17 @@
     return `
     <div class="cc-banner" role="dialog" aria-modal="false" aria-labelledby="cc-title" aria-describedby="cc-desc">
       <button class="cc-x" data-cc="dismiss" aria-label="Chiudi senza accettare">✕</button>
-      <h2 id="cc-title">🍪 Rispettiamo la tua privacy</h2>
+      <h2 id="cc-title">🍪 Cookie e preferenze</h2>
       <p id="cc-desc">
-        Usiamo strumenti tecnici necessari a far funzionare il sito. Con il tuo consenso vorremmo
-        usarne altri per ricordare le tue preferenze e capire in forma aggregata quali contenuti
-        sono utili. Puoi accettare, rifiutare o scegliere categoria per categoria: la scelta è
-        modificabile in ogni momento dal footer.
+        Gli strumenti tecnici servono a far funzionare il sito. Con il tuo consenso ne useremmo
+        altri per ricordare le preferenze e capire in forma aggregata quali contenuti sono utili.
+        Puoi cambiare idea in ogni momento dal footer.
         <a href="#/cookie-policy">Cookie Policy</a> · <a href="#/privacy">Privacy Policy</a>
       </p>
       <div class="cc-actions">
-        <button class="btn btn-outline" data-cc="reject">Rifiuta tutti</button>
-        <button class="btn btn-ghost" data-cc="custom">Personalizza</button>
-        <button class="btn btn-primary" data-cc="accept">Accetta tutti</button>
+        <button class="btn btn-outline btn-sm" data-cc="reject">Rifiuta</button>
+        <button class="btn btn-ghost btn-sm" data-cc="custom">Personalizza</button>
+        <button class="btn btn-primary btn-sm" data-cc="accept">Accetta</button>
       </div>
       <p class="cc-note">Chiudere con la ✕ equivale a rifiutare gli strumenti non necessari.</p>
     </div>`;
