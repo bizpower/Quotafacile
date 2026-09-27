@@ -1558,7 +1558,48 @@ a.chip { display: inline-block; text-decoration: none; }
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 @media (max-width: 1080px) { .piani-griglia { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 620px)  { .piani-griglia { grid-template-columns: 1fr; } }
+
+/* Sul telefono i piani si scorrono, non si impilano.
+   Impilati facevano 1.674 punti — due schermate intere solo per
+   i quattro riquadri — e confrontare due prezzi voleva dire
+   ricordarsi quello di sopra mentre si guardava quello di sotto.
+   Che è esattamente ciò che una tabella prezzi non deve chiedere.
+
+   Scorrendo, i quattro stanno in una schermata e si confrontano
+   scorrendo il pollice: lo scatto li ferma al centro uno per
+   volta. È lo stesso arnese già usato per le file di filtri, con
+   i margini negativi che fanno arrivare le schede fino al bordo
+   invece di lasciarle in una colonna stretta in mezzo. */
+@media (max-width: 620px) {
+  .piani-griglia {
+    display: flex; grid-template-columns: none;
+    overflow-x: auto; scroll-snap-type: x mandatory;
+    gap: .8rem; margin-inline: -1rem; padding: .3rem 1rem 1rem;
+    -webkit-overflow-scrolling: touch;
+    /* Qui le schede NON si pareggiano in altezza, ed è voluto.
+       Sul computer si pareggiano e i bottoni cadono sulla stessa
+       riga: giusto, perché si guardano una accanto all'altra. In
+       fila no. Enterprise ha quattro voci lunghe e, stretta a 308
+       punti, arriva a 622: portare le altre a quella misura vuol
+       dire spingere «Crea la QuotaPass» sotto la barra in fondo,
+       dove il pollice non la raggiunge. Sotto le schede corte
+       resta un po' di sfondo — il nastro è comunque alto quanto
+       Enterprise — ma è spazio vuoto, non un bottone fuori mano.
+       Vale già così per via della riga qui sopra, ripetuta perché
+       si veda: è una scelta, non una dimenticanza. */
+    align-items: start;
+  }
+  .piani-griglia::-webkit-scrollbar { height: 0; }
+  .piano {
+    flex: 0 0 86%; scroll-snap-align: center;
+    /* Senza questo la scheda si stringe sul contenuto più corto e
+       le quattro escono di larghezze diverse. */
+    min-width: 0;
+  }
+  /* Un accenno di quella dopo, perché si capisca che si scorre:
+     una scheda che riempie lo schermo sembra l'unica che c'è. */
+  .piani-griglia::after { content: ""; flex: 0 0 .2rem; }
+}
 
 .piano {
   position: relative; display: flex; flex-direction: column; height: 100%;
@@ -1625,6 +1666,17 @@ a.chip { display: inline-block; text-decoration: none; }
 .calc-tabella td { padding: .55rem .6rem; border-bottom: 1px solid var(--line); }
 .calc-tabella tr:last-child td { border-bottom: 0; }
 .calc-tabella .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Le intestazioni vanno a capo, i numeri no.
+   Il nowrap serviva a non spezzare "1.782" a metà, ma prendeva
+   anche le intestazioni: "Contatti al mese" restava su una riga
+   sola, la tabella non scendeva sotto i 348 punti e su uno
+   schermo da 360 sbordava di ventinove — trascinandosi dietro
+   tutta la pagina. */
+.calc-tabella th.num { white-space: normal; }
+@media (max-width: 420px) {
+  .calc-tabella { font-size: .84rem; }
+  .calc-tabella th, .calc-tabella td { padding-inline: .3rem; }
+}
 
 /* ---------- Magazine (pubblico) ---------- */
 
