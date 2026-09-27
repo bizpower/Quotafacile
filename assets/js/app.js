@@ -3510,6 +3510,40 @@ window.QF = {
 
 window.addEventListener("hashchange", render);
 
+/* I collegamenti dentro la stessa pagina.
+
+   In un sito che naviga con il frammento, href="#piani" non è
+   un'ancora: è una rotta. Il bottone "Vedi i piani" in cima alla
+   pagina per i professionisti portava a "Questa pagina non c'è" —
+   non sul telefono, dappertutto — e lo stesso faceva "Salta al
+   contenuto", cioè il link che serve a chi naviga da tastiera per
+   scavalcare il menu. Due modi diversi di mandare via qualcuno
+   che aveva chiesto di restare.
+
+   Qui si distinguono per la seconda lettera: "#/" è una rotta,
+   "#qualcosa" è un punto di questa pagina. Il secondo caso si
+   intercetta e si scorre, senza toccare l'indirizzo.
+
+   Il fuoco si sposta sul bersaglio oltre a scorrerci: senza,
+   chi usa la tastiera vedrebbe la pagina muoversi mentre il
+   cursore resta nel menu, e il tasto successivo lo riporterebbe
+   dov'era. È il motivo per cui il link "salta al contenuto"
+   esiste. */
+document.addEventListener("click", e => {
+  const a = e.target.closest?.('a[href^="#"]');
+  if (!a) return;
+  const href = a.getAttribute("href");
+  if (!href || href === "#" || href.startsWith("#/")) return;
+
+  const meta = document.getElementById(href.slice(1));
+  if (!meta) return;
+
+  e.preventDefault();
+  meta.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!meta.hasAttribute("tabindex")) meta.setAttribute("tabindex", "-1");
+  meta.focus({ preventScroll: true });
+});
+
 /* L'intestazione che si ritrae scorrendo in giù.
 
    Tre cose che sembrano dettagli e non lo sono:

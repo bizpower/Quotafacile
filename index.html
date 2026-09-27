@@ -203,21 +203,31 @@
 
   <!-- BOTTOM TAB BAR (mobile, stile app) -->
   <nav class="tabbar" aria-label="Navigazione mobile">
-    <a href="#/" data-nav="home"><svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-8.5Z"/></svg><span>Home</span></a>
+    <!-- Cinque caselle, non sei: il bottone del preventivo è
+         rialzato e sta al centro, quindi il totale deve restare
+         dispari e lui in terza posizione. Una voce in più lo
+         manderebbe fuori asse, e comunque sotto i 360 punti i
+         tocchi scenderebbero sotto i 44.
+
+         Il posto l'ha ceduto Home. È l'unica delle sei che ha
+         un'alternativa che non sparisce mai: il logo in alto a
+         sinistra, che chiunque sa di poter toccare. La pagina per
+         i professionisti quell'alternativa non ce l'aveva — il
+         menu in alto è nascosto sotto i 960 punti, e il bottone
+         verde porta all'area riservata, non al listino. Dal
+         telefono i prezzi non si raggiungevano affatto. -->
     <a href="#/bacheca" data-nav="bacheca"><svg viewBox="0 0 24 24"><path d="M4 4h16v12H8l-4 4V4Z"/></svg><span>Bacheca</span></a>
-    <a href="#/preventivo" class="tab-cta" data-nav="preventivo"><span class="tab-cta-btn">€</span><span>Preventivo</span></a>
     <a href="#/intermediari" data-nav="intermediari"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg><span>Esperti</span></a>
-    <!-- Magazine al posto di "Pro".
-         Cinque voci sono il massimo che ci sta senza rimpicciolire
-         i tocchi sotto i 44 punti, e la sesta avrebbe spostato il
-         bottone del preventivo fuori dal centro. Fra le due,
-         l'Area Pro è quella che può mancare: riguarda gli
-         intermediari, non chi cerca una polizza, e sul telefono
-         resta comunque a un tocco — il bottone verde in alto a
-         destra non sparisce mai. Il Magazine invece, finché non
-         era qui, dal telefono non si raggiungeva affatto: il menu
-         in alto è nascosto sotto i 960 punti. -->
+    <a href="#/preventivo" class="tab-cta" data-nav="preventivo"><span class="tab-cta-btn">€</span><span>Preventivo</span></a>
+    <!-- Anche il Magazine, finché non era qui, dal telefono non si
+         raggiungeva: stessa ragione, il menu in alto sparisce. -->
     <a href="#/magazine" data-nav="magazine"><svg viewBox="0 0 24 24"><path d="M4 5h11a2 2 0 0 1 2 2v12H6a2 2 0 0 1-2-2V5Z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M7 9h6M7 12.5h6M7 16h4"/></svg><span>Magazine</span></a>
+    <!-- Porta alla pagina pubblica, quella con i piani e i prezzi,
+         non all'area riservata: chi arriva qui dal telefono sta
+         valutando se iscriversi, non entrando in un account che
+         non ha ancora. Per l'area c'è il bottone verde in alto,
+         che sul telefono è l'unica voce del menu a restare. -->
+    <a href="#/professionisti" data-nav="professionisti"><svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M3 12h18"/></svg><span>Pro</span></a>
   </nav>
 
   <div id="toast" class="toast" role="status"></div>
