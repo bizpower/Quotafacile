@@ -78,7 +78,11 @@
     if (fase === "caricamento") return;
     fase = "caricamento"; avviso = null; QF().render();
     const esito = await chiama("elenco");
-    if (esito.ok) { dati = { articoli: esito.articoli, categorie: esito.categorie }; fase = "pronto"; }
+    /* Gli elenchi si difendono come fa crm.js con i suoi: una
+       risposta riuscita ma senza articoli farebbe fallire il
+       primo .map e lascerebbe la pagina bianca, che è il modo
+       peggiore di dire "non c'è niente". */
+    if (esito.ok) { dati = { articoli: esito.articoli || [], categorie: esito.categorie || [] }; fase = "pronto"; }
     else { fase = "errore"; avviso = esito.errore; }
     QF().render();
   }

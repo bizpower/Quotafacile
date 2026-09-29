@@ -496,12 +496,19 @@
         return `<div class="legal-warning" role="alert" style="margin-top:1.2rem"><strong>Ricerca non riuscita.</strong> ${esc(R.errore)}</div>`;
       }
       if (!R.esito) return "";
-      const r = R.esito.risultati;
+      /* Quaranta righe più in basso la stessa lettura è già
+         difesa — `R.esito?.risultati || []` — e qui no: se la
+         risposta arrivasse senza l'elenco, o senza il centro, la
+         schermata dei lead resterebbe bianca invece di dire che
+         non ha trovato niente. Una pagina vuota non si distingue
+         da un guasto, e questa è la schermata da cui si lavora. */
+      const r = R.esito.risultati || [];
       const nuovi = r.filter(x => !x.gia);
+      const centro = R.esito.centro?.indirizzo;
       return `
       <div class="card" style="margin-top:1.2rem">
         <h3>Trovate ${r.length} attività <span class="pill">${nuovi.length} non ancora in archivio</span></h3>
-        <p class="muted" style="font-size:.82rem">Centro della ricerca: ${esc(R.esito.centro.indirizzo)}</p>
+        ${centro ? `<p class="muted" style="font-size:.82rem">Centro della ricerca: ${esc(centro)}</p>` : ""}
         ${(R.esito.avvisi || []).map(a => `<p class="privacy-hint">⚠️ ${esc(a)}</p>`).join("")}
 
         ${r.length ? `

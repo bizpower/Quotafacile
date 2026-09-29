@@ -137,9 +137,20 @@ async function salvaCollaboratore(d: Record<string, unknown>) {
     nome, email, ruolo,
     telefono: testo(d.telefono, 60),
     note: testo(d.note, 2000),
-    attivo: d.attivo !== false,
   };
 
+  /* Salvare la scheda non riattiva nessuno.
+     Prima la riga portava con sé `attivo: d.attivo !== false`, e
+     il modulo quel campo non lo manda: restava undefined, e
+     undefined !== false è vero. Bastava correggere un numero di
+     telefono a un collaboratore disattivato perché tornasse
+     attivo, senza che nulla lo dicesse.
+     Peggio: chi si disattiva viene anche bandito dall'utenza, e
+     quel bando qui non si toglieva. La tabella lo dava per
+     attivo e l'accesso restava chiuso — due verità diverse sulla
+     stessa persona.
+     Attivare e disattivare è un'azione sua, "attiva-collaboratore",
+     che fa le due cose insieme. Questa non deve entrarci. */
   const id = testo(d.id, 40);
   if (id) {
     const { error } = await db.from("crm_collaboratori").update(riga).eq("id", id);
@@ -147,8 +158,10 @@ async function salvaCollaboratore(d: Record<string, unknown>) {
     return { id, aggiornato: true };
   }
 
+  // Chi nasce adesso nasce attivo: è l'unico caso in cui questa
+  // funzione ha titolo per dirlo.
   const { data, error } = await db.from("crm_collaboratori")
-    .insert(riga).select("id").single();
+    .insert({ ...riga, attivo: true }).select("id").single();
   // 23505 = email già presente: è un errore dell'utente, non del sistema
   if (error) {
     throw new Error(error.code === "23505"
