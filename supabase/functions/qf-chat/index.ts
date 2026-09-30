@@ -59,8 +59,10 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const URL_SUPABASE = Deno.env.get("SUPABASE_URL")!;
+
 const db = createClient(
-  Deno.env.get("SUPABASE_URL")!,
+  URL_SUPABASE,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 );
 
@@ -153,6 +155,17 @@ const MODELLO = Deno.env.get("QF_GEMINI_MODELLO") || "gemini-2.0-flash";
 //              Conferma. "esegui" il modello non lo chiama
 //              nemmeno.
 
+// Le categorie che il lead finder sa cercare. Sono le stesse di
+// qf-lead: se il modello ne inventa una, qf-lead la scarta e la
+// ricerca parte senza. Stando nell'enum il modello e' costretto a
+// tradurre "ristoranti" in "ristorazione" invece di provarci.
+const CHIAVI_CATEGORIE = [
+  "ristorazione", "bar", "hotel", "cantine", "enoteche", "agriturismi",
+  "officine", "concessionarie", "edilizia", "impiantisti", "studi",
+  "avvocati", "medici", "palestre", "parrucchieri", "negozi",
+  "supermercati", "trasporti", "agenzie_immobiliari", "assicurazioni",
+];
+
 const STRUMENTI = [
   {
     name: "vai",
@@ -223,6 +236,57 @@ const STRUMENTI = [
           description: "Nome della regione, se l'operatore ha nominato quella invece di una provincia.",
         },
       },
+    },
+  },
+  {
+    name: "cerca_lead",
+    description:
+      "Cerca attivita' su Google in una zona, per categoria. Read-only: mostra solo " +
+      "un'anteprima di cosa si trova, non salva niente. Da usare quando l'operatore " +
+      "vuole vedere prima, o non ha detto come chiamare la lista.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        categorie: {
+          type: "ARRAY",
+          items: { type: "STRING", enum: CHIAVI_CATEGORIE },
+          description: "Da una a quattro categorie.",
+        },
+        zona: {
+          type: "STRING",
+          description: "Dove cercare, come lo direbbe una persona: 'Opera, Milano', " +
+            "'20900', 'via Dante 10 Monza'. Un comune preciso vale piu' di una provincia.",
+        },
+        raggio: { type: "NUMBER", description: "Metri: 500, 1000, 2000, 5000 o 10000. Predefinito 2000." },
+        soloConEmail: { type: "BOOLEAN", description: "Solo attivita' con un'email pubblicata sul loro sito." },
+        soloQualita: { type: "BOOLEAN", description: "Solo con valutazione almeno 3,5 e almeno 5 recensioni." },
+        massimo: { type: "NUMBER", description: "Quante al massimo, fino a 50." },
+      },
+      required: ["categorie", "zona"],
+    },
+  },
+  {
+    name: "cerca_e_salva",
+    description:
+      "Cerca attivita' su Google, crea una lista e ci mette dentro quello che trova, " +
+      "in un colpo solo. Non esegue: prepara una proposta da confermare. " +
+      "Se l'operatore non dice come chiamare la lista, lasciala vuota: la propone il server.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        categorie: {
+          type: "ARRAY",
+          items: { type: "STRING", enum: CHIAVI_CATEGORIE },
+          description: "Da una a quattro categorie.",
+        },
+        zona: { type: "STRING", description: "Dove cercare. Un comune preciso vale piu' di una provincia." },
+        raggio: { type: "NUMBER", description: "Metri: 500, 1000, 2000, 5000 o 10000. Predefinito 2000." },
+        soloConEmail: { type: "BOOLEAN", description: "Solo attivita' con un'email pubblicata sul loro sito." },
+        soloQualita: { type: "BOOLEAN", description: "Solo con valutazione almeno 3,5 e almeno 5 recensioni." },
+        massimo: { type: "NUMBER", description: "Quante al massimo, fino a 50." },
+        nomeLista: { type: "STRING", description: "Come chiamare la lista, se l'operatore lo dice." },
+      },
+      required: ["categorie", "zona"],
     },
   },
   {
@@ -623,6 +687,219 @@ async function strumentoComuni(a: Record<string, unknown>) {
   };
 }
 
+// ---------------- Il lead finder ----------------
+// La ricerca su Google sta in qf-lead e ci resta: e' la' che
+// vivono le categorie, i raggi, il geocoding e la lettura
+// dell'email dal sito, con tutto quello che comporta dirlo
+// nell'informativa. Qui si chiede a quella funzione, passandole
+// la stessa chiave di amministrazione gia' verificata all'entrata
+// — non se ne inventa una seconda, e non si duplica la logica che
+// dovrebbe poi restare allineata in due posti.
+
+const URL_LEAD = URL_SUPABASE.replace(/\/+$/, "") + "/functions/v1/qf-lead";
+
+async function chiamaLead(azione: string, dati: Record<string, unknown>, chiave: string) {
+  const r = await fetch(URL_LEAD, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-qf-admin": chiave },
+    body: JSON.stringify({ azione, dati }),
+    signal: AbortSignal.timeout(90000),
+  });
+  const j = await r.json().catch(() => null);
+  /* L'errore di qf-lead si riporta parola per parola: e' gia'
+     scritto per chi legge — "Geocoding non riuscito", "Scegli
+     almeno una categoria" — e riscriverlo qui vorrebbe dire
+     tenere allineate due versioni dello stesso messaggio. */
+  if (!j?.ok) throw new Error(j?.errore || "La ricerca non ha risposto.");
+  return j as Record<string, unknown>;
+}
+
+// I parametri della ricerca, ripuliti una volta sola e usati sia
+// per l'anteprima sia per la proposta: due letture diverse degli
+// stessi argomenti sono il modo di far divergere quello che si
+// vede da quello che poi parte.
+function parametriRicerca(a: Record<string, unknown>) {
+  const categorie = Array.isArray(a.categorie)
+    ? a.categorie.map(String).filter((c) => CHIAVI_CATEGORIE.includes(c)).slice(0, 4)
+    : [];
+  const raggio = [500, 1000, 2000, 5000, 10000].includes(Number(a.raggio)) ? Number(a.raggio) : 2000;
+  return {
+    categorie,
+    zona: testo(a.zona, 200),
+    raggio,
+    soloConEmail: a.soloConEmail === true,
+    soloQualita: a.soloQualita === true,
+    massimo: Math.min(Math.max(Number(a.massimo) || 50, 1), 50),
+  };
+}
+
+const CATEGORIE_NOMI: Record<string, string> = {
+  ristorazione: "Ristoranti e pizzerie", bar: "Bar e caffetterie",
+  hotel: "Hotel e B&B", cantine: "Cantine", enoteche: "Enoteche",
+  agriturismi: "Agriturismi", officine: "Officine", concessionarie: "Concessionarie",
+  edilizia: "Imprese edili", impiantisti: "Impiantisti", studi: "Commercialisti",
+  avvocati: "Studi legali", medici: "Studi medici", palestre: "Palestre",
+  parrucchieri: "Parrucchieri ed estetica", negozi: "Negozi",
+  supermercati: "Supermercati", trasporti: "Trasporti",
+  agenzie_immobiliari: "Agenzie immobiliari", assicurazioni: "Agenzie assicurative",
+};
+
+const nomiCategorie = (c: string[]) => c.map((x) => CATEGORIE_NOMI[x] ?? x).join(", ");
+
+async function strumentoCercaLead(a: Record<string, unknown>, chiave: string) {
+  const p = parametriRicerca(a);
+  if (!p.categorie.length) return { messaggio: "Dimmi che tipo di attività cercare." };
+  if (!p.zona) return { messaggio: "Dimmi dove cercare: un comune, un CAP o una via." };
+
+  const e = await chiamaLead("cerca", { modalita: "rapida", ...p }, chiave);
+  const righe = (e.risultati as Record<string, unknown>[] | undefined) ?? [];
+  const nuovi = righe.filter((r) => !r.gia).length;
+
+  if (!righe.length) {
+    return {
+      messaggio: `Nessuna attività trovata a ${p.zona} entro ${p.raggio} metri. ` +
+        "Prova ad allargare il raggio o a cambiare zona.",
+    };
+  }
+  return {
+    messaggio:
+      `${righe.length} attività a ${p.zona}, ${nuovi} non ancora in archivio. ` +
+      "Dimmi come chiamare la lista e le salvo.",
+    risultato: {
+      titolo: `${nomiCategorie(p.categorie)} — ${p.zona}`,
+      righe: righe.slice(0, 12).map((r) => ({
+        testo: String(r.nome ?? "—"),
+        sotto: [r.citta, r.email, r.gia ? "già in archivio" : null].filter(Boolean).join(" · ") || null,
+      })),
+      totale: righe.length,
+    },
+  };
+}
+
+// Il nome della lista, quando non lo si e' detto: categoria e
+// zona, che e' come la si chiamerebbe a voce.
+function nomeListaAuto(categorie: string[], zona: string) {
+  const primo = CATEGORIE_NOMI[categorie[0]] ?? categorie[0];
+  const altre = categorie.length > 1 ? ` +${categorie.length - 1}` : "";
+  return `${primo}${altre} — ${zona}`.slice(0, 160);
+}
+
+async function propostaCercaSalva(a: Record<string, unknown>, frase: string) {
+  const p = parametriRicerca(a);
+  if (!p.categorie.length) return { messaggio: "Dimmi che tipo di attività cercare." };
+  if (!p.zona) return { messaggio: "Dimmi dove cercare: un comune, un CAP o una via." };
+
+  const nomeLista = testo(a.nomeLista, 160) || nomeListaAuto(p.categorie, p.zona);
+  /* Due cose diverse, e vanno viste diverse: un avviso e' un
+     problema da guardare prima di premere — una lista doppia,
+     un'email che non sembra valida — una nota e' solo qualcosa
+     da sapere. Con lo stesso rosso per entrambi si impara a non
+     leggere nessuno dei due. */
+  const avvisi: string[] = [];
+  const note: string[] = [];
+  const { data } = await db.from("mm_liste").select("id").ilike("nome", nomeLista).limit(1);
+  if (data?.length) avvisi.push("Una lista con questo nome esiste già: ne avresti due uguali.");
+  if (p.soloConEmail) {
+    note.push(
+      "Con «solo con email» la ricerca apre il sito di ogni attività per leggerne il " +
+      "recapito: può metterci un minuto.",
+    );
+  }
+  note.push(`Cerco fino a ${p.massimo} attività entro ${p.raggio} metri da ${p.zona}.`);
+
+  /* La proposta porta i parametri, non i risultati: la ricerca
+     vera parte alla conferma. Cercare adesso per poi rifarlo dopo
+     vorrebbe dire pagare Google due volte e, peggio, mostrare
+     un'anteprima che alla conferma potrebbe non coincidere. */
+  return {
+    proposta: {
+      azione: "cerca_e_salva",
+      titolo: `Cerco e salvo nella lista «${nomeLista}»?`,
+      campi: {
+        nomeLista,
+        categorie: p.categorie.join(", "),
+        zona: p.zona,
+        raggio: String(p.raggio),
+        massimo: String(p.massimo),
+        soloConEmail: p.soloConEmail ? "si" : "no",
+        soloQualita: p.soloQualita ? "si" : "no",
+      },
+      etichette: {
+        nomeLista: "Nome della lista", categorie: "Categorie", zona: "Dove",
+        raggio: "Raggio (metri)", massimo: "Quante al massimo",
+        soloConEmail: "Solo con email", soloQualita: "Solo ben recensite",
+      },
+      larghi: ["nomeLista", "zona", "categorie"],
+      scelte: {
+        raggio: [500, 1000, 2000, 5000, 10000].map((x) => ({ id: String(x), nome: String(x) })),
+        soloConEmail: [{ id: "no", nome: "no" }, { id: "si", nome: "sì" }],
+        soloQualita: [{ id: "no", nome: "no" }, { id: "si", nome: "sì" }],
+      },
+      frase, avvisi, note,
+    },
+  };
+}
+
+// L'esecuzione, dopo il bottone. Tre passaggi che devono restare
+// in quest'ordine: cerca, salva in archivio, lega alla lista.
+async function cercaESalva(c: Record<string, unknown>, chiave: string) {
+  const categorie = String(c.categorie ?? "").split(",")
+    .map((x) => x.trim()).filter((x) => CHIAVI_CATEGORIE.includes(x)).slice(0, 4);
+  const zona = testo(c.zona, 200);
+  const nomeLista = testo(c.nomeLista, 160);
+  if (!categorie.length) throw new Error("Nessuna categoria valida");
+  if (!zona) throw new Error("Manca la zona");
+  if (!nomeLista) throw new Error("Manca il nome della lista");
+
+  const e = await chiamaLead("cerca", {
+    modalita: "rapida", categorie, zona,
+    raggio: [500, 1000, 2000, 5000, 10000].includes(Number(c.raggio)) ? Number(c.raggio) : 2000,
+    soloConEmail: String(c.soloConEmail) === "si",
+    soloQualita: String(c.soloQualita) === "si",
+    massimo: Math.min(Math.max(Number(c.massimo) || 50, 1), 50),
+  }, chiave);
+
+  const righe = (e.risultati as Record<string, unknown>[] | undefined) ?? [];
+  if (!righe.length) {
+    return { messaggio: `Nessuna attività trovata a ${zona}: la lista non è stata creata.` };
+  }
+
+  // La lista si crea solo adesso, a ricerca riuscita: una lista
+  // vuota nata da una ricerca a vuoto e' un residuo che poi
+  // qualcuno deve cancellare a mano.
+  const { data: lista, error: errLista } = await db.from("mm_liste")
+    .insert({ nome: nomeLista, descrizione: `Da ricerca: ${nomiCategorie(categorie)} — ${zona}` })
+    .select("id, nome").single();
+  if (errLista) throw new Error(errLista.message);
+
+  await chiamaLead("salva", { lead: righe, query: String(e.query ?? zona) }, chiave);
+
+  /* Gli identificativi si rileggono dall'archivio, non si
+     prendono dalla risposta di "salva": quella restituisce solo
+     le righe appena inserite, e chi era gia' in archivio — che
+     nella lista ci deve stare lo stesso — non comparirebbe. */
+  const places = righe.map((r) => String(r.place_id)).filter(Boolean);
+  const { data: inArchivio } = await db.from("crm_lead")
+    .select("id").in("place_id", places);
+
+  const legami = (inArchivio ?? []).map((l: Record<string, any>) => ({
+    lista_id: lista.id, lead_id: l.id,
+  }));
+  if (legami.length) {
+    const { error } = await db.from("mm_lista_lead")
+      .upsert(legami, { onConflict: "lista_id,lead_id", ignoreDuplicates: true });
+    if (error) throw new Error(error.message);
+  }
+
+  return {
+    messaggio:
+      `Lista «${lista.nome}» creata con ${legami.length} attività` +
+      (righe.length !== legami.length ? ` (${righe.length} trovate)` : "") + ".",
+    listaId: lista.id,
+    vai: "#/admin/crm/mail/liste?l=" + lista.id,
+  };
+}
+
 // ---------------- Gli strumenti di scrittura ----------------
 // Non scrivono: preparano una proposta. La scrittura sta in
 // "esegui", dopo il bottone.
@@ -653,6 +930,11 @@ async function propostaContatto(a: Record<string, unknown>, frase: string) {
         categoria: testo(a.categoria, 120),
         note: testo(a.note, 1000),
       },
+      etichette: {
+        nome: "Nome", email: "Email", telefono: "Telefono", citta: "Città",
+        provincia: "Provincia", categoria: "Categoria", note: "Note",
+      },
+      larghi: ["note"],
       frase, avvisi,
     },
   };
@@ -669,6 +951,8 @@ async function propostaLista(a: Record<string, unknown>, frase: string) {
       azione: "crea_lista",
       titolo: "Creo questa lista?",
       campi: { nome, descrizione: testo(a.descrizione, 600) },
+      etichette: { nome: "Nome della lista", descrizione: "Descrizione" },
+      larghi: ["nome", "descrizione"],
       frase, avvisi,
     },
   };
@@ -705,7 +989,18 @@ async function propostaAggiungi(a: Record<string, unknown>, frase: string, ultim
       azione: "aggiungi_lista",
       titolo: "Aggiungo alla lista?",
       campi: { lead_id: lead[0].id, lista_id: liste[0].id },
-      scelte: { lead, liste },
+      etichette: { lead_id: "Contatto", lista_id: "Lista" },
+      larghi: ["lead_id", "lista_id"],
+      /* Le scelte diventano tendine: il nome detto a voce puo'
+         somigliare a piu' di un contatto, e sceglierlo qui e'
+         piu' onesto che indovinare il primo. */
+      scelte: {
+        lead_id: lead.map((l) => ({
+          id: l.id,
+          nome: l.nome + (l.citta ? " — " + l.citta : "") + (l.email ? " · " + l.email : ""),
+        })),
+        lista_id: liste.map((l: Record<string, any>) => ({ id: l.id, nome: l.nome })),
+      },
       frase, avvisi: [],
     },
   };
@@ -713,7 +1008,7 @@ async function propostaAggiungi(a: Record<string, unknown>, frase: string, ultim
 
 // ---------------- interpreta ----------------
 
-async function interpreta(d: Record<string, unknown>) {
+async function interpreta(d: Record<string, unknown>, chiave: string) {
   const frase = testo(d.frase, 600);
   if (!frase) throw new Error("Non hai detto niente.");
 
@@ -726,6 +1021,8 @@ async function interpreta(d: Record<string, unknown>) {
     case "elenca":          return await strumentoElenca(m.argomenti);
     case "trova_contatto":  return await strumentoTrova(m.argomenti);
     case "comuni":          return await strumentoComuni(m.argomenti);
+    case "cerca_lead":      return await strumentoCercaLead(m.argomenti, chiave);
+    case "cerca_e_salva":   return await propostaCercaSalva(m.argomenti, frase);
     case "salva_contatto":  return await propostaContatto(m.argomenti, frase);
     case "crea_lista":      return await propostaLista(m.argomenti, frase);
     case "aggiungi_a_lista": return await propostaAggiungi(m.argomenti, frase, ultimo);
@@ -739,8 +1036,9 @@ async function interpreta(d: Record<string, unknown>) {
     messaggio: m.testo ||
       "Non ho capito che cosa devo fare. Posso portarti in una schermata, " +
       "dirti a che punto siamo, elencare liste campagne modelli e collaboratori, " +
-      "cercare un contatto, dirti i comuni di una provincia, salvare un contatto, " +
-      "creare una lista o metterci dentro qualcuno.",
+      "cercare un contatto in archivio, dirti i comuni di una provincia, cercare " +
+      "attività su Google e salvarle in una lista, salvare un contatto, creare una " +
+      "lista o metterci dentro qualcuno.",
   };
 }
 
@@ -808,7 +1106,7 @@ async function aggiungiALista(c: Record<string, unknown>) {
   return { messaggio: `${l.nome} aggiunto alla lista «${li.nome}».` };
 }
 
-async function esegui(d: Record<string, unknown>) {
+async function esegui(d: Record<string, unknown>, chiave: string) {
   const azione = String(d.azione ?? "");
   const campi = (d.campi ?? {}) as Record<string, unknown>;
   const frase = testo(d.frase, 600);
@@ -816,10 +1114,15 @@ async function esegui(d: Record<string, unknown>) {
   if (azione === "salva_lead") return await salvaLead(campi, frase);
   if (azione === "crea_lista") return await creaLista(campi);
   if (azione === "aggiungi_lista") return await aggiungiALista(campi);
+  if (azione === "cerca_e_salva") return await cercaESalva(campi, chiave);
   throw new Error("Azione non riconosciuta");
 }
 
-const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
+/* Le azioni ricevono la chiave gia' verificata all'entrata: serve
+   a chi deve parlare con un'altra funzione — la ricerca dei lead
+   vive in qf-lead — e non a chi lavora sul database, che usa il
+   ruolo di servizio. */
+const AZIONI: Record<string, (d: Record<string, unknown>, chiave: string) => Promise<unknown>> = {
   interpreta,
   esegui,
 };
@@ -846,7 +1149,7 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const azione = AZIONI[String(body?.azione ?? "")];
     if (!azione) return rispondi({ ok: false, errore: "Azione non riconosciuta" }, 400);
-    return rispondi({ ok: true, ...(await azione(body.dati ?? {}) as object) });
+    return rispondi({ ok: true, ...(await azione(body.dati ?? {}, fornita) as object) });
   } catch (e) {
     const messaggio = e instanceof Error ? e.message : "Errore imprevisto";
     const mancante = !!(e as { configurazione?: boolean })?.configurazione;

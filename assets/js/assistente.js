@@ -56,7 +56,7 @@
     "Portami al Lead Finder",
     "Che liste ho",
     "Quali comuni ci sono in provincia di Monza",
-    "Salva Autofficina Bianchi, info@bianchi.it, Milano"
+    "Cerca 30 ristoranti a Monza con email e salvali in una lista"
   ];
 
   /* Una riga della conversazione può portarsi dietro un
@@ -120,30 +120,21 @@
 
   async function conferma() {
     if (!proposta) return;
-    const val = k => {
-      const c = document.querySelector(`[data-qa-campo="${k}"]`);
-      return c ? c.value.trim() : null;
-    };
 
-    /* I campi si rileggono dallo schermo, non dalla proposta: se
-       il dettato ha sbagliato il nome e tu l'hai corretto a mano,
-       deve finire nell'archivio la tua correzione. */
-    let campi;
-    if (proposta.azione === "salva_lead") {
-      campi = {
-        nome: val("nome"), email: val("email"), telefono: val("telefono"),
-        citta: val("citta"), provincia: val("provincia"),
-        categoria: val("categoria"), note: val("note")
-      };
-    } else if (proposta.azione === "crea_lista") {
-      campi = { nome: val("nome"), descrizione: val("descrizione") };
-    } else {
-      campi = { lead_id: val("lead_id"), lista_id: val("lista_id") };
-    }
+    /* I campi si rileggono dallo schermo, tutti quelli che ci
+       sono, senza sapere in anticipo quali siano: se il dettato
+       ha sbagliato il nome e tu l'hai corretto a mano, deve
+       finire in archivio la tua correzione — e un elenco fisso
+       qui dentro vorrebbe dire aggiornarlo a ogni strumento
+       nuovo, dimenticandosene uno prima o poi. */
+    const campi = {};
+    document.querySelectorAll("[data-qa-campo]").forEach(c => {
+      campi[c.dataset.qaCampo] = typeof c.value === "string" ? c.value.trim() : c.value;
+    });
 
     inCorso = true;
     disegna();
-    const e = await chiama("esegui", { azione: proposta.azione, campi, frase: proposta.frase }, 25000);
+    const e = await chiama("esegui", { azione: proposta.azione, campi, frase: proposta.frase }, 120000);
     inCorso = false;
 
     if (!e.ok) { dice("qf", e.errore || "Non sono riuscito a salvare."); disegna(); return; }
@@ -156,6 +147,7 @@
        sotto c'è il CRM lo si fa rileggere in silenzio: senza,
        resterebbe a mostrare i dati di un minuto fa. */
     window.QF_CRM?.ricarica?.();
+    if (e.vai && location.hash !== e.vai) location.hash = e.vai;
   }
 
   /* ---------------- IL MICROFONO ---------------- */
@@ -203,53 +195,36 @@
   /* ---------------- DISEGNO ---------------- */
 
   function propostaHtml(p) {
-    /* Note e descrizione sono testo libero: una colonna sola le
-       taglia a metà parola mentre si rilegge quello che sta per
-       essere scritto. */
-    const campo = (k, etichetta, v, tipo = "text") => `
-      <label class="qa-campo ${k === "note" || k === "descrizione" ? "qa-campo-largo" : ""}">
-        <span>${etichetta}</span>
-        <input type="${tipo}" data-qa-campo="${k}" value="${esc(v || "")}" placeholder="—">
-      </label>`;
+    const campi = p.campi || {};
+    const etichette = p.etichette || {};
+    const scelte = p.scelte || {};
+    const larghi = p.larghi || [];
 
-    let corpo;
-    if (p.azione === "salva_lead") {
-      const c = p.campi;
-      corpo = `
-        ${campo("nome", "Nome", c.nome)}
-        ${campo("email", "Email", c.email, "email")}
-        ${campo("telefono", "Telefono", c.telefono, "tel")}
-        ${campo("citta", "Città", c.citta)}
-        ${campo("provincia", "Provincia", c.provincia)}
-        ${campo("categoria", "Categoria", c.categoria)}
-        ${campo("note", "Note", c.note)}`;
-    } else if (p.azione === "crea_lista") {
-      corpo = `
-        ${campo("nome", "Nome della lista", p.campi.nome)}
-        ${campo("descrizione", "Descrizione", p.campi.descrizione)}`;
-    } else {
-      const s = p.scelte || { lead: [], liste: [] };
-      corpo = `
-        <label class="qa-campo"><span>Contatto</span>
-          <select data-qa-campo="lead_id">
-            ${s.lead.map(l => `<option value="${esc(l.id)}">${esc(l.nome)}${l.citta ? " — " + esc(l.citta) : ""}${l.email ? " · " + esc(l.email) : ""}</option>`).join("")}
-          </select></label>
-        <label class="qa-campo"><span>Lista</span>
-          <select data-qa-campo="lista_id">
-            ${s.liste.map(l => `<option value="${esc(l.id)}">${esc(l.nome)}</option>`).join("")}
-          </select></label>`;
-    }
+    const corpo = Object.keys(campi).map(k => {
+      const opzioni = scelte[k];
+      const valore = campi[k] == null ? "" : String(campi[k]);
+      const dentro = opzioni
+        ? `<select data-qa-campo="${esc(k)}">${opzioni.map(o =>
+            `<option value="${esc(o.id)}" ${String(o.id) === valore ? "selected" : ""}>${esc(o.nome)}</option>`).join("")}</select>`
+        : `<input type="text" data-qa-campo="${esc(k)}" value="${esc(valore)}" placeholder="—">`;
+      return `
+        <label class="qa-campo ${larghi.includes(k) ? "qa-campo-largo" : ""}">
+          <span>${esc(etichette[k] || k)}</span>
+          ${dentro}
+        </label>`;
+    }).join("");
 
     return `
     <div class="qa-proposta">
       <span class="qa-etichetta">Azione proposta</span>
       <strong>${esc(p.titolo)}</strong>
-      <p class="qa-nota">Controlla i campi: quello che vedi qui è quello che verrà scritto.</p>
+      <p class="qa-nota">Controlla i campi: quello che vedi qui è quello che verrà usato.</p>
       ${(p.avvisi || []).map(a => `<div class="qa-avviso">${esc(a)}</div>`).join("")}
+      ${(p.note || []).map(n => `<div class="qa-nota-riga">${esc(n)}</div>`).join("")}
       <div class="qa-campi">${corpo}</div>
       <div class="qa-azioni">
         <button class="btn btn-ghost btn-sm" data-qa-annulla>Annulla</button>
-        <button class="btn btn-primary btn-sm" data-qa-conferma>Conferma e salva</button>
+        <button class="btn btn-primary btn-sm" data-qa-conferma>Conferma</button>
       </div>
     </div>`;
   }
