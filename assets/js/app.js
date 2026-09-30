@@ -545,9 +545,12 @@ const dentroCornice = (() => {
 let riservataInCorso = null;
 
 function caricaRiservata() {
-  if (window.QF_ADMIN && window.QF_CRM && window.QF_MM && window.QF_MAGAZINE) return Promise.resolve();
+  if (window.QF_ADMIN && window.QF_CRM && window.QF_MM && window.QF_MAGAZINE && window.QF_ASSISTENTE) return Promise.resolve();
   if (riservataInCorso) return riservataInCorso;
-  riservataInCorso = Promise.all(["admin", "crm", "mm", "magazine"].map(nome => new Promise((risolvi, rifiuta) => {
+  /* L'assistente sta in questo gruppo e non fra gli script della
+     pagina perché serve solo qui dentro: sul sito pubblico non
+     deve nemmeno essere scaricato. */
+  riservataInCorso = Promise.all(["admin", "crm", "mm", "magazine", "assistente"].map(nome => new Promise((risolvi, rifiuta) => {
     const s = document.createElement("script");
     s.src = BASE_SITO + "assets/js/" + nome + ".js";
     s.onload = risolvi;
@@ -3374,6 +3377,13 @@ function bind() {
 
   /* console di amministrazione (rotta #/admin) */
   if (parseHash().path[0] === "admin" && window.QF_ADMIN) window.QF_ADMIN.bind();
+
+  /* L'assistente vive fuori da #app e non si accorge dei
+     ridisegni: gli si dice qui che qualcosa è cambiato. È il
+     momento in cui si scopre che la chiave è appena stata
+     inserita — o che si è usciti dall'area riservata e il
+     bottone deve sparire. */
+  window.QF_ASSISTENTE?.aggiorna();
 
   /* segnalazione contenuti — notice & action art. 16 Reg. UE 2022/2065 (DSA) */
   document.querySelectorAll("[data-report]").forEach(b =>
