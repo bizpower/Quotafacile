@@ -61,8 +61,8 @@
     hosting: "GitHub Pages — GitHub Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA (USA), gruppo Microsoft",
     hostingNota: "Fornitore aderente al EU-U.S. Data Privacy Framework",
 
-    ultimoAggiornamento: "10 settembre 2026",
-    versione: "1.1"
+    ultimoAggiornamento: "30 settembre 2026",
+    versione: "1.2"
   };
 
   /* Locale, per non dipendere da un binding globale definito altrove:
@@ -290,9 +290,20 @@
       linguistico, i dati dell'<em>azienda destinataria</em> (denominazione, settore, città, sito,
       valutazione pubblica su Google) sono inviati ad <strong>Anthropic PBC</strong>, Stati Uniti,
       nominata responsabile del trattamento. Il testo prodotto è una bozza che una persona legge e
-      approva prima dell'invio. <strong>Questo trattamento non riguarda i dati di chi usa il sito:</strong>
-      nulla di ciò che scrivi nei moduli viene inviato a un modello linguistico. I dettagli sono
+      approva prima dell'invio. <strong>In questo trattamento non entra nessun dato di chi usa il
+      sito:</strong> ciò che scrivi nei moduli non viene inviato per scrivere quelle bozze. I dettagli sono
       nell'<a href="#/privacy-imprese">informativa per le aziende contattate</a>.</li>
+      <li><strong>A Google, per l'assistente interno dell'area riservata.</strong> Nel gestionale
+      con cui lavoriamo c'è un assistente che trasforma una frase in un comando: chi scrive
+      «apri le richieste di questo mese» viene portato in quella schermata. La frase che
+      l'operatore scrive o detta è inviata a <strong>Google</strong> (servizio Gemini, Stati
+      Uniti), che risponde indicando quale funzione richiamare.
+      <strong>Nessuna riga del nostro database viene inviata al modello:</strong> i dati letti
+      restano sul server, e quello che l'assistente ti mostra lo compone il server, non il
+      modello. Va però detta anche l'altra metà: <strong>una frase può contenere un nome</strong>,
+      e se l'operatore scrive «apri la richiesta di Mario Rossi» quel nome passa da Google.
+      Il trattamento è limitato alla singola frase digitata — nessuna cronologia, nessun
+      allegato, nessun contenuto dei moduli — ed è accessibile solo al personale autorizzato.</li>
       <li><strong>Ad altri fornitori tecnici</strong> (hosting, posta elettronica), anch'essi nominati
       responsabili del trattamento ai sensi dell'art. 28 GDPR.</li>
       <li><strong>All'Autorità giudiziaria o alle autorità di vigilanza</strong>, quando previsto per legge.</li>
@@ -309,6 +320,10 @@
     extra-UE, e la scrittura assistita delle email commerciali verso le aziende, che invia i dati
     dell'<em>azienda destinataria</em> ad <strong>Anthropic PBC (Stati Uniti)</strong> sulla base
     delle Clausole Contrattuali Standard: nessun dato di chi usa il sito segue quella strada.
+    Un secondo trasferimento riguarda l'<strong>assistente interno dell'area riservata</strong>
+    descritto al punto 5, che invia a <strong>Google (Stati Uniti)</strong> la sola frase
+    digitata dall'operatore — mai una riga del database — sulla base delle medesime Clausole
+    Contrattuali Standard.
     Eventuali trasferimenti verso paesi terzi
     avvengono sulla base di una decisione di adeguatezza della Commissione europea o delle Clausole
     Contrattuali Standard (art. 46 GDPR). L'elenco aggiornato dei fornitori è disponibile su richiesta
@@ -340,6 +355,11 @@
     <p>L'uso di un modello linguistico per scrivere bozze di email commerciali, descritto al punto 5,
     <strong>non è un processo decisionale</strong>: il modello scrive un testo, non stabilisce chi
     riceve cosa. Quella scelta la fa una persona, e la bozza passa dalle sue mani prima di partire.</p>
+    <p>Lo stesso vale per l'assistente interno: <strong>traduce una frase in un comando, e nulla
+    di più</strong>. Non valuta le richieste, non ordina i profili, non decide su nessuno. Le
+    operazioni che modificano o cancellano un dato non partono dalla sua risposta: gli vengono
+    <strong>proposte a schermo a una persona, che le conferma o le annulla</strong>, e la conferma
+    non passa più dal modello.</p>
 
     <h2>9. Sicurezza</h2>
     <p>Adottiamo misure tecniche e organizzative adeguate al rischio (art. 32 GDPR): trasmissione
@@ -651,6 +671,16 @@
       trasferimento è coperto dalle Clausole Contrattuali Standard (art. 46 GDPR).
       Il testo prodotto è una <strong>bozza che una persona legge e approva</strong> prima che
       parta: non c'è nessun automatismo che spedisca quello che il modello ha appena scritto.</li>
+      <li><strong>A Google, se chi lavora al gestionale usa l'assistente interno.</strong> Nel
+      nostro gestionale una frase può essere scritta al posto di una serie di clic («segna questo
+      contatto come lavorato»). Quella frase è inviata a <strong>Google</strong> (servizio Gemini,
+      Stati Uniti), che risponde indicando quale funzione richiamare.
+      <strong>Il tuo record non gli viene inviato:</strong> né l'email, né il telefono, né le note,
+      né nessun'altra riga dell'archivio — quelle restano sul nostro server. Ti riguarda in un solo
+      caso, e lo diciamo: se l'operatore <strong>scrive il nome della tua attività</strong> dentro
+      la frase, quel nome passa da Google. Nient'altro. Il fornitore è nominato responsabile del
+      trattamento e il trasferimento è coperto dalle Clausole Contrattuali Standard
+      (art. 46 GDPR).</li>
     </ul>
     <p>I dati <strong>non sono venduti, ceduti né diffusi</strong>.</p>
 
@@ -699,7 +729,10 @@
     <h2>9. Nessuna decisione automatizzata</h2>
     <p>Non profiliamo e non prendiamo decisioni automatizzate che ti riguardino (art. 22 GDPR).
     La scrittura assistita del punto 5 <strong>scrive testi, non decide nulla</strong>: chi riceve
-    cosa lo stabilisce una persona.</p>
+    cosa lo stabilisce una persona. L'assistente interno, sempre al punto 5,
+    <strong>traduce una frase in un comando</strong>: non ti valuta e non ti assegna un punteggio,
+    e ogni operazione che toccherebbe il tuo record viene prima proposta a schermo a una persona,
+    che la conferma o la annulla.</p>
 
     <p class="muted" style="font-size:.85rem">Per il trattamento dei dati di chi visita il sito e usa
     i moduli vale invece la <a href="#/privacy">Privacy Policy</a> generale.</p>

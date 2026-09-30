@@ -30,6 +30,10 @@
 (function () {
 
   const API = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-admin";
+  /* La diagnostica dei pagamenti vive in qf-pro, insieme al codice
+     che parla con Stripe: chiederla a qf-admin vorrebbe dire
+     tenere gli identificativi dei prezzi in due posti. */
+  const API_PRO = API.replace("qf-admin", "qf-pro");
   const SESSION_KEY = "qf_admin_chiave";
 
   const QF = () => window.QF;
@@ -42,6 +46,12 @@
      Magazine. */
   let seoAperto = null;
   let filtroRichieste = "nuova";
+  /* Esito dell'ultima verifica dei pagamenti. Non si carica da
+     sola all'apertura della console: sono due chiamate a Stripe,
+     e si fanno quando servono. */
+  let pagamenti = null;
+  let pagamentiFase = "vuoto";   // vuoto | caricamento | pronto | errore
+  let pagamentiErrore = null;
 
   /* Panoramica caricata dal server. Nulla di tutto questo vive
      nel localStorage: alla chiusura della scheda sparisce. */
@@ -53,11 +63,13 @@
   const isAuth = () => !!chiave();
 
   /* ---------------- DIALOGO CON IL SERVER ---------------- */
-  async function chiama(azione, d = {}) {
+  const chiama = (azione, d = {}) => chiamaA(API, azione, d);
+
+  async function chiamaA(url, azione, d = {}) {
     const stop = new AbortController();
     const t = setTimeout(() => stop.abort(), 20000);
     try {
-      const r = await fetch(API, {
+      const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-qf-admin": chiave() },
         body: JSON.stringify({ azione, dati: d }),
@@ -741,6 +753,129 @@ Usa **grassetto** per i numeri che contano."></textarea>
     </div>`;
   }
 
+  /* ---------------- TAB 8 · I PAGAMENTI ----------------
+     Perché questa scheda esiste.
+
+     Tutto il resto della catena degli abbonamenti si prova solo
+     con un intermediario vero che clicca «abbonati»: fino a quel
+     clic nessuno sa se la chiave Stripe è valida, se i due prezzi
+     esistono davvero nel profilo collegato, e se si sta lavorando
+     in prova o in produzione. Il primo a scoprirlo sarebbe stato
+     un cliente, davanti a un errore, con la carta in mano.
+
+     Qui la stessa domanda si fa in sola lettura. Non crea clienti,
+     non crea abbonamenti, non scrive niente né qui né su Stripe:
+     si può premere quante volte si vuole. */
+
+  const euro = c => typeof c === "number"
+    ? (c / 100).toLocaleString("it-IT", { minimumFractionDigits: 2 }) + " €"
+    : "—";
+
+  function rigaPrezzo(piano, r) {
+    if (!r || r.esiste !== true) {
+      return `<tr><th>Piano ${esc(piano)}</th><td>
+        <strong style="color:var(--rosso,#c0392b)">non trovato su Stripe</strong><br>
+        <code style="font-size:.8rem">${esc(r?.id || "—")}</code>
+        ${r?.motivo ? `<br><span class="muted" style="font-size:.85rem">${esc(r.motivo)}</span>` : ""}
+      </td></tr>`;
+    }
+    const ogni = r.ricorrenza === "month" ? "al mese"
+      : r.ricorrenza === "year" ? "all'anno"
+      : r.ricorrenza ? esc(r.ricorrenza) : "";
+    return `<tr><th>Piano ${esc(piano)}</th><td>
+      <strong>${esc(euro(r.importo))}</strong> ${esc(ogni)}
+      ${String(r.valuta || "").toLowerCase() === "eur" ? "" :
+        ` <span style="color:var(--rosso,#c0392b)">(valuta ${esc(r.valuta || "?")}, non euro)</span>`}
+      ${r.attivo === false ? ` <span style="color:var(--rosso,#c0392b)">— archiviato su Stripe</span>` : ""}
+      <br><code style="font-size:.8rem">${esc(r.id)}</code>
+    </td></tr>`;
+  }
+
+  function pagamentiView() {
+    const d = pagamenti;
+    const pr = d && typeof d.prezzi === "object" && d.prezzi ? d.prezzi : null;
+
+    return `
+    <div class="card">
+      <h3>💳 Gli abbonamenti degli intermediari</h3>
+      <p class="muted">Questa verifica <strong>interroga Stripe in sola lettura</strong>: chiede se
+      i due prezzi esistono e se la chiave è accettata. Non crea nessun cliente e non avvia nessun
+      abbonamento, quindi non lascia tracce nel tuo profilo Stripe.</p>
+
+      <div style="display:flex;gap:.5rem;margin:1rem 0;flex-wrap:wrap">
+        <button class="btn btn-primary" id="pag-verifica"
+          ${pagamentiFase === "caricamento" ? "disabled" : ""}>
+          ${pagamentiFase === "caricamento" ? "Sto chiedendo a Stripe…" : "Verifica ora"}
+        </button>
+      </div>
+
+      ${pagamentiFase === "errore" ? `<div class="legal-warning">
+        <strong>La verifica non è arrivata a destinazione.</strong> ${esc(pagamentiErrore || "")}
+      </div>` : ""}
+
+      ${d ? `
+        ${d.pronto === true ? `<div class="card" style="box-shadow:none;border-left:3px solid #27ae60">
+          <strong>I pagamenti sono configurati.</strong> Chiave accettata, entrambi i prezzi
+          esistono e sono attivi, e il segreto del webhook c'è.
+        </div>` : `<div class="legal-warning">
+          <strong>Manca ancora qualcosa, e finché manca la catena non si chiude:</strong>
+          <ul style="margin:.5rem 0 0 1.1rem">
+            ${(d.manca || []).map(x => `<li>${esc(x)}</li>`).join("")}
+          </ul>
+        </div>`}
+
+        <table class="admin-kv" style="margin-top:1rem">
+          <tr><th>Chiave segreta</th><td>${d.chiaveSegreta === "presente"
+            ? "presente"
+            : `<strong style="color:var(--rosso,#c0392b)">manca</strong> — segreto <code>STRIPE_SECRET_KEY</code>`}</td></tr>
+          <tr><th>Segreto del webhook</th><td>${d.segretoWebhook === "presente"
+            ? "presente"
+            : `<strong style="color:var(--rosso,#c0392b)">manca</strong> — segreto <code>STRIPE_WEBHOOK_SECRET</code>`}</td></tr>
+          <tr><th>Modalità</th><td>${d.modalita === "produzione"
+            ? "<strong>produzione</strong> — questi addebiti sono veri"
+            : d.modalita === "prova"
+              ? "<strong>prova</strong> — nessun addebito è reale, e nessun intermediario può abbonarsi davvero"
+              : esc(String(d.modalita || "—"))}</td></tr>
+          <tr><th>Prova gratuita</th><td>${esc(String(d.giorniProva ?? "—"))} giorni</td></tr>
+          ${pr ? Object.entries(pr).map(([k, v]) => rigaPrezzo(k, v)).join("") : ""}
+        </table>
+
+        ${d.segretoWebhook === "presente" ? "" : `
+        <div class="card crm-inarrivo" style="margin-top:1rem;box-shadow:none">
+          <span class="pill">Da fare su Stripe, una volta sola</span>
+          <h4 style="margin:.6rem 0 .4rem">Il segreto del webhook</h4>
+          <p class="muted" style="font-size:.88rem">Senza questo, la cosa che si rompe non è
+          visibile: il pagamento va a buon fine, Stripe prova a dirlo alla piattaforma, e la
+          piattaforma <strong>rifiuta l'avviso</strong>. Il cliente ha pagato e non risulta
+          abbonato.</p>
+          <p class="muted" style="font-size:.88rem">Su Stripe, <em>Sviluppatori → Webhook → Aggiungi
+          endpoint</em>, con indirizzo
+          <code>${esc(API_PRO)}/webhook</code> e gli eventi
+          <code>checkout.session.completed</code> e <code>customer.subscription.*</code>. Stripe
+          mostra un <em>signing secret</em> che inizia per <code>whsec_</code>: quello va messo fra
+          i segreti del progetto Supabase come <code>STRIPE_WEBHOOK_SECRET</code>.</p>
+        </div>`}
+      ` : pagamentiFase === "vuoto"
+        ? `<p class="muted">Premi «Verifica ora» per sapere come sta la configurazione.</p>`
+        : ""}
+    </div>`;
+  }
+
+  async function verificaPagamenti() {
+    pagamentiFase = "caricamento";
+    pagamentiErrore = null;
+    QF().render();
+    const e = await chiamaA(API_PRO, "diagnostica");
+    if (e.ok && e.diagnostica) {
+      pagamenti = e.diagnostica;
+      pagamentiFase = "pronto";
+    } else {
+      pagamentiFase = "errore";
+      pagamentiErrore = e.errore || "Risposta non leggibile.";
+    }
+    QF().render();
+  }
+
   const TABS = {
     kpi: ["📊 KPI", kpiView],
     richieste: ["📥 Richieste", richiesteView],
@@ -748,6 +883,7 @@ Usa **grassetto** per i numeri che contano."></textarea>
     bacheca: ["💬 Bacheca", bachecaView],
     keyword: ["🎯 Keyword → Guida", keywordView],
     segnalazioni: ["🚩 Segnalazioni", segnalazioniView],
+    pagamenti: ["💳 Pagamenti", pagamentiView],
     chiave: ["🔑 Chiave", chiaveView]
   };
 
@@ -963,6 +1099,8 @@ Usa **grassetto** per i numeri che contano."></textarea>
        successiva parte con quella vecchia, riceve 401 e la
        console butta fuori il titolare un secondo dopo avergli
        fatto cambiare la chiave. */
+    $("#pag-verifica")?.addEventListener("click", verificaPagamenti);
+
     $("#chiave-genera")?.addEventListener("click", () => {
       const g = chiaveGenerata();
       $("#chiave-nuova").value = g;

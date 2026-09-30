@@ -38,7 +38,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-qf-admin",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -58,6 +58,43 @@ const emailValida = (v: string | null) =>
 
 class ErroreCliente extends Error {
   constructor(msg: string, readonly status = 400) { super(msg); }
+}
+
+// ---------------- La chiave di amministrazione ----------------
+//
+// Serve a una sola azione, "diagnostica", e per lo stesso motivo
+// per cui esiste in qf-crm: dice se i pagamenti sono configurati,
+// e quell'informazione non va data a chiunque passi. Impronta e
+// confronto sono identici a quelli delle altre funzioni, letti
+// dalla stessa riga di impostazioni_admin: una chiave sola, che si
+// cambia in un posto solo.
+
+const enc = new TextEncoder();
+
+async function impronta(s: string): Promise<string> {
+  const b = await crypto.subtle.digest("SHA-256", enc.encode(s));
+  return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+// Confronto a tempo costante: un confronto normale rivela la
+// lunghezza del prefisso corretto a chi misura i tempi.
+function uguali(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+async function soloAmministratore(req: Request) {
+  const { data } = await db.from("impostazioni_admin")
+    .select("token_hash").eq("id", 1).maybeSingle();
+  const atteso = data?.token_hash;
+  if (!atteso) throw new ErroreCliente("Nessuna chiave di amministrazione impostata", 503);
+
+  const fornita = req.headers.get("x-qf-admin");
+  if (!fornita || !uguali(await impronta(fornita), atteso)) {
+    throw new ErroreCliente("Chiave di amministrazione errata", 401);
+  }
 }
 
 // ---------------- Stripe, senza SDK ----------------
@@ -448,12 +485,100 @@ async function webhook(req: Request) {
   return rispondi({ ok: true });
 }
 
+// ---------------- Diagnostica dei pagamenti ----------------
+//
+// PERCHE' ESISTE
+//
+// Il resto di questa funzione si prova solo con un intermediario
+// vero che clicca "abbonati": prima di quel clic non c'e' modo di
+// sapere se la chiave e' valida, se i due prezzi esistono davvero
+// nel profilo Stripe collegato, e se la chiave e' di prova o di
+// produzione. Il primo a scoprirlo sarebbe stato un cliente,
+// davanti a una pagina di errore, con la carta in mano.
+//
+// Qui si chiede a Stripe la stessa cosa, ma in sola lettura: due
+// GET su /v1/prices. Non crea clienti, non crea abbonamenti, non
+// scrive niente ne' qui ne' la'. Si puo' rilanciare quante volte
+// si vuole senza lasciare tracce nel profilo Stripe.
+//
+// COSA NON DICE
+//
+// Nessun segreto, in nessuna forma: ne' la chiave, ne' un suo
+// prefisso, ne' la sua lunghezza. Di ogni segreto dice una cosa
+// sola, se c'e' o se manca, che e' esattamente quello che serve
+// sapere per capire cosa configurare ancora.
+
+async function diagnostica(_d: Record<string, unknown>, req: Request) {
+  await soloAmministratore(req);
+
+  const haChiave = !!Deno.env.get("STRIPE_SECRET_KEY");
+  const haWebhook = !!Deno.env.get("STRIPE_WEBHOOK_SECRET");
+
+  const esito: Record<string, unknown> = {
+    chiaveSegreta: haChiave ? "presente" : "MANCANTE",
+    segretoWebhook: haWebhook ? "presente" : "MANCANTE",
+    giorniProva: GIORNI_PROVA,
+  };
+
+  if (!haChiave) {
+    esito.prezzi = "non verificabili senza STRIPE_SECRET_KEY";
+    return { diagnostica: esito };
+  }
+
+  // Un prezzo per volta, cosi' un identificativo sbagliato non
+  // nasconde l'esito dell'altro.
+  const prezzi: Record<string, unknown> = {};
+  let modalita: string | null = null;
+
+  for (const [piano, id] of Object.entries(PREZZI)) {
+    try {
+      const p = await stripe("prices/" + encodeURIComponent(id));
+      prezzi[piano] = {
+        id,
+        esiste: true,
+        attivo: p?.active === true,
+        // In centesimi come li tiene Stripe: qui non si arrotonda
+        // niente, si riporta quello che c'e' di la'.
+        importo: p?.unit_amount ?? null,
+        valuta: p?.currency ?? null,
+        ricorrenza: p?.recurring?.interval ?? null,
+      };
+      if (modalita === null && typeof p?.livemode === "boolean") {
+        modalita = p.livemode ? "produzione" : "prova";
+      }
+    } catch (e) {
+      prezzi[piano] = {
+        id,
+        esiste: false,
+        motivo: e instanceof Error ? e.message : "errore sconosciuto",
+      };
+    }
+  }
+
+  esito.prezzi = prezzi;
+  esito.modalita = modalita ?? "non determinata";
+
+  const mancanti: string[] = [];
+  if (!haWebhook) mancanti.push("STRIPE_WEBHOOK_SECRET");
+  for (const [piano, v] of Object.entries(prezzi)) {
+    const r = v as Record<string, unknown>;
+    if (!r.esiste) mancanti.push("il prezzo del piano " + piano);
+    else if (r.attivo === false) mancanti.push("il prezzo del piano " + piano + " e' archiviato");
+  }
+
+  esito.pronto = mancanti.length === 0;
+  if (mancanti.length) esito.manca = mancanti;
+
+  return { diagnostica: esito };
+}
+
 // ---------------- Instradamento ----------------
 
 const AZIONI: Record<string, (d: Record<string, unknown>, req: Request) => Promise<unknown>> = {
   registrati: (d) => registrati(d),
   checkout,
   portale,
+  diagnostica,
 };
 
 Deno.serve(async (req: Request) => {

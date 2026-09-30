@@ -498,6 +498,32 @@ Finché i segreti mancano **il sito non si rompe**: la funzione risponde `503` d
 manca, il bottone del piano torna com'era e compare un avviso. Tutto il resto — registrazione,
 profilo, QuotaPass, bacheca — continua a funzionare.
 
+### Come si controlla che sia davvero configurato
+
+Console admin → scheda **💳 Pagamenti** → «Verifica ora». Interroga Stripe in **sola lettura** (due
+`GET /v1/prices`): non crea clienti, non avvia abbonamenti, non lascia tracce, e si può ripremere
+quante volte si vuole. Dice quattro cose:
+
+- se i due segreti ci sono (solo *se ci sono* — nessun segreto viene mai mostrato, nemmeno un
+  prefisso);
+- se i due prezzi esistono davvero nel profilo Stripe collegato, con importo, valuta e ricorrenza
+  letti da Stripe;
+- se la chiave è di **prova** o di **produzione**, che è la differenza fra un addebito vero e uno
+  finto;
+- l'elenco preciso di quello che manca ancora.
+
+Serve perché prima esisteva un solo modo di scoprire una chiave sbagliata o un prezzo archiviato: un
+intermediario davanti a una pagina di errore, con la carta in mano.
+
+Dietro c'è l'azione `diagnostica` di `qf-pro`, protetta dalla chiave di amministrazione come il resto
+della console (intestazione `x-qf-admin`, impronta SHA-256 confrontata a tempo costante).
+
+⚠️ **Il segreto del webhook è quello che si dimentica.** Senza `STRIPE_WEBHOOK_SECRET` il guasto non
+si vede: il pagamento riesce, Stripe prova a comunicarlo e la piattaforma **rifiuta l'avviso** come
+non firmato. Il cliente ha pagato e non risulta abbonato. Il segreto esiste solo *dopo* aver creato
+l'endpoint qui sopra, quindi l'ordine è: prima l'endpoint su Stripe, poi copiare il `whsec_…` fra i
+segreti Supabase.
+
 **La prova di 30 giorni non è un prodotto da 0 €.** È `trial_period_days` sul prezzo vero
 (`QF_STRIPE_GIORNI_PROVA`, default 30) con `payment_method_collection: always`: la carta si
 raccoglie subito, per trenta giorni non viene addebitato nulla, e alla scadenza Stripe addebita da
