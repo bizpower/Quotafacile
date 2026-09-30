@@ -998,6 +998,14 @@ a.chip { display: inline-block; text-decoration: none; }
   margin: .4rem 0; padding: .45rem .6rem; border-radius: 8px;
   font-size: .8rem; background: #FDECEC; border: 1px solid #E8C4C0; color: #8A2B21;
 }
+/* Una nota non e' un avviso: dice qualcosa da sapere, non
+   qualcosa da guardare prima di premere. Con lo stesso rosso per
+   entrambi si impara a non leggere nessuno dei due. */
+.qa-nota-riga {
+  margin: .35rem 0; padding: .4rem .55rem; border-radius: 8px;
+  font-size: .78rem; line-height: 1.45;
+  background: var(--card); border: 1px solid var(--line); color: var(--ink-soft);
+}
 .qa-campi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
 .qa-campo { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
 .qa-campo-largo { grid-column: 1 / -1; }
