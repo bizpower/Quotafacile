@@ -290,6 +290,79 @@ const STRUMENTI = [
     },
   },
   {
+    name: "aggiorna_contatto",
+    description:
+      "Cambia lo stato di un contatto in archivio, a chi e' assegnato, o le sue note. " +
+      "Non esegue: prepara una proposta da confermare.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        contatto: { type: "STRING", description: "Nome o email del contatto. Vuoto se la frase dice «lui», «questo», «l'ultimo»." },
+        stato: {
+          type: "STRING",
+          enum: ["nuovo", "contattato", "in_trattativa", "cliente", "scartato"],
+          description: "Il nuovo stato, se la frase lo dice.",
+        },
+        assegnatario: { type: "STRING", description: "Nome del collaboratore a cui assegnarlo." },
+        note: { type: "STRING", description: "Note da scrivere sulla scheda." },
+      },
+    },
+  },
+  {
+    name: "opposizione_contatto",
+    description:
+      "Registra che un'azienda si e' opposta a ricevere comunicazioni (art. 21 GDPR), " +
+      "oppure toglie l'opposizione. Da quel momento il server rifiuta l'invio. " +
+      "Non esegue: prepara una proposta da confermare.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        contatto: { type: "STRING", description: "Nome o email del contatto." },
+        attivo: { type: "BOOLEAN", description: "true per registrare l'opposizione, false per toglierla." },
+        motivo: { type: "STRING", description: "Come si e' opposto, se la frase lo dice: telefonata, email, PEC." },
+      },
+      required: ["contatto"],
+    },
+  },
+  {
+    name: "elimina_contatto",
+    description:
+      "Cancella un contatto dall'archivio. Non esegue: prepara una proposta da confermare. " +
+      "Se l'azienda ha solo chiesto di non essere contattata usa opposizione_contatto, " +
+      "che e' la cosa giusta: cancellarla la farebbe ritrovare alla prossima ricerca.",
+    parameters: {
+      type: "OBJECT",
+      properties: { contatto: { type: "STRING", description: "Nome o email del contatto." } },
+      required: ["contatto"],
+    },
+  },
+  {
+    name: "collaboratore",
+    description:
+      "Gestisce i collaboratori della societa': aggiungerne uno, disattivarlo o " +
+      "riattivarlo, dargli un accesso, rigenerare la sua password, togliergli " +
+      "l'accesso. Non esegue: prepara una proposta da confermare.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        azione: {
+          type: "STRING",
+          enum: ["aggiungi", "attiva", "disattiva", "crea-accesso", "rigenera-password", "revoca-accesso"],
+        },
+        chi: { type: "STRING", description: "Nome o email del collaboratore. Non serve per «aggiungi»." },
+        nome: { type: "STRING", description: "Solo per «aggiungi»: nome e cognome." },
+        email: { type: "STRING", description: "Solo per «aggiungi»." },
+        ruolo: {
+          type: "STRING",
+          enum: ["titolare", "direttore", "account", "commerciale", "consulente"],
+          description: "Solo per «aggiungi». Predefinito commerciale.",
+        },
+        telefono: { type: "STRING", description: "Solo per «aggiungi»." },
+      },
+      required: ["azione"],
+    },
+  },
+  {
     name: "salva_contatto",
     description:
       "Registra un nuovo contatto in archivio. Non esegue: prepara una proposta da confermare.",
@@ -359,11 +432,14 @@ Regole che non puoi violare:
    email dettati a voce ("mario chiocciola rossi punto it" ->
    "mario@rossi.it").
 
-4. Se la frase chiede una cosa che nessuno strumento sa fare
-   (inviare un'email, cancellare, modificare un contatto), dillo
-   in una riga invece di chiamare uno strumento a caso.
+4. NON INVII MAI EMAIL, e non esiste uno strumento per farlo.
+   Puoi preparare e correggere, ma la partenza e' un gesto di una
+   persona. Se te lo chiedono, dillo in una riga.
 
-5. Non salutare, non ringraziare, non commentare. Una riga.`;
+5. Se la frase chiede un'altra cosa che nessuno strumento sa fare,
+   dillo in una riga invece di chiamare uno strumento a caso.
+
+6. Non salutare, non ringraziare, non commentare. Una riga.`;
 
 // Che cosa il modello ha deciso di chiamare. Torna il nome dello
 // strumento e i suoi argomenti, oppure il testo se ha preferito
@@ -1006,6 +1082,351 @@ async function propostaAggiungi(a: Record<string, unknown>, frase: string, ultim
   };
 }
 
+// ---------------- Le mansioni del CRM ----------------
+// Le stesse che si fanno a mano nelle schermate. Le scritture non
+// le fa questa funzione: le fanno qf-crm e qf-lead e qf-mail, le
+// stesse che rispondono ai bottoni, con le stesse convalide. Qui
+// si propone e si instrada.
+//
+// Una cosa che NON c'e', e la sua assenza e' una scelta: inviare
+// email. Si puo' preparare, si puo' correggere, ma la partenza
+// resta un gesto di una persona davanti a quello che sta per
+// uscire a nome della societa'.
+
+const URL_CRM = URL_SUPABASE.replace(/\/+$/, "") + "/functions/v1/qf-crm";
+const URL_MAIL = URL_SUPABASE.replace(/\/+$/, "") + "/functions/v1/qf-mail";
+
+async function chiamaAltrove(url: string, azione: string, dati: Record<string, unknown>, chiave: string) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-qf-admin": chiave },
+    body: JSON.stringify({ azione, dati }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const j = await r.json().catch(() => null);
+  if (!j?.ok) throw new Error(j?.errore || "L'operazione non e' riuscita.");
+  return j as Record<string, unknown>;
+}
+
+const STATI_LEAD: Record<string, string> = {
+  nuovo: "Nuovo", contattato: "Contattato", in_trattativa: "In trattativa",
+  cliente: "Cliente", scartato: "Scartato",
+};
+
+const RUOLI = ["titolare", "direttore", "account", "commerciale", "consulente"];
+
+async function cercaCollaboratori(q: string) {
+  const p = perFiltro(q);
+  if (p.length < 2) return [];
+  const { data } = await db.from("crm_collaboratori")
+    .select("id, nome, email, ruolo, attivo, utente_id")
+    .or(`nome.ilike.%${p}%,email.ilike.%${p}%`)
+    .order("attivo", { ascending: false }).limit(6);
+  return data ?? [];
+}
+
+// Il contatto di cui si sta parlando: quello nominato, oppure
+// l'ultimo toccato se la frase dice "lui".
+async function risolviContatto(detto: string | null, ultimo: string | null) {
+  if (detto) return await cercaLead(detto);
+  if (!ultimo) return [];
+  const { data } = await db.from("crm_lead")
+    .select("id, nome, email, citta").eq("id", ultimo).limit(1);
+  return data ?? [];
+}
+
+const elencoLead = (lead: Record<string, any>[]) => lead.map((l) => ({
+  id: l.id,
+  nome: l.nome + (l.citta ? " — " + l.citta : "") + (l.email ? " · " + l.email : ""),
+}));
+
+async function propostaAggiornaContatto(a: Record<string, unknown>, frase: string, ultimo: string | null) {
+  const lead = await risolviContatto(testo(a.contatto, 200), ultimo);
+  if (!lead.length) {
+    return { messaggio: "Non ho capito di quale contatto parli. Dimmi il nome o l'email." };
+  }
+
+  const stato = STATI_LEAD[String(a.stato ?? "")] ? String(a.stato) : "";
+  const note = testo(a.note, 2000);
+  const cercato = testo(a.assegnatario, 200);
+
+  // Chi lavora qui dentro: l'elenco serve alla tendina, e senza
+  // collaboratori l'assegnazione semplicemente non si propone.
+  const { data: squadra } = await db.from("crm_collaboratori")
+    .select("id, nome, ruolo").eq("attivo", true).order("nome");
+  const attivi = squadra ?? [];
+  const scelto = cercato
+    ? attivi.find((c: Record<string, any>) =>
+        String(c.nome).toLowerCase().includes(cercato.toLowerCase()))
+    : null;
+
+  if (!stato && !note && !cercato) {
+    return { messaggio: "Dimmi cosa cambiare: lo stato, a chi assegnarlo, o le note." };
+  }
+  if (cercato && !attivi.length) {
+    return { messaggio: "Non c'è ancora nessun collaboratore attivo a cui assegnarlo." };
+  }
+  if (cercato && !scelto) {
+    return {
+      messaggio: `Non trovo nessun collaboratore che somigli a «${cercato}».`,
+      risultato: attivi.length
+        ? { titolo: "Chi c'è", righe: attivi.map((c: Record<string, any>) => ({ testo: c.nome, sotto: c.ruolo })), totale: attivi.length }
+        : null,
+    };
+  }
+
+  const campi: Record<string, unknown> = { lead_id: lead[0].id };
+  const etichette: Record<string, string> = { lead_id: "Contatto" };
+  const scelte: Record<string, unknown> = { lead_id: elencoLead(lead) };
+  const larghi = ["lead_id"];
+
+  if (stato) {
+    campi.stato = stato;
+    etichette.stato = "Stato";
+    scelte.stato = Object.entries(STATI_LEAD).map(([id, nome]) => ({ id, nome }));
+  }
+  if (cercato && scelto) {
+    campi.assegnato_a = scelto.id;
+    etichette.assegnato_a = "Assegnato a";
+    scelte.assegnato_a = attivi.map((c: Record<string, any>) => ({ id: c.id, nome: c.nome }));
+    larghi.push("assegnato_a");
+  }
+  if (note) { campi.note = note; etichette.note = "Note"; larghi.push("note"); }
+
+  return {
+    proposta: {
+      azione: "aggiorna_contatto",
+      titolo: `Aggiorno la scheda di ${lead[0].nome}?`,
+      campi, etichette, scelte, larghi, frase, avvisi: [],
+    },
+  };
+}
+
+async function propostaOpposizione(a: Record<string, unknown>, frase: string, ultimo: string | null) {
+  const lead = await risolviContatto(testo(a.contatto, 200), ultimo);
+  if (!lead.length) return { messaggio: "Non trovo quel contatto in archivio." };
+  const attiva = a.attivo !== false;
+
+  return {
+    proposta: {
+      azione: "opposizione_contatto",
+      titolo: attiva
+        ? `Registro che ${lead[0].nome} si è opposto a ricevere comunicazioni?`
+        : `Tolgo l'opposizione a ${lead[0].nome}?`,
+      campi: {
+        lead_id: lead[0].id,
+        attivo: attiva ? "si" : "no",
+        motivo: testo(a.motivo, 300) ?? "",
+      },
+      etichette: { lead_id: "Contatto", attivo: "Opposizione", motivo: "Come si è opposto" },
+      scelte: {
+        lead_id: elencoLead(lead),
+        attivo: [{ id: "si", nome: "registrata" }, { id: "no", nome: "tolta" }],
+      },
+      larghi: ["lead_id", "motivo"],
+      frase,
+      avvisi: [],
+      note: attiva
+        ? ["Da questo momento il server rifiuta l'invio verso questo indirizzo: non è una schermata che lo nasconde. È l'art. 21 del GDPR."]
+        : ["L'opposizione si toglie solo se è stata l'azienda a chiederlo."],
+    },
+  };
+}
+
+async function propostaEliminaContatto(a: Record<string, unknown>, frase: string, ultimo: string | null) {
+  const lead = await risolviContatto(testo(a.contatto, 200), ultimo);
+  if (!lead.length) return { messaggio: "Non trovo quel contatto in archivio." };
+
+  return {
+    proposta: {
+      azione: "elimina_contatto",
+      titolo: `Cancello ${lead[0].nome} dall'archivio?`,
+      campi: { lead_id: lead[0].id },
+      etichette: { lead_id: "Contatto" },
+      scelte: { lead_id: elencoLead(lead) },
+      larghi: ["lead_id"],
+      frase,
+      avvisi: ["Si cancella la scheda e tutto quello che ci sta attaccato. Non si torna indietro."],
+      note: ["Se l'azienda ha solo chiesto di non essere contattata, registra l'opposizione invece di cancellarla: cancellata, la prossima ricerca la ritrova come nuova."],
+    },
+  };
+}
+
+const VERBI_COLLAB: Record<string, string> = {
+  aggiungi: "Aggiungo",
+  attiva: "Riattivo",
+  disattiva: "Disattivo",
+  "crea-accesso": "Creo l'accesso per",
+  "rigenera-password": "Rigenero la password di",
+  "revoca-accesso": "Tolgo l'accesso a",
+};
+
+async function propostaCollaboratore(a: Record<string, unknown>, frase: string) {
+  const azione = String(a.azione ?? "");
+  if (!VERBI_COLLAB[azione]) return { messaggio: "Non ho capito cosa fare con il collaboratore." };
+
+  if (azione === "aggiungi") {
+    const nome = testo(a.nome, 200);
+    const email = testo(a.email, 200);
+    if (!nome) return { messaggio: "Per aggiungere un collaboratore mi serve nome e cognome." };
+    const avvisi: string[] = [];
+    if (email && !emailValida(email)) {
+      avvisi.push(`«${email}» non sembra un indirizzo valido.`);
+    } else if (!email) {
+      avvisi.push("Senza email non si può salvare: serve anche per dargli un accesso.");
+    }
+    const ruolo = RUOLI.includes(String(a.ruolo)) ? String(a.ruolo) : "commerciale";
+    return {
+      proposta: {
+        azione: "collaboratore",
+        titolo: `Aggiungo ${nome} alla squadra?`,
+        campi: {
+          operazione: "aggiungi", nome, email: email ?? "",
+          ruolo, telefono: testo(a.telefono, 60) ?? "",
+        },
+        etichette: { operazione: "Operazione", nome: "Nome", email: "Email", ruolo: "Ruolo", telefono: "Telefono" },
+        scelte: {
+          operazione: [{ id: "aggiungi", nome: "aggiungi alla squadra" }],
+          ruolo: RUOLI.map((r) => ({ id: r, nome: r })),
+        },
+        larghi: ["nome", "email"],
+        frase, avvisi,
+        note: ["Nasce attivo e senza accesso. L'accesso si dà dopo, quando serve."],
+      },
+    };
+  }
+
+  const chi = testo(a.chi, 200);
+  if (!chi) return { messaggio: "Di quale collaboratore parli?" };
+  const trovati = await cercaCollaboratori(chi);
+  if (!trovati.length) return { messaggio: `Non trovo nessun collaboratore che somigli a «${chi}».` };
+
+  const c = trovati[0] as Record<string, any>;
+  const avvisi: string[] = [];
+  const note: string[] = [];
+
+  if (azione === "crea-accesso" && c.utente_id) avvisi.push(`${c.nome} ha già un accesso.`);
+  if (azione === "crea-accesso" && !c.attivo) avvisi.push(`${c.nome} è disattivato: va riattivato prima.`);
+  if ((azione === "rigenera-password" || azione === "revoca-accesso") && !c.utente_id) {
+    avvisi.push(`${c.nome} non ha un accesso.`);
+  }
+  if (azione === "disattiva") {
+    note.push("Disattivare chiude anche l'accesso: la persona esce, la sua produzione resta.");
+  }
+  if (azione === "crea-accesso" || azione === "rigenera-password") {
+    note.push("La password si legge una volta sola, subito dopo. Nel database resta solo cifrata e non è recuperabile.");
+  }
+  if (azione === "revoca-accesso") {
+    note.push("Si cancella l'utenza, non la scheda: la persona esce, la sua storia resta.");
+  }
+
+  return {
+    proposta: {
+      azione: "collaboratore",
+      titolo: `${VERBI_COLLAB[azione]} ${c.nome}?`,
+      campi: { operazione: azione, collaboratore_id: c.id },
+      etichette: { operazione: "Operazione", collaboratore_id: "Collaboratore" },
+      scelte: {
+        operazione: [{ id: azione, nome: VERBI_COLLAB[azione].toLowerCase() }],
+        collaboratore_id: trovati.map((x: Record<string, any>) => ({
+          id: x.id, nome: x.nome + " · " + x.ruolo + (x.attivo ? "" : " · disattivato"),
+        })),
+      },
+      larghi: ["collaboratore_id"],
+      frase, avvisi, note,
+    },
+  };
+}
+
+// ---------------- Le esecuzioni ----------------
+
+async function eseguiAggiornaContatto(c: Record<string, unknown>, chiave: string) {
+  const id = testo(c.lead_id, 40);
+  if (!id) throw new Error("Manca il contatto");
+  const dati: Record<string, unknown> = { id };
+  if (testo(c.stato, 40)) dati.stato = testo(c.stato, 40);
+  if (testo(c.assegnato_a, 40)) dati.assegnato_a = testo(c.assegnato_a, 40);
+  if (c.note !== undefined) dati.note = testo(c.note, 2000);
+  await chiamaAltrove(URL_LEAD, "aggiorna", dati, chiave);
+
+  const { data } = await db.from("crm_lead").select("nome").eq("id", id).maybeSingle();
+  return { messaggio: `Scheda di ${data?.nome ?? "questo contatto"} aggiornata.`, leadId: id };
+}
+
+async function eseguiOpposizione(c: Record<string, unknown>, chiave: string) {
+  const id = testo(c.lead_id, 40);
+  if (!id) throw new Error("Manca il contatto");
+  const attivo = String(c.attivo) === "si";
+  await chiamaAltrove(URL_MAIL, "no-contatto", {
+    id, attivo, motivo: testo(c.motivo, 300),
+  }, chiave);
+
+  const { data } = await db.from("crm_lead").select("nome").eq("id", id).maybeSingle();
+  return {
+    messaggio: attivo
+      ? `Opposizione registrata per ${data?.nome ?? "questo contatto"}: da adesso l'invio è bloccato dal server.`
+      : `Opposizione tolta a ${data?.nome ?? "questo contatto"}.`,
+    leadId: id,
+  };
+}
+
+async function eseguiEliminaContatto(c: Record<string, unknown>, chiave: string) {
+  const id = testo(c.lead_id, 40);
+  if (!id) throw new Error("Manca il contatto");
+  const { data } = await db.from("crm_lead").select("nome").eq("id", id).maybeSingle();
+  await chiamaAltrove(URL_LEAD, "elimina", { id }, chiave);
+  return { messaggio: `${data?.nome ?? "Il contatto"} è stato cancellato dall'archivio.` };
+}
+
+async function eseguiCollaboratore(c: Record<string, unknown>, chiave: string) {
+  const operazione = String(c.operazione ?? "");
+
+  if (operazione === "aggiungi") {
+    const e = await chiamaAltrove(URL_CRM, "salva-collaboratore", {
+      nome: testo(c.nome, 200), email: testo(c.email, 200),
+      ruolo: RUOLI.includes(String(c.ruolo)) ? String(c.ruolo) : "commerciale",
+      telefono: testo(c.telefono, 60),
+    }, chiave);
+    return {
+      messaggio: `${testo(c.nome, 200)} è nella squadra.`,
+      vai: "#/admin/crm/collaboratori",
+      collaboratoreId: e.id,
+    };
+  }
+
+  const id = testo(c.collaboratore_id, 40);
+  if (!id) throw new Error("Manca il collaboratore");
+  const { data: chi } = await db.from("crm_collaboratori").select("nome").eq("id", id).maybeSingle();
+  const nome = chi?.nome ?? "Il collaboratore";
+
+  if (operazione === "attiva" || operazione === "disattiva") {
+    await chiamaAltrove(URL_CRM, "attiva-collaboratore", { id, attivo: operazione === "attiva" }, chiave);
+    return {
+      messaggio: operazione === "attiva" ? `${nome} è di nuovo attivo.` : `${nome} è stato disattivato, accesso compreso.`,
+      vai: "#/admin/crm/collaboratori",
+    };
+  }
+
+  if (operazione === "revoca-accesso") {
+    await chiamaAltrove(URL_CRM, "revoca-accesso", { id }, chiave);
+    return { messaggio: `Accesso di ${nome} revocato. La scheda resta.`, vai: "#/admin/crm/collaboratori" };
+  }
+
+  /* crea-accesso e rigenera-password restituiscono una password
+     leggibile una volta sola. Non la si scrive qui dentro: la
+     conversazione resta a schermo e verrebbe riletta da chiunque
+     passi. Si manda alla schermata dei collaboratori, che e' fatta
+     per mostrarla una volta e poi chiuderla. */
+  const azione = operazione === "crea-accesso" ? "crea-accesso" : "rigenera-password";
+  await chiamaAltrove(URL_CRM, azione, { id }, chiave);
+  return {
+    messaggio: azione === "crea-accesso"
+      ? `Accesso creato per ${nome}. La password si legge una volta sola: te la mostro nella scheda dei collaboratori.`
+      : `Password di ${nome} rigenerata. Te la mostro nella scheda dei collaboratori.`,
+    vai: "#/admin/crm/collaboratori",
+  };
+}
+
 // ---------------- interpreta ----------------
 
 async function interpreta(d: Record<string, unknown>, chiave: string) {
@@ -1023,6 +1444,10 @@ async function interpreta(d: Record<string, unknown>, chiave: string) {
     case "comuni":          return await strumentoComuni(m.argomenti);
     case "cerca_lead":      return await strumentoCercaLead(m.argomenti, chiave);
     case "cerca_e_salva":   return await propostaCercaSalva(m.argomenti, frase);
+    case "aggiorna_contatto":    return await propostaAggiornaContatto(m.argomenti, frase, ultimo);
+    case "opposizione_contatto": return await propostaOpposizione(m.argomenti, frase, ultimo);
+    case "elimina_contatto":     return await propostaEliminaContatto(m.argomenti, frase, ultimo);
+    case "collaboratore":        return await propostaCollaboratore(m.argomenti, frase);
     case "salva_contatto":  return await propostaContatto(m.argomenti, frase);
     case "crea_lista":      return await propostaLista(m.argomenti, frase);
     case "aggiungi_a_lista": return await propostaAggiungi(m.argomenti, frase, ultimo);
@@ -1038,7 +1463,9 @@ async function interpreta(d: Record<string, unknown>, chiave: string) {
       "dirti a che punto siamo, elencare liste campagne modelli e collaboratori, " +
       "cercare un contatto in archivio, dirti i comuni di una provincia, cercare " +
       "attività su Google e salvarle in una lista, salvare un contatto, creare una " +
-      "lista o metterci dentro qualcuno.",
+      "lista o metterci dentro qualcuno, cambiare stato o assegnatario di un " +
+      "contatto, registrare un'opposizione, cancellare un contatto, e gestire i " +
+      "collaboratori con i loro accessi. Inviare email no: quelle le mandi tu.",
   };
 }
 
@@ -1115,6 +1542,10 @@ async function esegui(d: Record<string, unknown>, chiave: string) {
   if (azione === "crea_lista") return await creaLista(campi);
   if (azione === "aggiungi_lista") return await aggiungiALista(campi);
   if (azione === "cerca_e_salva") return await cercaESalva(campi, chiave);
+  if (azione === "aggiorna_contatto") return await eseguiAggiornaContatto(campi, chiave);
+  if (azione === "opposizione_contatto") return await eseguiOpposizione(campi, chiave);
+  if (azione === "elimina_contatto") return await eseguiEliminaContatto(campi, chiave);
+  if (azione === "collaboratore") return await eseguiCollaboratore(campi, chiave);
   throw new Error("Azione non riconosciuta");
 }
 
