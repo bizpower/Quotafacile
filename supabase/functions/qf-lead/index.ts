@@ -167,6 +167,15 @@ async function coordinate(indirizzo: string, provincia: string | null) {
     throw new ErroreCliente("Indirizzo non trovato: prova con una zona più ampia o controlla la scrittura.");
   }
   if (d.status !== "OK") {
+    /* Nel registro, non solo a schermo.
+       Un rifiuto di Google è trattato come errore dell'utente —
+       perché a lui va detto — e gli errori dell'utente non
+       venivano registrati. Risultato: l'unica copia della
+       diagnosi era la schermata di chi la stava leggendo, e per
+       capire cosa fosse successo bisognava chiederglielo.
+       Si registra lo stato e il messaggio, mai l'indirizzo
+       chiamato: quello porta la chiave dentro la query. */
+    console.error("[qf-lead] geocoding rifiutato:", d.status, "-", d.error_message || "(nessun messaggio)");
     throw new ErroreCliente("Geocoding non riuscito: " + (d.error_message || d.status));
   }
   const primo = d.results[0];
@@ -211,6 +220,14 @@ async function paginaPlaces(query: string, centro: { lat: number; lng: number },
   });
   const d = await r.json();
   if (!r.ok) {
+    /* Come per il geocoding: il rifiuto va nel registro oltre che
+       a schermo. Qui la chiave viaggia in un'intestazione, non
+       nell'indirizzo, ma si registrano comunque solo stato,
+       codice e messaggio — niente corpo intero, che contiene la
+       richiesta. */
+    console.error("[qf-lead] places rifiutato:", r.status,
+      "-", d?.error?.status || "(nessuno stato)",
+      "-", d?.error?.message || "(nessun messaggio)");
     throw new ErroreCliente("Places ha rifiutato la richiesta: " +
       (d?.error?.message || r.status) +
       ". Controlla che «Places API (New)» sia abilitata e che la chiave non abbia restrizioni che escludono questo server.");
@@ -666,7 +683,18 @@ Deno.serve(async (req: Request) => {
     if (!azione) return rispondi({ ok: false, errore: "Azione non riconosciuta" }, 400);
     return rispondi({ ok: true, ...(await azione(body.dati ?? {}) as object) });
   } catch (e) {
-    if (e instanceof ErroreCliente) return rispondi({ ok: false, errore: e.message }, e.status);
+    if (e instanceof ErroreCliente) {
+      /* Anche i rifiuti "di chi chiede" finiscono nel registro.
+         Prima no: erano considerati normali — indirizzo scritto
+         male, nessuna categoria scelta — e in effetti quasi
+         sempre lo sono. Ma dentro la stessa categoria c'era
+         anche "Google ha rifiutato la chiave", che normale non
+         è, e l'unica copia di quel messaggio era la schermata di
+         chi lo stava leggendo. Meglio una riga in più nel
+         registro che una diagnosi che esiste solo a voce. */
+      console.warn("[qf-lead] rifiutata:", e.status, "-", e.message);
+      return rispondi({ ok: false, errore: e.message }, e.status);
+    }
     console.error("[qf-lead]", e);
     return rispondi({ ok: false, errore: e instanceof Error ? e.message : "Errore imprevisto" }, 500);
   }

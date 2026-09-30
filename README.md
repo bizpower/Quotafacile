@@ -454,6 +454,78 @@ restituire un elenco vuoto, che sembrerebbe «nessun risultato».
 La chiave sta **solo sul server**. Una chiave Places in un file JavaScript è pubblica per
 definizione, e la si ritrova consumata da altri sul conto di chi l'ha esposta.
 
+## 💳 Abbonamenti degli intermediari — Stripe
+
+Tutto passa dalla Edge Function **`qf-pro`**: registrazione dell'intermediario, apertura del
+pagamento, portale di gestione e webhook. Stanno nello stesso file perché separarli vorrebbe dire
+tenere allineati tre posti.
+
+**Prodotti sul conto live** (già creati):
+
+| Piano | Prodotto | Prezzo | Price ID |
+|---|---|---|---|
+| Base | `prod_VJxBgVIjuofBVc` | 8,99 €/mese, IVA esclusa | `price_1UJJGvBTHplTkScIbxJ163U1` |
+| Pro | `prod_VJxPtBQtGk3p7g` | 19,99 €/mese, IVA esclusa | `price_1UJJUFBTHplTkScIwyzj1aZB` |
+
+I price ID stanno nel codice perché non sono segreti — compaiono in qualunque integrazione lato
+browser — e lì si leggono insieme a chi li usa. `QF_STRIPE_PREZZO_BASE` e `QF_STRIPE_PREZZO_PRO`
+li scavalcano, per cambiarli senza ripubblicare la funzione.
+
+**Per attivare i pagamenti** servono due segreti nel progetto Supabase:
+
+| Segreto | Dove si prende |
+|---|---|
+| `STRIPE_SECRET_KEY` | Stripe → Sviluppatori → Chiavi API → chiave segreta (`sk_live_…`) |
+| `STRIPE_WEBHOOK_SECRET` | lo dà Stripe **quando crei l'endpoint** qui sotto (`whsec_…`) |
+
+L'endpoint da registrare su Stripe (Sviluppatori → Webhook → Aggiungi endpoint):
+
+```
+https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-pro/webhook
+```
+
+Eventi da selezionare — sono i soli che la funzione lavora, gli altri verrebbero accettati e
+ignorati:
+
+```
+checkout.session.completed
+customer.subscription.created
+customer.subscription.updated
+customer.subscription.deleted
+```
+
+Finché i segreti mancano **il sito non si rompe**: la funzione risponde `503` dicendo quale dei due
+manca, il bottone del piano torna com'era e compare un avviso. Tutto il resto — registrazione,
+profilo, QuotaPass, bacheca — continua a funzionare.
+
+**La prova di 30 giorni non è un prodotto da 0 €.** È `trial_period_days` sul prezzo vero
+(`QF_STRIPE_GIORNI_PROVA`, default 30) con `payment_method_collection: always`: la carta si
+raccoglie subito, per trenta giorni non viene addebitato nulla, e alla scadenza Stripe addebita da
+solo. Un prodotto a zero euro invece non si trasforma in un abbonamento pagante — al trentunesimo
+giorno qualcuno dovrebbe accorgersene e fare qualcosa a mano, e quel qualcuno prima o poi non se ne
+accorge.
+
+**L'IVA è calcolata, non incorporata.** Stripe Tax è attivo sul conto, sede Milano, e la pagina dei
+piani dichiara «IVA esclusa»: il 22% si somma sopra 8,99 e 19,99. In fase di pagamento si raccoglie
+anche la partita IVA (`tax_id_collection`).
+
+**Il webhook verifica la firma a mano**, perché è poco più di un HMAC-SHA256 e perché il corpo va
+letto grezzo: qualunque passaggio che lo riscriva — anche solo un `JSON.parse` seguito da
+`stringify` — cambia i byte e fa fallire il confronto. Oltre cinque minuti l'evento si rifiuta, così
+uno copiato da un log non si può rigiocare. Senza questa verifica quell'indirizzo sarebbe una porta
+aperta: chiunque lo conosca potrebbe mandare «subscription.updated, stato active» e regalarsi un
+abbonamento.
+
+**«Abbonato» lo scrive solo il webhook**, con il ruolo di servizio. `pro_abbonamenti` non è
+leggibile da fuori e non deve diventarlo — contiene identificativi Stripe e date di pagamento — ma
+la vetrina è pubblica e deve poter ordinare i profili. Quindi lo stato si riassume in due colonne di
+`pro_profili`, `in_evidenza` e `piano`, e non esce nient'altro. Non c'è nessun percorso in cui il
+browser possa dichiararsi abbonato.
+
+**I doppioni li ferma `pro_eventi_stripe`**, che è solo una chiave primaria con l'id dell'evento.
+Con un dettaglio facile da sbagliare: se la lavorazione fallisce la riga va tolta, altrimenti Stripe
+riprova, noi lo scartiamo come già visto, e quell'evento è perso per sempre.
+
 ## 🪪 Intermediari in vetrina
 
 `assets/js/intermediari.js` è la fonte di verità delle QuotaPass pubblicate. Viene **risincronizzato

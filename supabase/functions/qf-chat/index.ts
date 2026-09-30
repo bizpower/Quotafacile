@@ -6,19 +6,26 @@
 // (Gemini), ma il modo in cui è messo in mezzo conta più del
 // modello stesso.
 //
-// IL MODELLO PROPONE, IL SERVER DECIDE
+// IL MODELLO SCEGLIE LO STRUMENTO, IL SERVER LO USA
 // Al modello arriva una cosa sola: la frase che l'operatore ha
 // scritto o dettato. Non l'archivio, non i lead, non le liste,
-// non le email dei clienti. Il suo compito è tradurre quella
-// frase in un comando strutturato e nient'altro.
+// non le email dei clienti. Il suo compito è scegliere uno
+// strumento fra quelli dichiarati e riempirne gli argomenti.
 //
-// Il comando torna qui e viene ricontrollato da capo: azione
-// nell'elenco chiuso, campi ripuliti, email validata, lunghezze
-// tagliate. Poi è questa funzione a scrivere sul database, con
-// il ruolo di servizio, e a comporre la risposta che l'operatore
-// legge — dal risultato vero della scrittura, non da ciò che il
-// modello dice di aver fatto. Un modello che allucina "ho
-// salvato il lead" qui non riesce a renderlo vero.
+// La scelta torna qui e viene ricontrollata da capo: strumento
+// nell'elenco dichiarato — un nome inventato non esiste — campi
+// ripuliti, email validata, lunghezze tagliate. Poi è questa
+// funzione a leggere e a scrivere sul database, con il ruolo di
+// servizio, e a comporre la risposta che l'operatore legge — dal
+// risultato vero, non da ciò che il modello dice di aver fatto.
+// Un modello che allucina "hai 400 lead a Milano" qui non riesce
+// a farlo comparire: quel numero lo scrive il server dopo aver
+// contato, e al modello non torna indietro niente.
+//
+// Gli strumenti sono di due razze. Quelli di LETTURA si eseguono
+// subito. Quelli di SCRITTURA non si eseguono affatto: diventano
+// una proposta con i campi in chiaro, e la scrittura avviene solo
+// dopo che qualcuno ha premuto Conferma.
 //
 // Questo risolve anche la domanda che conta: manipolando il
 // frontend non si arriva ai dati del CRM, perché il frontend non
@@ -122,61 +129,184 @@ async function improntaAttesa(): Promise<string | null> {
 
 const MODELLO = Deno.env.get("QF_GEMINI_MODELLO") || "gemini-2.0-flash";
 
-// Le tre cose che l'assistente sa fare, e basta. L'elenco è
-// chiuso: qualunque altra cosa il modello restituisca finisce in
-// "niente" e non produce nessuna scrittura.
-const AZIONI_MODELLO = ["salva_lead", "crea_lista", "aggiungi_lista", "niente"];
+// ---------------- Gli strumenti ----------------
+//
+// Il modello non sceglie piu' fra tre comandi scritti in un
+// elenco: sceglie uno strumento e ne riempie gli argomenti. Il
+// vocabolario si allarga aggiungendo una voce qui sotto e la sua
+// esecuzione piu' in basso, senza toccare il resto.
+//
+// Gli strumenti sono di due razze, e la differenza e' la sola
+// cosa che conta per la sicurezza:
+//
+//   LETTURA  - si eseguono subito e il risultato va a schermo.
+//              Al modello non torna indietro NIENTE: la frase
+//              che l'operatore legge la compone questa funzione
+//              con i dati veri. Un modello che inventasse
+//              "hai 400 lead a Milano" non riuscirebbe a farlo
+//              comparire, perche' quel numero lo scrive il
+//              server dopo aver contato.
+//
+//   SCRITTURA - non si eseguono affatto. Diventano una proposta
+//              con i campi in chiaro, e la scrittura avviene in
+//              "esegui" solo dopo che qualcuno ha premuto
+//              Conferma. "esegui" il modello non lo chiama
+//              nemmeno.
 
-const ISTRUZIONI = `Sei un traduttore, non un assistente.
+const STRUMENTI = [
+  {
+    name: "vai",
+    description:
+      "Porta l'operatore a una schermata dell'area riservata. Da usare quando chiede di " +
+      "aprire, vedere o andare in una sezione.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        dove: {
+          type: "STRING",
+          description: "La schermata di destinazione.",
+          enum: [
+            "panoramica", "collaboratori", "lead", "posta", "produzione", "magazine",
+            "mm-dashboard", "mm-lead-finder", "mm-liste", "mm-campagne", "mm-pronte",
+            "mm-ai-writer", "mm-modelli", "mm-smtp", "mm-registro", "mm-automazioni",
+            "mm-blacklist",
+          ],
+        },
+      },
+      required: ["dove"],
+    },
+  },
+  {
+    name: "riepilogo",
+    description:
+      "Quanti contatti, liste, campagne, email in coda e collaboratori ci sono. " +
+      "Da usare per domande come «a che punto siamo», «quanti lead ho», «quante liste».",
+    parameters: { type: "OBJECT", properties: {} },
+  },
+  {
+    name: "elenca",
+    description: "Elenca le liste, le campagne, i modelli email o i collaboratori.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        cosa: { type: "STRING", enum: ["liste", "campagne", "modelli", "collaboratori"] },
+      },
+      required: ["cosa"],
+    },
+  },
+  {
+    name: "trova_contatto",
+    description:
+      "Cerca nell'archivio i contatti il cui nome o email somiglia al testo dato. " +
+      "Serve a ritrovare qualcuno, non a cercarne di nuovi su Google.",
+    parameters: {
+      type: "OBJECT",
+      properties: { testo: { type: "STRING", description: "Nome o email, anche parziale." } },
+      required: ["testo"],
+    },
+  },
+  {
+    name: "comuni",
+    description:
+      "I comuni di una provincia italiana, con il CAP. Da usare quando l'operatore nomina " +
+      "una provincia o una regione e serve sapere dove cercare, oppure quando chiede " +
+      "consiglio su quali comuni battere.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        provincia: {
+          type: "STRING",
+          description: "Sigla (MI, MB, TO) o nome per esteso (Milano, Monza e della Brianza).",
+        },
+        regione: {
+          type: "STRING",
+          description: "Nome della regione, se l'operatore ha nominato quella invece di una provincia.",
+        },
+      },
+    },
+  },
+  {
+    name: "salva_contatto",
+    description:
+      "Registra un nuovo contatto in archivio. Non esegue: prepara una proposta da confermare.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        nome: { type: "STRING" },
+        email: { type: "STRING" },
+        telefono: { type: "STRING" },
+        citta: { type: "STRING" },
+        provincia: { type: "STRING" },
+        categoria: { type: "STRING" },
+        note: { type: "STRING" },
+      },
+      required: ["nome"],
+    },
+  },
+  {
+    name: "crea_lista",
+    description:
+      "Crea una nuova lista per le campagne email. Non esegue: prepara una proposta da confermare.",
+    parameters: {
+      type: "OBJECT",
+      properties: { nome: { type: "STRING" }, descrizione: { type: "STRING" } },
+      required: ["nome"],
+    },
+  },
+  {
+    name: "aggiungi_a_lista",
+    description:
+      "Mette un contatto gia' in archivio dentro una lista che esiste gia'. " +
+      "Non esegue: prepara una proposta da confermare.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        contatto: {
+          type: "STRING",
+          description: "Nome o email del contatto. Lascialo vuoto se la frase dice «lui», «questo», «l'ultimo».",
+        },
+        lista: { type: "STRING", description: "Nome della lista." },
+      },
+      required: ["lista"],
+    },
+  },
+];
 
-Ricevi una frase in italiano detta o scritta da chi lavora in
-un'agenzia. Devi trasformarla in un comando strutturato.
+const ISTRUZIONI = `Sei l'assistente dell'area riservata di QuotaFacile, usata da chi
+lavora in Bizpower. Parli italiano, in modo breve e concreto.
 
-Le azioni possibili sono soltanto queste:
-- "salva_lead": registrare un nuovo contatto. Campi: nome, email,
-  telefono, citta, provincia, categoria, note.
-- "crea_lista": creare una nuova lista per le campagne email.
-  Campi: lista (il nome della lista), descrizione.
-- "aggiungi_lista": mettere un contatto dentro una lista che
-  esiste gia'. Campi: lead (nome o email del contatto, lascialo
-  vuoto se la frase dice "lui", "questo", "l'ultimo"), lista.
-- "niente": la frase non e' nessuna delle tre, oppure non hai
-  capito, oppure manca l'informazione essenziale.
+Hai degli strumenti. Per fare qualcosa chiama lo strumento giusto:
+non descrivere a parole l'azione, chiamala.
 
 Regole che non puoi violare:
-1. NON INVENTARE NULLA. Un campo che la frase non dice resta
+
+1. NON INVENTARE NULLA. Un argomento che la frase non dice resta
    vuoto. Non dedurre la citta' dal prefisso telefonico, non
-   costruire un'email dal nome, non immaginare una categoria.
-   Un campo vuoto e' corretto; un campo inventato e' un danno.
-2. Riporta i valori come sono stati detti, correggendo solo le
-   maiuscole dei nomi propri e togliendo gli spazi negli
-   indirizzi email dettati a voce ("mario chiocciola rossi punto
-   it" -> "mario@rossi.it").
-3. Se la frase chiede qualcosa che non e' fra le tre azioni
-   (cancellare, inviare email, cercare, modificare), rispondi
-   "niente".
-4. Non rispondere mai alla frase, non commentarla, non salutare.
-   Restituisci solo il comando.`;
+   costruire un'email dal nome, non immaginare una categoria. Un
+   campo vuoto e' corretto; un campo inventato e' un danno.
 
-const SCHEMA = {
-  type: "OBJECT",
-  properties: {
-    azione: { type: "STRING", enum: AZIONI_MODELLO },
-    nome: { type: "STRING" },
-    email: { type: "STRING" },
-    telefono: { type: "STRING" },
-    citta: { type: "STRING" },
-    provincia: { type: "STRING" },
-    categoria: { type: "STRING" },
-    note: { type: "STRING" },
-    lista: { type: "STRING" },
-    descrizione: { type: "STRING" },
-    lead: { type: "STRING" },
-  },
-  required: ["azione"],
-};
+2. NON INVENTARE NUMERI NE' ELENCHI. Non sai quanti contatti ci
+   sono, non sai come si chiamano le liste, non hai l'archivio.
+   Se te lo chiedono, chiama lo strumento: la risposta la scrive
+   il server con i dati veri. Se rispondi a memoria, menti.
 
-async function interroga(frase: string): Promise<Record<string, unknown>> {
+3. Riporta i valori come sono stati detti, correggendo solo le
+   maiuscole dei nomi propri e togliendo gli spazi negli indirizzi
+   email dettati a voce ("mario chiocciola rossi punto it" ->
+   "mario@rossi.it").
+
+4. Se la frase chiede una cosa che nessuno strumento sa fare
+   (inviare un'email, cancellare, modificare un contatto), dillo
+   in una riga invece di chiamare uno strumento a caso.
+
+5. Non salutare, non ringraziare, non commentare. Una riga.`;
+
+// Che cosa il modello ha deciso di chiamare. Torna il nome dello
+// strumento e i suoi argomenti, oppure il testo se ha preferito
+// rispondere a parole.
+type Mossa = { strumento: string | null; argomenti: Record<string, unknown>; testo: string };
+
+async function interroga(frase: string): Promise<Mossa> {
   const chiave = Deno.env.get("QF_GEMINI_KEY");
   if (!chiave) {
     const e = new Error(
@@ -200,14 +330,14 @@ async function interroga(frase: string): Promise<Record<string, unknown>> {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: ISTRUZIONI }] },
           contents: [{ role: "user", parts: [{ text: frase }] }],
+          tools: [{ functionDeclarations: STRUMENTI }],
+          // AUTO e non ANY: deve poter rispondere "questo non so
+          // farlo" invece di essere costretto a chiamare lo
+          // strumento meno sbagliato fra quelli che ha.
+          toolConfig: { functionCallingConfig: { mode: "AUTO" } },
           // temperatura 0: qui non si vuole fantasia, si vuole
           // che la stessa frase produca sempre lo stesso comando
-          generationConfig: {
-            temperature: 0,
-            maxOutputTokens: 400,
-            responseMimeType: "application/json",
-            responseSchema: SCHEMA,
-          },
+          generationConfig: { temperature: 0, maxOutputTokens: 500 },
         }),
       },
     );
@@ -227,15 +357,67 @@ async function interroga(frase: string): Promise<Record<string, unknown>> {
   if (!r.ok) throw new Error("Il servizio di Google ha risposto con un errore (" + r.status + ").");
 
   const j = await r.json().catch(() => null);
-  const grezzo = j?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!grezzo) throw new Error("Il servizio di Google ha risposto in un modo che non so leggere.");
-
-  try {
-    const c = JSON.parse(grezzo);
-    return (c && typeof c === "object") ? c as Record<string, unknown> : {};
-  } catch {
+  const parti = j?.candidates?.[0]?.content?.parts;
+  if (!Array.isArray(parti)) {
     throw new Error("Il servizio di Google ha risposto in un modo che non so leggere.");
   }
+
+  const chiamata = parti.find((x: Record<string, unknown>) => x?.functionCall)?.functionCall;
+  const testo = parti.map((x: Record<string, unknown>) => x?.text ?? "").join(" ").trim();
+
+  // Uno strumento che non e' nell'elenco non esiste: il modello
+  // puo' scrivere qualunque nome, qui vale solo quello dichiarato.
+  const nome = chiamata?.name ?? null;
+  const valido = STRUMENTI.some((s) => s.name === nome);
+
+  return {
+    strumento: valido ? nome : null,
+    argomenti: (chiamata?.args ?? {}) as Record<string, unknown>,
+    testo,
+  };
+}
+
+// ---------------- I comuni ----------------
+// Il file sta nel sito, non qui: e' lo stesso che carica il lead
+// finder, e duplicarlo vorrebbe dire tenerne allineate due copie.
+// Si scarica una volta per istanza e resta in memoria.
+
+type Comuni = {
+  regioni: Record<string, string[]>;
+  province: Record<string, { nome: string; regione: string }>;
+  comuni: Record<string, [string, string][]>;
+};
+
+let comuniInCorso: Promise<Comuni | null> | null = null;
+
+function caricaComuni(): Promise<Comuni | null> {
+  if (comuniInCorso) return comuniInCorso;
+  comuniInCorso = fetch("https://www.quotafacile.net/assets/data/comuni.json", {
+    signal: AbortSignal.timeout(8000),
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null)
+    .then((d) => {
+      // Se non si e' caricato non si tiene la promessa fallita:
+      // il prossimo tentativo deve poter riprovare.
+      if (!d) comuniInCorso = null;
+      return d as Comuni | null;
+    });
+  return comuniInCorso;
+}
+
+// La sigla di una provincia, da una sigla o da un nome per
+// esteso. "Monza" e "Monza e della Brianza" devono arrivare
+// nello stesso posto.
+function siglaProvincia(c: Comuni, detto: string): string | null {
+  const q = detto.trim().toLowerCase();
+  if (!q) return null;
+  if (c.province[q.toUpperCase()]) return q.toUpperCase();
+  const voci = Object.entries(c.province);
+  const esatta = voci.find(([, v]) => v.nome.toLowerCase() === q);
+  if (esatta) return esatta[0];
+  const parziale = voci.find(([, v]) => v.nome.toLowerCase().startsWith(q) || q.startsWith(v.nome.toLowerCase()));
+  return parziale ? parziale[0] : null;
 }
 
 // ---------------- Ricerca nell'archivio ----------------
@@ -270,127 +452,295 @@ async function cercaListe(q: string) {
   return data ?? [];
 }
 
+// ---------------- Gli strumenti di lettura ----------------
+// Si eseguono qui, con il ruolo di servizio, e quello che
+// trovano non torna mai al modello.
+
+const ROTTE: Record<string, [string, string]> = {
+  panoramica:     ["#/admin/crm",                      "la panoramica del CRM"],
+  collaboratori:  ["#/admin/crm/collaboratori",        "i collaboratori"],
+  lead:           ["#/admin/crm/lead",                 "i lead locali"],
+  posta:          ["#/admin/crm/posta",                "la posta"],
+  produzione:     ["#/admin/crm/produzione",           "la produzione"],
+  magazine:       ["#/admin/crm/magazine",             "il Magazine"],
+  "mm-dashboard":   ["#/admin/crm/mail/dashboard",     "la dashboard del Mail Marketing"],
+  "mm-lead-finder": ["#/admin/crm/mail/lead-finder",   "il Lead Finder"],
+  "mm-liste":       ["#/admin/crm/mail/liste",         "le Lead Lists"],
+  "mm-campagne":    ["#/admin/crm/mail/campagne",      "le campagne"],
+  "mm-pronte":      ["#/admin/crm/mail/pronte",        "Email Ready"],
+  "mm-ai-writer":   ["#/admin/crm/mail/ai-writer",     "l'Email AI Writer"],
+  "mm-modelli":     ["#/admin/crm/mail/modelli",       "i modelli"],
+  "mm-smtp":        ["#/admin/crm/mail/smtp",          "SMTP e invio"],
+  "mm-registro":    ["#/admin/crm/mail/registro",      "il registro degli invii"],
+  "mm-automazioni": ["#/admin/crm/mail/automazioni",   "le automazioni"],
+  "mm-blacklist":   ["#/admin/crm/mail/blacklist",     "la blacklist"],
+};
+
+async function strumentoVai(a: Record<string, unknown>) {
+  const r = ROTTE[String(a.dove ?? "")];
+  if (!r) return { messaggio: "Non so dove andare: quella schermata non esiste." };
+  return { messaggio: `Apro ${r[1]}.`, vai: r[0] };
+}
+
+async function strumentoRiepilogo() {
+  const conta = async (tabella: string, filtro?: [string, string | boolean]) => {
+    let q = db.from(tabella).select("id", { count: "exact", head: true });
+    if (filtro) q = q.eq(filtro[0], filtro[1]);
+    const { count } = await q;
+    return count ?? 0;
+  };
+  const [lead, conEmail, liste, campagne, inCoda, collaboratori] = await Promise.all([
+    conta("crm_lead"),
+    db.from("crm_lead").select("id", { count: "exact", head: true })
+      .not("email", "is", null).then((x: { count: number | null }) => x.count ?? 0),
+    conta("mm_liste"),
+    conta("mm_campagne"),
+    conta("mm_email", ["stato", "in_coda"]),
+    conta("crm_collaboratori", ["attivo", true]),
+  ]);
+  return {
+    messaggio:
+      `${lead} contatti in archivio, ${conEmail} con email · ${liste} liste · ` +
+      `${campagne} campagne · ${inCoda} email in coda · ${collaboratori} collaboratori attivi.`,
+    risultato: {
+      titolo: "A che punto siamo",
+      numeri: {
+        Contatti: lead, "Con email": conEmail, Liste: liste,
+        Campagne: campagne, "In coda": inCoda, Collaboratori: collaboratori,
+      },
+    },
+  };
+}
+
+async function strumentoElenca(a: Record<string, unknown>) {
+  const cosa = String(a.cosa ?? "");
+
+  if (cosa === "liste") {
+    const { data } = await db.from("mm_liste").select("id, nome, descrizione")
+      .order("creata_il", { ascending: false }).limit(40);
+    const righe = (data ?? []).map((l: Record<string, any>) => ({ testo: l.nome, sotto: l.descrizione ?? null }));
+    return {
+      messaggio: righe.length ? `${righe.length} liste.` : "Non c'è ancora nessuna lista.",
+      risultato: righe.length ? { titolo: "Liste", righe, totale: righe.length } : null,
+    };
+  }
+
+  if (cosa === "campagne") {
+    const { data } = await db.from("mm_campagne").select("id, nome, stato, creata_il")
+      .order("creata_il", { ascending: false }).limit(40);
+    const righe = (data ?? []).map((c: Record<string, any>) => ({ testo: c.nome, sotto: c.stato }));
+    return {
+      messaggio: righe.length ? `${righe.length} campagne.` : "Non c'è ancora nessuna campagna.",
+      risultato: righe.length ? { titolo: "Campagne", righe, totale: righe.length } : null,
+    };
+  }
+
+  if (cosa === "modelli") {
+    const { data } = await db.from("crm_email_modelli").select("id, nome, oggetto")
+      .order("nome").limit(40);
+    const righe = (data ?? []).map((m: Record<string, any>) => ({ testo: m.nome, sotto: m.oggetto }));
+    return {
+      messaggio: righe.length ? `${righe.length} modelli.` : "Non c'è ancora nessun modello.",
+      risultato: righe.length ? { titolo: "Modelli email", righe, totale: righe.length } : null,
+    };
+  }
+
+  if (cosa === "collaboratori") {
+    const { data } = await db.from("crm_collaboratori").select("id, nome, ruolo, attivo")
+      .order("attivo", { ascending: false }).order("nome").limit(40);
+    const righe = (data ?? []).map((c: Record<string, any>) => ({
+      testo: c.nome, sotto: c.ruolo + (c.attivo ? "" : " · disattivato"),
+    }));
+    return {
+      messaggio: righe.length ? `${righe.length} collaboratori.` : "Non c'è ancora nessun collaboratore.",
+      risultato: righe.length ? { titolo: "Collaboratori", righe, totale: righe.length } : null,
+    };
+  }
+
+  return { messaggio: "Non so elencare quella cosa." };
+}
+
+async function strumentoTrova(a: Record<string, unknown>) {
+  const q = testo(a.testo, 200);
+  if (!q) return { messaggio: "Dimmi che cosa cercare." };
+  const trovati = await cercaLead(q);
+  if (!trovati.length) return { messaggio: `Non trovo nessun contatto che somigli a «${q}».` };
+  return {
+    messaggio: `${trovati.length} contatti somigliano a «${q}».`,
+    risultato: {
+      titolo: `Contatti che somigliano a «${q}»`,
+      righe: trovati.map((l: Record<string, any>) => ({
+        testo: l.nome,
+        sotto: [l.citta, l.email].filter(Boolean).join(" · ") || null,
+      })),
+      totale: trovati.length,
+    },
+  };
+}
+
+async function strumentoComuni(a: Record<string, unknown>) {
+  const c = await caricaComuni();
+  if (!c) return { messaggio: "L'elenco dei comuni non si è caricato. Riprova fra poco." };
+
+  const dettaRegione = testo(a.regione, 60);
+  const dettaProvincia = testo(a.provincia, 80);
+
+  // Una regione non e' un posto in cui cercare: le province sono
+  // fino a dodici e ognuna e' una ricerca a se'. Si dice quali
+  // sono e si lascia scegliere.
+  if (dettaRegione && !dettaProvincia) {
+    const q = dettaRegione.toLowerCase();
+    const nome = Object.keys(c.regioni).find((r) => r.toLowerCase() === q)
+      ?? Object.keys(c.regioni).find((r) => r.toLowerCase().startsWith(q));
+    if (!nome) return { messaggio: `Non conosco una regione che si chiami «${dettaRegione}».` };
+    const sigle = c.regioni[nome];
+    return {
+      messaggio: `${nome}: ${sigle.length} province. Dimmi da quale partire.`,
+      risultato: {
+        titolo: `Province — ${nome}`,
+        righe: sigle.map((s) => ({ testo: c.province[s]?.nome ?? s, sotto: s })),
+        totale: sigle.length,
+      },
+    };
+  }
+
+  if (!dettaProvincia) return { messaggio: "Dimmi una provincia o una regione." };
+
+  const sigla = siglaProvincia(c, dettaProvincia);
+  if (!sigla) return { messaggio: `Non conosco una provincia che si chiami «${dettaProvincia}».` };
+
+  const elenco = c.comuni[sigla] ?? [];
+  const p = c.province[sigla];
+  return {
+    messaggio:
+      `${p.nome} (${sigla}, ${p.regione}): ${elenco.length} comuni. ` +
+      `Dimmi in quale cercare, oppure una città e un raggio.`,
+    risultato: {
+      titolo: `Comuni — ${p.nome} (${sigla})`,
+      righe: elenco.slice(0, 60).map(([nome, cap]) => ({ testo: nome, sotto: cap })),
+      totale: elenco.length,
+    },
+  };
+}
+
+// ---------------- Gli strumenti di scrittura ----------------
+// Non scrivono: preparano una proposta. La scrittura sta in
+// "esegui", dopo il bottone.
+
+async function propostaContatto(a: Record<string, unknown>, frase: string) {
+  const nome = testo(a.nome, 200);
+  if (!nome) {
+    return { messaggio: "Ho capito che vuoi salvare un contatto ma non ho sentito il nome." };
+  }
+  const avvisi: string[] = [];
+  const email = testo(a.email, 200);
+  if (email && !emailValida(email)) {
+    avvisi.push(`«${email}» non sembra un indirizzo valido: correggilo prima di salvare.`);
+  }
+  if (emailValida(email)) {
+    const { data } = await db.from("crm_lead").select("id, nome").ilike("email", email!).limit(1);
+    if (data?.length) avvisi.push(`C'è già un contatto con questa email: ${data[0].nome}.`);
+  }
+  return {
+    proposta: {
+      azione: "salva_lead",
+      titolo: "Salvo questo contatto?",
+      campi: {
+        nome, email,
+        telefono: testo(a.telefono, 60),
+        citta: testo(a.citta, 120),
+        provincia: testo(a.provincia, 60),
+        categoria: testo(a.categoria, 120),
+        note: testo(a.note, 1000),
+      },
+      frase, avvisi,
+    },
+  };
+}
+
+async function propostaLista(a: Record<string, unknown>, frase: string) {
+  const nome = testo(a.nome, 160);
+  if (!nome) return { messaggio: "Ho capito che vuoi creare una lista ma non ho sentito come si chiama." };
+  const avvisi: string[] = [];
+  const { data } = await db.from("mm_liste").select("id, nome").ilike("nome", nome).limit(1);
+  if (data?.length) avvisi.push("Una lista con questo nome esiste già: salvandola ne avresti due uguali.");
+  return {
+    proposta: {
+      azione: "crea_lista",
+      titolo: "Creo questa lista?",
+      campi: { nome, descrizione: testo(a.descrizione, 600) },
+      frase, avvisi,
+    },
+  };
+}
+
+async function propostaAggiungi(a: Record<string, unknown>, frase: string, ultimo: string | null) {
+  const nomeLista = testo(a.lista, 160);
+  if (!nomeLista) {
+    return { messaggio: "Ho capito che vuoi aggiungere qualcuno a una lista, ma non ho sentito quale." };
+  }
+  const liste = await cercaListe(nomeLista);
+  if (!liste.length) {
+    return {
+      messaggio: `Non trovo nessuna lista che somigli a «${nomeLista}». ` +
+        "Creala prima, oppure ripeti il nome com'è scritto.",
+    };
+  }
+
+  const riferimento = testo(a.contatto, 200);
+  let lead: { id: string; nome: string; email?: string | null; citta?: string | null }[] = [];
+  if (riferimento) {
+    lead = await cercaLead(riferimento);
+    if (!lead.length) return { messaggio: `Non trovo nessun contatto che somigli a «${riferimento}».` };
+  } else if (ultimo) {
+    const { data } = await db.from("crm_lead").select("id, nome, email, citta").eq("id", ultimo).limit(1);
+    lead = data ?? [];
+  }
+  if (!lead.length) {
+    return { messaggio: "Non ho capito quale contatto aggiungere. Dimmi il nome o l'indirizzo email." };
+  }
+
+  return {
+    proposta: {
+      azione: "aggiungi_lista",
+      titolo: "Aggiungo alla lista?",
+      campi: { lead_id: lead[0].id, lista_id: liste[0].id },
+      scelte: { lead, liste },
+      frase, avvisi: [],
+    },
+  };
+}
+
 // ---------------- interpreta ----------------
 
 async function interpreta(d: Record<string, unknown>) {
   const frase = testo(d.frase, 600);
   if (!frase) throw new Error("Non hai detto niente.");
 
-  const c = await interroga(frase);
-  const azione = AZIONI_MODELLO.includes(String(c.azione)) ? String(c.azione) : "niente";
-
-  if (azione === "niente") {
-    return {
-      proposta: null,
-      messaggio: "Non ho capito che cosa devo fare. So fare tre cose: salvare un " +
-        "contatto, creare una lista, aggiungere un contatto a una lista.",
-    };
-  }
-
-  const avvisi: string[] = [];
-
-  if (azione === "salva_lead") {
-    const nome = testo(c.nome, 200);
-    if (!nome) {
-      return {
-        proposta: null,
-        messaggio: "Ho capito che vuoi salvare un contatto ma non ho sentito il nome. " +
-          "Ripeti mettendolo all'inizio.",
-      };
-    }
-    const email = testo(c.email, 200);
-    if (email && !emailValida(email)) {
-      avvisi.push(`«${email}» non sembra un indirizzo valido: correggilo prima di salvare.`);
-    }
-    if (emailValida(email)) {
-      const { data } = await db.from("crm_lead")
-        .select("id, nome").ilike("email", email!).limit(1);
-      if (data?.length) avvisi.push(`C'è già un contatto con questa email: ${data[0].nome}.`);
-    }
-    return {
-      proposta: {
-        azione,
-        titolo: "Salvo questo contatto?",
-        campi: {
-          nome,
-          email,
-          telefono: testo(c.telefono, 60),
-          citta: testo(c.citta, 120),
-          provincia: testo(c.provincia, 60),
-          categoria: testo(c.categoria, 120),
-          note: testo(c.note, 1000),
-        },
-        frase,
-        avvisi,
-      },
-    };
-  }
-
-  if (azione === "crea_lista") {
-    const nome = testo(c.lista, 160);
-    if (!nome) {
-      return { proposta: null, messaggio: "Ho capito che vuoi creare una lista ma non ho sentito come si chiama." };
-    }
-    const { data } = await db.from("mm_liste").select("id, nome").ilike("nome", nome).limit(1);
-    if (data?.length) avvisi.push("Una lista con questo nome esiste già: salvandola ne avresti due uguali.");
-    return {
-      proposta: {
-        azione,
-        titolo: "Creo questa lista?",
-        campi: { nome, descrizione: testo(c.descrizione, 600) },
-        frase,
-        avvisi,
-      },
-    };
-  }
-
-  // aggiungi_lista
-  const nomeLista = testo(c.lista, 160);
-  if (!nomeLista) {
-    return { proposta: null, messaggio: "Ho capito che vuoi aggiungere qualcuno a una lista, ma non ho sentito quale lista." };
-  }
-  const riferimentoLead = testo(c.lead, 200);
+  const m = await interroga(frase);
   const ultimo = testo(d.ultimoLead, 40);
 
-  const liste = await cercaListe(nomeLista);
-  if (!liste.length) {
-    return {
-      proposta: null,
-      messaggio: `Non trovo nessuna lista che somigli a «${nomeLista}». ` +
-        "Creala prima, oppure ripeti il nome com'è scritto.",
-    };
+  switch (m.strumento) {
+    case "vai":             return await strumentoVai(m.argomenti);
+    case "riepilogo":       return await strumentoRiepilogo();
+    case "elenca":          return await strumentoElenca(m.argomenti);
+    case "trova_contatto":  return await strumentoTrova(m.argomenti);
+    case "comuni":          return await strumentoComuni(m.argomenti);
+    case "salva_contatto":  return await propostaContatto(m.argomenti, frase);
+    case "crea_lista":      return await propostaLista(m.argomenti, frase);
+    case "aggiungi_a_lista": return await propostaAggiungi(m.argomenti, frase, ultimo);
   }
 
-  let lead: { id: string; nome: string; email?: string | null; citta?: string | null }[] = [];
-  if (riferimentoLead) {
-    lead = await cercaLead(riferimentoLead);
-    if (!lead.length) {
-      return {
-        proposta: null,
-        messaggio: `Non trovo nessun contatto che somigli a «${riferimentoLead}».`,
-      };
-    }
-  } else if (ultimo) {
-    const { data } = await db.from("crm_lead")
-      .select("id, nome, email, citta").eq("id", ultimo).limit(1);
-    lead = data ?? [];
-  }
-  if (!lead.length) {
-    return {
-      proposta: null,
-      messaggio: "Non ho capito quale contatto aggiungere. Dimmi il nome o l'indirizzo email.",
-    };
-  }
-
+  /* Nessuno strumento: il modello ha preferito rispondere a
+     parole. Va bene per "questo non so farlo", che e' una
+     risposta utile — ma quel testo non e' mai un dato: qui
+     dentro non c'e' niente che venga dall'archivio. */
   return {
-    proposta: {
-      azione,
-      titolo: "Aggiungo alla lista?",
-      campi: { lead_id: lead[0].id, lista_id: liste[0].id },
-      scelte: { lead, liste },
-      frase,
-      avvisi,
-    },
+    messaggio: m.testo ||
+      "Non ho capito che cosa devo fare. Posso portarti in una schermata, " +
+      "dirti a che punto siamo, elencare liste campagne modelli e collaboratori, " +
+      "cercare un contatto, dirti i comuni di una provincia, salvare un contatto, " +
+      "creare una lista o metterci dentro qualcuno.",
   };
 }
 

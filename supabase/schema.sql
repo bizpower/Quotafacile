@@ -703,9 +703,21 @@ create table if not exists public.crm_etichette (
 
 alter table public.crm_etichette enable row level security;
 
+-- "Chi è entrato" non basta più come confine.
+-- Quando questa policy è stata scritta, un account autenticato
+-- era per forza un collaboratore di Bizpower: non ne esistevano
+-- altri. Da quando qf-pro registra gli intermediari del
+-- marketplace, "authenticated" comprende anche loro, e un
+-- using (true) qui vorrebbe dire che chiunque si iscriva legge
+-- le etichette della pipeline commerciale.
+-- Nessuna schermata del browser legge questa tabella: ci passa
+-- solo qf-lead, con il ruolo di servizio, che le policy non le
+-- guarda. Restringere non toglie niente a nessuno.
 drop policy if exists "le etichette le vede chi è entrato" on public.crm_etichette;
-create policy "le etichette le vede chi è entrato"
-  on public.crm_etichette for select to authenticated using (true);
+drop policy if exists "le etichette le vedono i collaboratori" on public.crm_etichette;
+create policy "le etichette le vedono i collaboratori"
+  on public.crm_etichette for select to authenticated
+  using (crm_interno.collaboratore_corrente() is not null);
 
 -- Molti a molti: un'etichetta sta su più lead, un lead ne porta
 -- più di una.
@@ -902,9 +914,16 @@ create table if not exists public.crm_email_modelli (
 
 alter table public.crm_email_modelli enable row level security;
 
+-- Stessa ragione delle etichette: i modelli sono i testi
+-- commerciali della società, e da quando esistono gli account
+-- degli intermediari "authenticated" non vuole più dire
+-- "collaboratore". Li legge solo qf-mail, con il ruolo di
+-- servizio.
 drop policy if exists "i modelli li vede chi è entrato" on public.crm_email_modelli;
-create policy "i modelli li vede chi è entrato"
-  on public.crm_email_modelli for select to authenticated using (true);
+drop policy if exists "i modelli li vedono i collaboratori" on public.crm_email_modelli;
+create policy "i modelli li vedono i collaboratori"
+  on public.crm_email_modelli for select to authenticated
+  using (crm_interno.collaboratore_corrente() is not null);
 
 create table if not exists public.crm_email_inviate (
   id               uuid primary key default gen_random_uuid(),
