@@ -52,12 +52,19 @@
   let ascolto = null;       // il riconoscimento vocale attivo
 
   const ESEMPI = [
-    "Salva Autofficina Bianchi, info@bianchi.it, telefono 02 1234567, Milano",
-    "Crea una lista che si chiama Carrozzerie Lombardia",
-    "Aggiungi Autofficina Bianchi alla lista Carrozzerie Lombardia"
+    "A che punto siamo",
+    "Portami al Lead Finder",
+    "Che liste ho",
+    "Quali comuni ci sono in provincia di Monza",
+    "Salva Autofficina Bianchi, info@bianchi.it, Milano"
   ];
 
-  const dice = (da, testo) => chat.push({ da, testo });
+  /* Una riga della conversazione può portarsi dietro un
+     risultato: l'elenco delle liste, i comuni di una provincia,
+     i numeri del riepilogo. Resta attaccato alla frase che l'ha
+     prodotto, così scorrendo indietro si ritrova insieme alla
+     domanda invece che da solo in fondo. */
+  const dice = (da, testo, risultato = null) => chat.push({ da, testo, risultato });
 
   /* ---------------- DIALOGO COL SERVER ---------------- */
 
@@ -93,10 +100,22 @@
     const e = await chiama("interpreta", { frase, ultimoLead });
     inCorso = false;
 
-    if (!e.ok) dice("qf", e.errore || "Non sono riuscito a interpretare la frase.");
-    else if (e.proposta) { proposta = e.proposta; dice("qf", e.proposta.titolo); }
-    else dice("qf", e.messaggio || "Non ho capito.");
+    if (!e.ok) {
+      dice("qf", e.errore || "Non sono riuscito a interpretare la frase.");
+    } else if (e.proposta) {
+      proposta = e.proposta;
+      dice("qf", e.proposta.titolo);
+    } else {
+      dice("qf", e.messaggio || "Non ho capito.", e.risultato || null);
+    }
     disegna();
+
+    /* Se ha chiesto di andare da qualche parte, ci si va — dopo
+       aver disegnato la risposta, così la frase «Apro il Lead
+       Finder» resta nella conversazione invece di essere
+       scavalcata dal cambio di schermata. Il pannello non si
+       chiude: si continua a parlare da lì. */
+    if (e.ok && e.vai && location.hash !== e.vai) location.hash = e.vai;
   }
 
   async function conferma() {
@@ -235,6 +254,31 @@
     </div>`;
   }
 
+  /* Un risultato è un dato letto dall'archivio, non una frase:
+     si distingue dai fumetti perché ha un bordo e una testa, e
+     perché non è a destra né a sinistra — sta in mezzo, come una
+     cosa che è stata tirata fuori da un cassetto. */
+  function risultatoHtml(r) {
+    if (!r) return "";
+    const numeri = r.numeri
+      ? `<div class="qa-numeri">${Object.entries(r.numeri).map(([k, v]) =>
+          `<div><span>${esc(k)}</span><strong>${esc(String(v))}</strong></div>`).join("")}</div>`
+      : "";
+    const righe = Array.isArray(r.righe)
+      ? `<ul class="qa-righe">${r.righe.map(x =>
+          `<li><span>${esc(x.testo)}</span>${x.sotto ? `<em>${esc(x.sotto)}</em>` : ""}</li>`).join("")}</ul>`
+      : "";
+    /* Se se ne mostrano meno di quanti ce ne sono, va detto: un
+       elenco troncato in silenzio si legge come l'elenco intero. */
+    const resto = (r.totale && Array.isArray(r.righe) && r.totale > r.righe.length)
+      ? `<p class="qa-resto">Ne vedi ${r.righe.length} su ${r.totale}.</p>` : "";
+    return `
+      <div class="qa-risultato">
+        <span class="qa-risultato-testa">${esc(r.titolo || "Risultato")}</span>
+        ${numeri}${righe}${resto}
+      </div>`;
+  }
+
   function pannelloHtml() {
     return `
     <div class="qa-velo" data-qa-velo></div>
@@ -246,7 +290,8 @@
 
       <div class="qa-storia" id="qa-storia">
         ${chat.length ? chat.map(m => `
-          <div class="qa-riga qa-${m.da}"><span>${esc(m.testo)}</span></div>`).join("")
+          <div class="qa-riga qa-${m.da}"><span>${esc(m.testo)}</span></div>
+          ${risultatoHtml(m.risultato)}`).join("")
         : `<p class="qa-vuoto">Dimmi cosa devo fare. Per cominciare, prova con una di queste:</p>
            ${ESEMPI.map(e => `<button type="button" class="chip qa-esempio" data-qa-esempio="${esc(e)}">${esc(e)}</button>`).join(" ")}`}
         ${inCorso ? `<div class="qa-riga qa-qf qa-attesa"><span>Sto leggendo…</span></div>` : ""}

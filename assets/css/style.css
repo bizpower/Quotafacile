@@ -945,6 +945,40 @@ a.chip { display: inline-block; text-decoration: none; }
   background: var(--bg); border-top: 1px solid var(--line);
 }
 
+/* Un risultato letto dall'archivio. Non e' una risposta del
+   modello: e' un dato, e si vede che lo e' — bordo, testa, e
+   nessuna delle due sponde della conversazione. */
+.qa-risultato {
+  align-self: stretch; width: 100%;
+  padding: .6rem .75rem;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+}
+.qa-risultato-testa {
+  display: block; margin-bottom: .45rem;
+  font-size: .66rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--green-800);
+}
+.qa-numeri { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+.qa-numeri > div { min-width: 0; }
+.qa-numeri span {
+  display: block; font-size: .66rem; color: var(--ink-soft);
+  text-transform: uppercase; letter-spacing: .03em;
+}
+.qa-numeri strong { font-size: 1.05rem; line-height: 1.2; }
+
+.qa-righe { list-style: none; margin: 0; padding: 0; max-height: 13rem; overflow-y: auto; }
+.qa-righe li {
+  display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
+  padding: .28rem 0; border-bottom: 1px solid var(--line); font-size: .84rem;
+}
+.qa-righe li:last-child { border-bottom: 0; }
+.qa-righe li > span { min-width: 0; overflow-wrap: anywhere; }
+.qa-righe li > em {
+  flex: none; font-style: normal; font-size: .74rem; color: var(--ink-soft);
+  max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.qa-resto { margin: .45rem 0 0; font-size: .72rem; color: var(--ink-soft); font-style: italic; }
+
 /* La proposta: sta dentro la conversazione, al posto in cui e'
    arrivata, perche' e' la risposta a quella frase li'. */
 .qa-proposta {
