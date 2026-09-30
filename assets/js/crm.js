@@ -392,9 +392,18 @@
     }
 
     const prov = provinceDi(R.campi.regione);
-    const sigla = prov.includes(R.campi.provincia) ? R.campi.provincia : (prov[0] || "");
+    /* Niente scelta di ripiego.
+       Prima, se la provincia non era fra quelle della regione, si
+       prendeva la prima in ordine alfabetico — e lo stesso per il
+       comune. Scegliendo «Lombardia» ti ritrovavi in provincia di
+       Bergamo, scegliendo «Monza e della Brianza» ti ritrovavi ad
+       Agrate Brianza: mai detto da nessuno, mai scritto da
+       nessuna parte, e la ricerca partiva centrata li'.
+       Una tendina che sceglie al posto tuo e non te lo dice e'
+       peggio di una vuota: la seconda si nota. */
+    const sigla = prov.includes(R.campi.provincia) ? R.campi.provincia : "";
     const elenco = comuniDi(sigla);
-    const citta = elenco.some(c => c[0] === R.campi.citta) ? R.campi.citta : (elenco[0] ? elenco[0][0] : "");
+    const citta = elenco.some(c => c[0] === R.campi.citta) ? R.campi.citta : "";
     /* Il CAP mostrato: quello scritto a mano se c'è, altrimenti
        quello del comune selezionato quando ne ha uno solo. Si
        calcola qui e non si scrive nello stato, perché questa
@@ -411,15 +420,21 @@
           </select></div>
         <div class="field"><label for="ld-prov">Provincia *</label>
           <select id="ld-prov" required>
+            <option value="">— scegli la provincia —</option>
             ${prov.map(s =>
               `<option value="${esc(s)}" ${sigla === s ? "selected" : ""}>${esc(geo.dati.province[s].nome)} (${esc(s)})</option>`).join("")}
           </select></div>
-        <div class="field"><label for="ld-citta">Comune *</label>
-          <select id="ld-citta" required>
+        <div class="field"><label for="ld-citta">Comune</label>
+          <select id="ld-citta" ${sigla ? "" : "disabled"}>
+            <option value="">— nessuno —</option>
             ${elenco.map(([n]) =>
               `<option value="${esc(n)}" ${citta === n ? "selected" : ""}>${esc(n)}</option>`).join("")}
           </select>
-          <p class="privacy-hint">${elenco.length} comuni in questa provincia. Scrivi le prime lettere per arrivarci.</p>
+          <p class="privacy-hint">${
+            !sigla ? "Scegli prima la provincia."
+            : citta ? `${elenco.length} comuni in questa provincia. Scrivi le prime lettere per arrivarci.`
+            : `Senza comune la ricerca parte dal centro della provincia, con lo stesso raggio: per coprirla tutta servono più ricerche. ${elenco.length} comuni fra cui scegliere.`
+          }</p>
         </div>
       </div>
       <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
@@ -1062,9 +1077,19 @@
       if (!R.categorie.length) { QF().toast("Scegli almeno una categoria."); return; }
       R.inCorso = true; R.errore = null; R.scelti = new Set();
       QF().render();
+      /* Senza comune il server comporrebbe «(MB), Italia», che non
+         è il centro di niente: Google ci restituirebbe un punto a
+         caso o un errore. Al suo posto si manda il nome della
+         provincia, che è esattamente quello che l'etichetta
+         promette — «la ricerca parte dal centro della provincia». */
+      const nomeProvincia = geo.dati?.province?.[R.campi.provincia]?.nome || "";
+      const citta = R.modalita === "precisa" && !R.campi.citta
+        ? nomeProvincia
+        : R.campi.citta;
+
       const esito = await chiamaLead("cerca", {
         modalita: R.modalita,
-        zona: R.campi.zona, via: R.campi.via, citta: R.campi.citta,
+        zona: R.campi.zona, via: R.campi.via, citta,
         provincia: R.campi.provincia, cap: R.campi.cap,
         categorie: R.categorie, raggio: R.raggio, soloQualita: R.soloQualita,
         soloConEmail: R.soloConEmail
