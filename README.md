@@ -770,6 +770,21 @@ non firmato. Il cliente ha pagato e non risulta abbonato. Il segreto esiste solo
 l'endpoint qui sopra, quindi l'ordine è: prima l'endpoint su Stripe, poi copiare il `whsec_…` fra i
 segreti Supabase.
 
+**E quindi il checkout si rifiuta di partire.** Il guasto peggiore della piattaforma è quello che da
+fuori sembra riuscito, e questo lo era: il pagamento funzionava benissimo, era solo l'esito a non
+arrivare mai. Da adesso `checkout` controlla `STRIPE_WEBHOOK_SECRET` **prima** di aprire la sessione
+Stripe e, se manca, risponde 503 con una frase che la persona può leggere — «non vogliamo prendere i
+tuoi soldi senza poter registrare l'abbonamento». Il controllo sta dopo l'identificazione del
+professionista, così solo chi è già entrato può scoprire come siamo configurati, e prima di
+`clienteStripe`, così non resta in Stripe un cliente creato per un abbonamento che non arriverà.
+
+**E il 503 del webhook ora si vede nel registro.** Non lo faceva: tornava a Stripe e da noi non
+restava niente. L'unico guasto che perde denaro in silenzio era silenzioso anche per chi lo cercava —
+l'ho scoperto solo incrociando lo stato HTTP con l'output della console, che è un modo di trovare le
+cose su cui non si può contare. Anche la firma non valida adesso lascia una riga: o il segreto
+configurato non è quello dell'endpoint, o la richiesta non viene da Stripe, e sono due cose che vanno
+guardate entrambe.
+
 **La prova di 30 giorni non è un prodotto da 0 €.** È `trial_period_days` sul prezzo vero
 (`QF_STRIPE_GIORNI_PROVA`, default 30) con `payment_method_collection: always`: la carta si
 raccoglie subito, per trenta giorni non viene addebitato nulla, e alla scadenza Stripe addebita da
