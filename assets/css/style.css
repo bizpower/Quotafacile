@@ -1301,6 +1301,16 @@ a.chip { display: inline-block; text-decoration: none; }
    tre. */
 .mm-ritocchi { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center;
   margin-top: .7rem; padding-top: .7rem; border-top: 1px solid var(--line); }
+
+/* Le azioni che prendono tutto. Separate dal resto da una riga,
+   perché fanno una cosa di natura diversa da quelle accanto:
+   ignorano i filtri a schermo. La nota lo dice per iscritto, e
+   va a capo da sola quando lo spazio finisce. */
+.mm-tutte { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center;
+  padding: .6rem .75rem; border: 1px dashed var(--line); border-radius: 10px;
+  margin-bottom: .7rem; }
+.mm-tutte-nota { font-size: .76rem; color: var(--ink-soft); }
+@media (min-width: 46rem) { .mm-tutte-nota { margin-left: auto; } }
 /* Il cestino sta da solo all'altro capo: cancellare non è
    un'azione da mettere accanto a quelle che si usano ogni giorno. */
 .mm-azioni .danger { margin-left: auto; }

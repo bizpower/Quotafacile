@@ -739,6 +739,45 @@
   let quandoInvio = "";
   let inInvio = false;
 
+  /* Su chi agisce la finestra di invio.
+
+       scelti   i messaggi spuntati a mano, come e' sempre stato
+       pronte   tutte le approvate, filtri a schermo ignorati
+       coda     tutte quelle gia' in coda, per spostarne la data
+
+     Quest'ultimo caso non e' un invio: e' solo una data nuova, e
+     il server lo sa fare da sempre - "in_coda" e' fra gli stati
+     che posta-programma accetta. Mancava il bottone, non il
+     motore.
+
+     "Filtri ignorati" e' la cosa che va detta a schermo. Chi ha
+     appena filtrato su una campagna e preme "invia tutte" si
+     aspetta quella campagna: se invece parte tutto, lo scopre
+     dopo, e dopo e' tardi. */
+  let invioBersaglio = "scelti";
+
+  /* Quanti sono, per il bersaglio in corso: i conteggi del server
+     sono globali, non filtrati, quindi sono gia' il numero giusto
+     da mostrare sul bottone. */
+  const quantiPronte = () => (postaDati?.conteggi?.pronta ?? 0);
+  const quantiInCoda = () => (postaDati?.conteggi?.in_coda ?? 0);
+
+  /* Gli identificativi su cui agire. Per "pronte" e "coda" non
+     bastano quelli a schermo - l'elenco e' filtrato - quindi si
+     richiede l'elenco per stato. Nessuna azione nuova sul server:
+     posta-elenco sa gia' filtrare per stato, e il suo tetto di
+     cinquecento righe e' lo stesso che posta-invia e
+     posta-programma applicano agli id che ricevono. */
+  async function bersaglioIds() {
+    if (invioBersaglio === "scelti") return { ids: [...scelte], troncato: false };
+    const stato = invioBersaglio === "coda" ? "in_coda" : "pronta";
+    const e = await chiama("posta-elenco", { stato, cerca: "", campagna_id: "" }, 30000);
+    if (!e.ok) return { ids: [], errore: e.errore || "Elenco non leggibile." };
+    const ids = (e.posta || []).map(m => m.id);
+    const totale = e.conteggi?.[stato] ?? ids.length;
+    return { ids, troncato: totale > ids.length, totale };
+  }
+
   /* La scrittura assistita vive in qf-mm-ai, non in qf-mm.
      Motivo: chiama un modello a pagamento e ci mette secondi,
      mentre tutto il resto di questa pagina risponde in
@@ -938,6 +977,24 @@
           <button class="btn btn-primary btn-sm" id="mm-genera-ai">✨ Genera con AI</button>
         </div>
       </div>
+
+      ${/* Le azioni che prendono tutto, non i selezionati. Stanno
+            su una riga loro e non accanto a «CSV» perché fanno una
+            cosa di natura diversa: ignorano i filtri a schermo. */
+        (quantiPronte() || quantiInCoda()) ? `
+        <div class="mm-tutte">
+          ${quantiPronte() ? `
+            <button class="btn btn-outline btn-sm" id="mm-tutte-invia" ${caselle.length ? "" : "disabled"}
+              title="${caselle.length ? "" : "Serve prima una casella di invio attiva"}">
+              📤 Invia tutte le pronte (${quantiPronte()})</button>
+            <button class="btn btn-outline btn-sm" id="mm-tutte-programma" ${caselle.length ? "" : "disabled"}
+              title="${caselle.length ? "" : "Serve prima una casella di invio attiva"}">
+              🕒 Programma tutte le pronte (${quantiPronte()})</button>` : ""}
+          ${quantiInCoda() ? `
+            <button class="btn btn-outline btn-sm" id="mm-tutte-coda" ${caselle.length ? "" : "disabled"}>
+              🔄 Riprogramma la coda (${quantiInCoda()})</button>` : ""}
+          <span class="mm-tutte-nota">I filtri qui sopra non contano: questi bottoni prendono tutto.</span>
+        </div>` : ""}
 
       ${ultimaGenerazione ? (() => {
         const g = ultimaGenerazione;
@@ -1166,13 +1223,38 @@
   function invioView() {
     const caselle = smtpDelMittente().filter(s => s.stato === "attivo");
     const adesso = invioAperto === "adesso";
+    const coda = invioBersaglio === "coda";
+    const tutte = invioBersaglio !== "scelti";
+
+    /* Il titolo dice il numero e dice su cosa. «Programma 37
+       messaggi» e «Programma tutte le 37 pronte» non sono la
+       stessa frase, e la differenza conta proprio nel momento in
+       cui si sta per premere. */
+    const quanti = invioBersaglio === "scelti" ? scelte.size
+      : coda ? quantiInCoda() : quantiPronte();
+    const titolo = coda
+      ? `Sposta la data delle ${quanti} in coda`
+      : tutte
+        ? (adesso ? `Invia tutte le ${quanti} pronte` : `Programma tutte le ${quanti} pronte`)
+        : (adesso ? `Invia ${plurale(quanti, "messaggio", "messaggi")}` : `Programma ${plurale(quanti, "messaggio", "messaggi")}`);
+
     return `
     <div class="mm-velo" data-chiudi-invio>
       <div class="card mm-dialogo" role="dialog" aria-modal="true">
         <div class="mm-testata">
-          <h3>${adesso ? `Invia ${plurale(scelte.size, "messaggio", "messaggi")}` : `Programma ${plurale(scelte.size, "messaggio", "messaggi")}`}</h3>
+          <h3>${titolo}</h3>
           <button class="btn btn-ghost btn-sm" data-chiudi-invio>Chiudi</button>
         </div>
+        ${tutte ? `
+          <div class="mm-avviso">
+            ${coda
+              ? `Riguarda <strong>tutti i ${quanti} messaggi in coda</strong>, non quelli che vedi
+                 adesso: i filtri qui dietro non contano. Nessuno parte ora — cambia solo la data e
+                 la casella, e restano in coda.`
+              : `Riguarda <strong>tutte le ${quanti} approvate</strong>, non quelle che vedi adesso:
+                 i filtri qui dietro non contano. Se hai filtrato su una campagna, partono comunque
+                 anche le altre.`}
+          </div>` : ""}
         <form id="mm-invio-form">
           <label class="field"><span>Da quale casella</span>
             <select id="i-smtp" required>
@@ -1187,18 +1269,22 @@
               Quanti ne restano te lo dico alla fine.
             </p>`
           : `
-            <label class="field" style="margin-top:.6rem"><span>Quando</span>
+            <label class="field" style="margin-top:.6rem"><span>${coda ? "Nuova data e ora" : "Quando"}</span>
               <input id="i-quando" type="datetime-local" required value="${esc(quandoInvio)}"></label>
             <p class="privacy-hint">
-              I messaggi restano in coda con questa data e partono da soli: la coda viene
-              guardata ogni minuto e ne manda pochi per volta, per non farsi scambiare per
-              un invio massivo. Se stanno partendo o no si vede in
+              ${coda
+                ? `Restano in coda e partono da soli alla nuova ora. Se cambi anche la casella,
+                   partiranno da quella. Niente esce adesso.`
+                : `I messaggi restano in coda con questa data e partono da soli: la coda viene
+                   guardata ogni minuto e ne manda pochi per volta, per non farsi scambiare per
+                   un invio massivo.`}
+              Se stanno partendo o no si vede in
               <a href="#/admin/crm/mail/registro">Send Log</a>.
             </p>`}
           <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
             <button type="button" class="btn btn-ghost btn-sm" data-chiudi-invio>Annulla</button>
             <button type="submit" class="btn btn-primary btn-sm" ${inInvio ? "disabled" : ""}>
-              ${inInvio ? "Invio…" : adesso ? "Invia ora" : "Metti in coda"}</button>
+              ${inInvio ? "Invio…" : adesso ? "Invia ora" : coda ? "Sposta la data" : "Metti in coda"}</button>
           </div>
         </form>
       </div>
@@ -3500,35 +3586,77 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
       await caricaPosta2();
     });
 
-    $("#mm-invia-ora")?.addEventListener("click", () => { invioAperto = "adesso"; QF().render(); });
+    $("#mm-invia-ora")?.addEventListener("click", () => {
+      invioBersaglio = "scelti"; invioAperto = "adesso"; QF().render();
+    });
     $("#mm-programma")?.addEventListener("click", () => {
-      invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
+      invioBersaglio = "scelti"; invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
+    });
+
+    /* Le tre azioni che prendono tutto. Aprono la stessa finestra:
+       cambia solo su chi agisce, e la finestra lo dice. */
+    $("#mm-tutte-invia")?.addEventListener("click", () => {
+      invioBersaglio = "pronte"; invioAperto = "adesso"; QF().render();
+    });
+    $("#mm-tutte-programma")?.addEventListener("click", () => {
+      invioBersaglio = "pronte"; invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
+    });
+    $("#mm-tutte-coda")?.addEventListener("click", () => {
+      /* Riprogrammare non è inviare: qui il modo "adesso" non
+         esiste, e il bottone dice «Sposta la data». */
+      invioBersaglio = "coda"; invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
     });
 
     document.querySelectorAll("[data-chiudi-invio]").forEach(el =>
       el.addEventListener("click", e => {
         if (el.classList.contains("mm-velo") && e.target !== el) return;
-        invioAperto = null; QF().render();
+        /* Il bersaglio torna ai selezionati: lasciarlo su "pronte"
+           vorrebbe dire che il prossimo «Invia ora» della barra
+           prende tutto senza averlo chiesto. */
+        invioAperto = null; invioBersaglio = "scelti"; QF().render();
       }));
-    if (invioAperto) chiudiConEsc(() => { invioAperto = null; });
+    if (invioAperto) chiudiConEsc(() => { invioAperto = null; invioBersaglio = "scelti"; });
 
     $("#mm-invio-form")?.addEventListener("submit", async e => {
       e.preventDefault();
       const smtp = $("#i-smtp").value;
+
+      /* Gli identificativi si risolvono adesso, non quando il
+         bottone è stato premuto: fra l'apertura della finestra e
+         la conferma può essere passato un minuto, e nel frattempo
+         la coda può aver mandato qualcosa. */
+      const b = await bersaglioIds();
+      if (b.errore) { QF().toast(b.errore); return; }
+      if (!b.ids.length) {
+        QF().toast(invioBersaglio === "scelti"
+          ? "Nessun messaggio selezionato."
+          : "Non c'è più niente da fare: l'elenco è cambiato nel frattempo.");
+        invioAperto = null; invioBersaglio = "scelti"; QF().render(); await caricaPosta2();
+        return;
+      }
+      /* Il tetto è quello del server, non una scelta di qui: oltre
+         cinquecento id posta-invia e posta-programma non guardano.
+         Dirlo è meglio che lasciar credere di aver preso tutto. */
+      const avvisoTetto = b.troncato
+        ? ` I primi ${b.ids.length} di ${b.totale}: ripremi per i successivi.`
+        : "";
+
       if (invioAperto === "programma") {
         quandoInvio = $("#i-quando").value;
-        const esito = await chiama("posta-programma", { ids: [...scelte], smtp_id: smtp, quando: quandoInvio });
+        const esito = await chiama("posta-programma", { ids: b.ids, smtp_id: smtp, quando: quandoInvio });
         if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
-        invioAperto = null; scelte = new Set();
-        QF().toast(`${plurale(esito.programmati, "messaggio in coda", "messaggi in coda")} per il ${dataOra(esito.quando)}.`);
+        invioAperto = null; invioBersaglio = "scelti"; scelte = new Set();
+        QF().toast(`${plurale(esito.programmati, "messaggio in coda", "messaggi in coda")} per il ${dataOra(esito.quando)}.${avvisoTetto}`);
         await caricaPosta2();
         return;
       }
 
       const pausa = Number($("#i-pausa").value);
-      if (!confirm(`Mandare ${plurale(scelte.size, "messaggio", "messaggi")} adesso? Una volta partiti non si richiamano.`)) return;
+      if (!confirm(`Mandare ${plurale(b.ids.length, "messaggio", "messaggi")} adesso?${
+        invioBersaglio !== "scelti" ? " Sono tutte le approvate, non solo quelle che vedi." : ""
+      } Una volta partiti non si richiamano.`)) return;
       inInvio = true; QF().render();
-      const esito = await chiama("posta-invia", { ids: [...scelte], smtp_id: smtp, pausa_secondi: pausa }, 150000);
+      const esito = await chiama("posta-invia", { ids: b.ids, smtp_id: smtp, pausa_secondi: pausa }, 150000);
       inInvio = false;
       if (!esito.ok) { QF().toast(esito.errore || "Invio non riuscito."); QF().render(); return; }
 
@@ -3538,7 +3666,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
         esito.rimasti ? `${esito.rimasti} ancora da mandare: premi di nuovo` : null,
         esito.limite ? `limite giornaliero della casella: ne restavano ${esito.limite}` : null
       ].filter(Boolean);
-      invioAperto = null;
+      invioAperto = null; invioBersaglio = "scelti";
       if (!esito.rimasti) scelte = new Set();
       QF().toast(`${plurale(esito.partite, "messaggio partito", "messaggi partiti")}${note.length ? `; ${note.join("; ")}` : ""}.`);
       await carica();

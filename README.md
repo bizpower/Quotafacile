@@ -544,6 +544,35 @@ un trattamento in più non dichiarato.
 | `QF_MM_MODELLO_AI` | facoltativo, default `claude-opus-5` |
 | `QF_MM_COSTO_INGRESSO` / `QF_MM_COSTO_USCITA` | dollari per milione di token, default `5` / `25`. **Se si cambia modello vanno cambiati anche questi**, altrimenti il costo a schermo diventa una bugia precisa |
 
+### Le tre azioni che prendono tutto
+
+In Email Ready, sopra l'elenco, su una riga loro:
+
+| Bottone | Cosa fa |
+|---|---|
+| 📤 **Invia tutte le pronte (N)** | manda tutte le approvate, a blocchi di venti |
+| 🕒 **Programma tutte le pronte (N)** | le mette in coda con una data |
+| 🔄 **Riprogramma la coda (N)** | sposta data e casella di quelle **già in coda**, senza mandarne nessuna |
+
+Stanno separate dai bottoni della barra dei selezionati, e separate da una riga tratteggiata, perché
+fanno una cosa di natura diversa: **ignorano i filtri a schermo**. Chi ha appena filtrato su una
+campagna e preme «invia tutte» si aspetta quella campagna — se invece parte tutto lo scopre dopo, e
+dopo è tardi. Lo dice la riga («I filtri qui sopra non contano»), lo ripete la finestra, e la
+conferma dell'invio immediato lo dice una terza volta.
+
+Il **riprogramma coda** non ha richiesto nulla sul server: `posta-programma` accetta `in_coda` fra
+gli stati da sempre. Mancava il bottone, non il motore.
+
+I numeri sui bottoni sono i **conteggi globali** che `posta-elenco` restituisce già a parte, non le
+righe a schermo. Gli identificativi su cui agire si rileggono **al momento della conferma**, non
+all'apertura della finestra: fra i due istanti la coda può aver mandato qualcosa, e agire su una
+lista vecchia vorrebbe dire riprogrammare messaggi già partiti. Se nel frattempo non è rimasto
+niente, lo dice invece di fingere.
+
+Oltre **cinquecento** messaggi per volta non si va: è il tetto che `posta-invia` e `posta-programma`
+applicano agli id che ricevono, non una scelta della pagina. Quando succede, la pagina dice «i primi
+N di M: ripremi per i successivi».
+
 ## 💳 Abbonamenti degli intermediari — Stripe
 
 Tutto passa dalla Edge Function **`qf-pro`**: registrazione dell'intermediario, apertura del
