@@ -573,6 +573,54 @@ Oltre **cinquecento** messaggi per volta non si va: è il tetto che `posta-invia
 applicano agli id che ricevono, non una scelta della pagina. Quando succede, la pagina dice «i primi
 N di M: ripremi per i successivi».
 
+### L'anteprima: «Come arriva»
+
+Il bottone 👁 su ogni riga. È separato da «Apri» perché sono due cose diverse: una si guarda,
+l'altra si cambia, e chi vuole solo rileggere un testo prima di approvarlo non deve trovarsi dentro
+un modulo coi campi aperti.
+
+Mostra destinatario, oggetto, da quale casella parte, il corpo con le andate a capo che ha, e la
+firma della casella — che nel corpo **non c'è**, perché il server la aggiunge all'invio.
+
+⚠️ **Segnala i segnaposto rimasti.** Un messaggio che parte con `{citta}` scritto in chiaro è la
+figura peggiore che questa sezione possa fare, e si vede solo rileggendo. Qui si vede prima, con
+l'elenco di quali sono: succede quando il dato non c'era sulla scheda del lead.
+
+Il **piede di legge** non è riprodotto: è descritto. Il testo esatto vive in un posto solo, dentro
+`qf-mm`, e due copie di una frase che dice da dove viene l'indirizzo e come opporsi sono due frasi
+che prima o poi divergono — con quella a schermo che mente su cosa è partito.
+
+### «Salva come modello» invece di «Duplica»
+
+Su Lovable c'era *Duplica*: copia un messaggio per riscriverlo a un altro destinatario. Qui i
+modelli esistono già e fanno la stessa cosa meglio — un testo che funziona lo ritrovi in
+**Templates** e lo riusi su una lista intera, invece di averne una copia sepolta fra le bozze.
+
+E non è costato nulla di nuovo: `qf-mail` ha l'azione `salva-modello` da sempre.
+
+### La firma in blocco: deliberatamente non portata
+
+Lovable aveva un bottone «Firma» che riscriveva il corpo di tutte le email per infilarci (o
+rinfrescarci) la firma del brand. Serviva perché là la firma era **dentro** `body_html`.
+
+Da noi no: `conPiede()` compone all'invio il corpo, poi la firma della casella se attiva, poi il
+piede. Applicare la firma al corpo **la raddoppierebbe**. Il bottone risolveva un problema creato da
+una scelta di progetto che non abbiamo.
+
+### Gli indirizzi nascosti dietro le entità HTML
+
+Mezzo web italiano scrive `info&commat;trattoria.it` o `info&#64;trattoria.it` per non farsi
+raccogliere dai robot. A schermo si legge `info@…`; nel sorgente la chiocciola non c'è, e
+l'espressione regolare ne pretende una vera.
+
+Quegli indirizzi **non venivano sbagliati: non venivano visti** — che è peggio, perché il lead
+finiva in archivio senza email e sembrava un'azienda che non la pubblica.
+
+`sciogliEntita()` in `qf-lead` le scioglie prima di cercare: entità numeriche (decimali ed
+esadecimali) e, per nome, le poche che compaiono dentro un indirizzo. `&amp;` va **per ultima**,
+altrimenti `&amp;commat;` diventerebbe `&commat;` e poi una chiocciola che nella pagina non c'era.
+I filtri che c'erano continuano a filtrare: `logo@2x.png`, `no-reply@`, i domini finti.
+
 ## 💳 Abbonamenti degli intermediari — Stripe
 
 Tutto passa dalla Edge Function **`qf-pro`**: registrazione dell'intermediario, apertura del

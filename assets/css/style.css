@@ -1311,6 +1311,25 @@ a.chip { display: inline-block; text-decoration: none; }
   margin-bottom: .7rem; }
 .mm-tutte-nota { font-size: .76rem; color: var(--ink-soft); }
 @media (min-width: 46rem) { .mm-tutte-nota { margin-left: auto; } }
+
+/* L'anteprima. Il foglio somiglia a un'email letta, non a un
+   modulo: niente campi, niente bordi di input. Il corpo tiene le
+   andate a capo che ha, perché un messaggio con i paragrafi
+   schiacciati non è il messaggio che parte. */
+.mm-riga-azioni { display: flex; gap: .2rem; justify-content: flex-end; }
+.mm-anteprima-foglio { border: 1px solid var(--line); border-radius: 10px;
+  padding: 1rem 1.1rem; background: #fff; margin-top: .8rem;
+  max-height: 55vh; overflow: auto; }
+.mm-anteprima-corpo { white-space: pre-wrap; font-size: .9rem; line-height: 1.55; }
+.mm-anteprima-firma { white-space: pre-wrap; font-size: .9rem; line-height: 1.55;
+  margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--line); }
+/* Il piede non è testo vero: è la descrizione di quello che il
+   server aggiunge. Si distingue a vista perché non va letto come
+   se fosse la frase che parte. */
+.mm-anteprima-piede { margin-top: 1rem; padding: .7rem .8rem; border-radius: 8px;
+  background: var(--green-50); font-size: .78rem; color: var(--ink-soft); }
+.mm-anteprima-piede ul { margin: .4rem 0 .4rem 1.1rem; }
+.mm-anteprima-piede strong { color: var(--ink); }
 /* Il cestino sta da solo all'altro capo: cancellare non è
    un'azione da mettere accanto a quelle che si usano ogni giorno. */
 .mm-azioni .danger { margin-left: auto; }

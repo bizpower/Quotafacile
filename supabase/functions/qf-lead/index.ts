@@ -309,7 +309,41 @@ function preferito(lista: string[]): string {
   return lista[0];
 }
 
-function emailDa(html: string, dominio: string | null): string | null {
+/* Le entita' HTML, sciolte prima di cercare.
+ *
+ * Mezzo web italiano scrive l'indirizzo come
+ * info&commat;trattoria.it oppure info&#64;trattoria.it, per non
+ * farlo raccogliere dai robot. A schermo si legge "info@...", nel
+ * sorgente la chiocciola non c'e': l'espressione regolare qui
+ * sotto pretende una @ vera, quindi quegli indirizzi non venivano
+ * trovati. Non venivano sbagliati - non venivano visti, che e'
+ * peggio, perche' il lead finiva in archivio senza email e
+ * sembrava un'azienda che non la pubblica.
+ *
+ * Si scioglie prima di cercare, e si scioglie solo quello che
+ * serve: le entita' numeriche, e per nome le poche che compaiono
+ * dentro un indirizzo. &amp; va per ultima, altrimenti
+ * &amp;commat; diventerebbe &commat; e poi una chiocciola che
+ * nella pagina non c'era.
+ */
+function sciogliEntita(s: string): string {
+  return s
+    .replace(/&#(\d{1,7});/g, (_, n) => {
+      const c = Number(n);
+      return c > 0 && c < 0x110000 ? String.fromCodePoint(c) : _;
+    })
+    .replace(/&#x([0-9a-f]{1,6});/gi, (_, n) => {
+      const c = parseInt(n, 16);
+      return c > 0 && c < 0x110000 ? String.fromCodePoint(c) : _;
+    })
+    .replace(/&commat;/gi, "@")
+    .replace(/&(period|dot);/gi, ".")
+    .replace(/&lpar;at&rpar;/gi, "@")
+    .replace(/&amp;/gi, "&");
+}
+
+function emailDa(htmlGrezzo: string, dominio: string | null): string | null {
+  const html = sciogliEntita(htmlGrezzo);
   const grezzi = new Set<string>();
   // I mailto: valgono piu' del testo libero: sono un contatto
   // dichiarato, non una stringa che somiglia a un indirizzo.

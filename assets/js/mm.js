@@ -827,6 +827,19 @@
   ];
   let inRitocco = "";   // la chiave del ritocco in corso, per disabilitare i bottoni
 
+  /* Il messaggio in anteprima, separato da quello in modifica.
+     Sono due cose diverse: una si guarda, l'altra si cambia, e
+     chi vuole solo rileggere un testo prima di approvarlo non
+     deve trovarsi dentro un modulo con i campi aperti. */
+  let postaAnteprima = null;
+  let inModello = false;
+
+  /* I segnaposto rimasti. Un messaggio che parte con "{citta}"
+     scritto in chiaro è la figura peggiore che questa sezione
+     possa fare, e si vede solo rileggendo: qui si vede prima. */
+  const segnapostiRimasti = t =>
+    [...new Set([...String(t || "").matchAll(/\{(\w+)\}/g)].map(m => m[1]))];
+
   const STATI_POSTA = {
     bozza: ["✎", "Bozza"], pronta: ["✓", "Pronta"], in_coda: ["🕒", "In coda"],
     inviata: ["📤", "Inviata"], fallita: ["⚠️", "Fallita"], annullata: ["✕", "Annullata"]
@@ -1069,7 +1082,10 @@
                     ${m.modificata ? `<span class="muted" style="display:block;font-size:.7rem">corretta a mano</span>` : ""}
                     ${m.errore ? `<span class="mm-errore" style="display:block;font-size:.7rem">${esc(m.errore.slice(0, 70))}</span>` : ""}
                   </td>
-                  <td><button class="btn btn-ghost btn-sm" data-apri="${esc(m.id)}">Apri</button></td>
+                  <td class="mm-riga-azioni">
+                    <button class="btn btn-ghost btn-sm" data-anteprima="${esc(m.id)}" title="Come arriva">👁</button>
+                    <button class="btn btn-ghost btn-sm" data-apri="${esc(m.id)}">Apri</button>
+                  </td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -1077,8 +1093,82 @@
     </div>
 
     ${postaAperta ? postaApertaView() : ""}
+    ${postaAnteprima ? postaAnteprimaView() : ""}
     ${invioAperto ? invioView() : ""}
     ${generaAperto ? generaView() : ""}`;
+  }
+
+  /* L'anteprima: quello che arriva a chi lo riceve, non quello
+     che c'è nel database.
+
+     In fondo a ogni messaggio il server mette due cose che qui
+     non sono scritte: la firma della casella, se ne ha una, e il
+     piede di legge. La firma la conosciamo — arriva con la
+     panoramica — e quindi si mostra. Il piede no, e NON lo
+     copiamo qui: è un testo che dice da dove viene l'indirizzo e
+     come opporsi, e due copie di un testo legale sono due testi
+     che prima o poi divergono. Vive in un posto solo, sul
+     server, dove nessuno lo può svuotare per sbaglio. Qui si
+     dice cosa contiene e si rimanda all'informativa.
+
+     Il nome e' postaAnteprimaView e non anteprimaView perche'
+     quest'ultimo esiste gia': e' l'anteprima dell'AI writer, piu'
+     in basso. Due funzioni con lo stesso nome nello stesso scope
+     non danno errore - la seconda vince in silenzio - e la prima
+     volta e' andata proprio cosi'. */
+  function postaAnteprimaView() {
+    const m = postaAnteprima;
+    const casella = (D().smtp || []).find(s => s.id === m.smtp_id);
+    const firma = casella && casella.firma_attiva && casella.firma ? casella.firma : "";
+    const buchi = segnapostiRimasti(m.corpo).concat(segnapostiRimasti(m.oggetto));
+    return `
+    <div class="mm-velo" data-chiudi-ant-posta>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Come arriva</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-ant-posta>Chiudi</button>
+        </div>
+
+        ${buchi.length ? `
+          <div class="mm-avviso">
+            <strong>Restano dei segnaposto non compilati:</strong>
+            ${buchi.map(b => `<code>{${esc(b)}}</code>`).join(" ")}.
+            Partirebbero scritti così, graffe comprese. Succede quando il dato non c'era sul lead:
+            correggi il testo a mano, oppure riempi la scheda e riscrivi il messaggio.
+          </div>` : ""}
+
+        <table class="admin-kv">
+          <tr><th>A</th><td>${esc(m.destinatario)}</td></tr>
+          <tr><th>Oggetto</th><td><strong>${esc(m.oggetto)}</strong></td></tr>
+          ${casella ? `<tr><th>Da</th><td>${esc(casella.nome)} · ${esc(casella.from_email)}</td></tr>`
+            : `<tr><th>Da</th><td class="muted">Nessuna casella ancora assegnata: si scegli al momento dell'invio.</td></tr>`}
+        </table>
+
+        <div class="mm-anteprima-foglio">
+          <div class="mm-anteprima-corpo">${esc(m.corpo)}</div>
+          ${firma ? `<div class="mm-anteprima-firma">${esc(firma)}</div>` : ""}
+          <div class="mm-anteprima-piede">
+            <strong>— qui il server aggiunge il piede di legge, sempre —</strong>
+            <ul>
+              <li>da dove viene il suo indirizzo;</li>
+              <li>che per non ricevere più niente basta rispondere <strong>NO</strong>, senza motivare;</li>
+              <li>chi scrive, con partita IVA e indirizzo, e il rimando
+                  all'<a href="#/privacy-imprese">informativa alle imprese</a>.</li>
+            </ul>
+            Non è configurabile e non si può togliere. Il testo esatto sta in un posto solo, sul
+            server: due copie di una frase del genere sono due frasi che prima o poi divergono.
+          </div>
+        </div>
+
+        <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+          <button type="button" class="btn btn-outline btn-sm" id="mm-ant-modello" ${inModello ? "disabled" : ""}>
+            ${inModello ? "Salvo…" : "📄 Salva come modello"}</button>
+          ${m.stato === "inviata" ? "" : `
+            <button type="button" class="btn btn-outline btn-sm" id="mm-ant-modifica">✎ Modifica</button>`}
+          <button type="button" class="btn btn-ghost btn-sm" data-chiudi-ant-posta>Chiudi</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   function postaApertaView() {
@@ -3474,6 +3564,57 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
         scelte = new Set();
         await caricaPosta2();
       }));
+
+    /* ---------------- ANTEPRIMA ---------------- */
+
+    document.querySelectorAll("[data-anteprima]").forEach(b =>
+      b.addEventListener("click", () => {
+        postaAnteprima = postaDati.posta.find(m => m.id === b.dataset.anteprima) || null;
+        QF().render();
+      }));
+
+    document.querySelectorAll("[data-chiudi-ant-posta]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        postaAnteprima = null; QF().render();
+      }));
+    if (postaAnteprima) chiudiConEsc(() => { postaAnteprima = null; });
+
+    $("#mm-ant-modifica")?.addEventListener("click", () => {
+      postaAperta = postaAnteprima;
+      postaAnteprima = null;
+      QF().render();
+    });
+
+    /* Salvare il testo come modello, invece di duplicare la riga.
+       Su Lovable c'era «Duplica», che copia un messaggio per
+       riscriverlo a un altro destinatario. Qui i modelli esistono
+       già e fanno la stessa cosa meglio: un testo che ti piace lo
+       ritrovi in Templates e lo riusi su una lista intera, invece
+       di averne una copia sepolta fra le bozze.
+
+       E non costa nulla di nuovo: qf-mail sa salvare un modello
+       da sempre. */
+    $("#mm-ant-modello")?.addEventListener("click", async () => {
+      const m = postaAnteprima;
+      const nome = prompt("Con che nome lo ritrovi fra i modelli?",
+        (m.oggetto || "Modello").slice(0, 60));
+      if (nome === null) return;
+      if (!nome.trim()) { QF().toast("Serve un nome."); return; }
+      inModello = true; QF().render();
+      /* I segnaposto si rimettono: un modello con il nome di
+         un'azienda dentro serve a quella sola. Si sostituisce
+         solo quello che si sa con certezza, cioè il destinatario
+         di questo messaggio, e il resto resta come l'ha scritto
+         il modello. */
+      const e = await chiamaMail("salva-modello", {
+        nome: nome.trim(), oggetto: m.oggetto, corpo: m.corpo, scopo: "contatto"
+      });
+      inModello = false;
+      if (!e.ok) { QF().toast(e.errore || "Modello non salvato."); QF().render(); return; }
+      QF().toast("Salvato fra i modelli.");
+      QF().render();
+    });
 
     /* ---------------- SCRITTURA ASSISTITA ---------------- */
 
