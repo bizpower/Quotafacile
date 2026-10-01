@@ -393,6 +393,31 @@ const STRUMENTI = [
     },
   },
   {
+    /* L'unico strumento che tocca la posta in uscita, e tocca una
+       cosa sola: QUANDO parte, non SE parte.
+       La riga e' quella: il modello puo' spostare un'ora, non
+       puo' far uscire un messaggio. Spostare si disfa - si
+       risposta - mentre un invio no, e una frase capita male al
+       telefono non deve poter mandare niente a nessuno. */
+    name: "riprogramma_coda",
+    description:
+      "Sposta data e ora dei messaggi che sono GIA' in coda. Non invia e non puo' inviare: " +
+      "cambia soltanto quando partiranno, e resta tutto in coda. " +
+      "Non esegue: prepara una proposta da confermare.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        quando: {
+          type: "STRING",
+          description:
+            "Data e ora in formato 2026-10-03T09:00. Oggi e' la data scritta all'inizio " +
+            "della frase: calcola da quella \"domani\", \"lunedi\", \"fra due ore\".",
+        },
+      },
+      required: ["quando"],
+    },
+  },
+  {
     name: "elimina_contatto",
     description:
       "Cancella un contatto dall'archivio. Non esegue: prepara una proposta da confermare. " +
@@ -501,8 +526,10 @@ Regole che non puoi violare:
    "mario@rossi.it").
 
 4. NON INVII MAI EMAIL, e non esiste uno strumento per farlo.
-   Puoi preparare e correggere, ma la partenza e' un gesto di una
-   persona. Se te lo chiedono, dillo in una riga.
+   Puoi preparare, correggere, e spostare l'ora di partenza di
+   quelle che sono gia' in coda. Non puoi farle partire: quello
+   e' un gesto di una persona davanti a cio' che sta per uscire.
+   Se ti chiedono di inviare, dillo in una riga.
 
 5. Se la frase chiede un'altra cosa che nessuno strumento sa fare,
    dillo in una riga invece di chiamare uno strumento a caso.
@@ -526,9 +553,16 @@ async function interroga(frase: string): Promise<Mossa> {
     throw e;
   }
 
+  /* La data di oggi va davanti alla frase, non nelle istruzioni.
+     Le istruzioni sono una costante valutata all'avvio
+     dell'istanza: un'istanza viva da ieri direbbe al modello che
+     oggi e' ieri, e "domani alle nove" finirebbe nel passato.
+     Qui si ricalcola a ogni richiesta. */
+  const oggi = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Rome" }).replace(" ", "T");
+
   const corpo = JSON.stringify({
     systemInstruction: { parts: [{ text: ISTRUZIONI }] },
-    contents: [{ role: "user", parts: [{ text: frase }] }],
+    contents: [{ role: "user", parts: [{ text: `Oggi è ${oggi} (ora italiana).\n\n${frase}` }] }],
     tools: [{ functionDeclarations: STRUMENTI }],
     // AUTO e non ANY: deve poter rispondere "questo non so
     // farlo" invece di essere costretto a chiamare lo
@@ -1206,6 +1240,7 @@ async function propostaAggiungi(a: Record<string, unknown>, frase: string, ultim
 
 const URL_CRM = URL_SUPABASE.replace(/\/+$/, "") + "/functions/v1/qf-crm";
 const URL_MAIL = URL_SUPABASE.replace(/\/+$/, "") + "/functions/v1/qf-mail";
+const URL_MM = URL_SUPABASE.replace(/\/+$/, "") + "/functions/v1/qf-mm";
 
 async function chiamaAltrove(url: string, azione: string, dati: Record<string, unknown>, chiave: string) {
   const r = await fetch(url, {
@@ -1340,6 +1375,65 @@ async function propostaOpposizione(a: Record<string, unknown>, frase: string, ul
       note: attiva
         ? ["Da questo momento il server rifiuta l'invio verso questo indirizzo: non è una schermata che lo nasconde. È l'art. 21 del GDPR."]
         : ["L'opposizione si toglie solo se è stata l'azienda a chiederlo."],
+    },
+  };
+}
+
+/* La proposta di spostare la coda.
+ *
+ * Quanti sono lo conta il server, e il numero finisce nel titolo
+ * che la persona legge: al modello non torna indietro niente,
+ * come per ogni altra lettura di questa funzione.
+ *
+ * La data arriva dal modello e si valida qui. Se non si capisce,
+ * o se e' nel passato, il campo si riempie con "fra un'ora" e la
+ * nota lo dice: meglio un valore ragionevole da correggere che un
+ * errore secco, perche' a voce le date si sbagliano spesso.
+ */
+function fraUnOraLocale(): string {
+  const d = new Date(Date.now() + 3600_000);
+  d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+  return d.toLocaleString("sv-SE", { timeZone: "Europe/Rome" }).replace(" ", "T").slice(0, 16);
+}
+
+async function propostaRiprogrammaCoda(a: Record<string, unknown>, frase: string) {
+  const { data: coda } = await db.from("mm_email")
+    .select("id").eq("stato", "in_coda");
+  const quanti = coda?.length ?? 0;
+  if (!quanti) {
+    return { messaggio: "Non c'è nessun messaggio in coda: non c'è niente da spostare." };
+  }
+
+  const grezza = testo(a.quando, 40) ?? "";
+  const letta = new Date(grezza);
+  const valida = !isNaN(letta.getTime());
+  const futura = valida && letta.getTime() > Date.now();
+  const quando = futura ? grezza.slice(0, 16) : fraUnOraLocale();
+
+  const note = [
+    "Non parte niente adesso: cambia solo l'ora in cui partiranno, e restano in coda.",
+    "Riguarda tutti i messaggi in coda, non una selezione, e ognuno resta sulla casella da cui doveva partire.",
+  ];
+  const avvisi: string[] = [];
+  if (!valida && grezza) {
+    note.unshift(`Non ho capito «${grezza}» come data: ho messo fra un'ora, correggila.`);
+  } else if (valida && !futura) {
+    note.unshift("La data che ho capito era già passata: ho messo fra un'ora.");
+  }
+  if (futura && letta.getTime() - Date.now() < 15 * 60_000) {
+    avvisi.push("È fra pochi minuti: la coda viene guardata ogni minuto, quindi partiranno quasi subito.");
+  }
+
+  return {
+    proposta: {
+      azione: "riprogramma_coda",
+      titolo: `Sposto ${quanti === 1 ? "il messaggio in coda" : `i ${quanti} messaggi in coda`}?`,
+      campi: { quando },
+      etichette: { quando: "Nuova data e ora" },
+      larghi: ["quando"],
+      frase,
+      avvisi,
+      note,
     },
   };
 }
@@ -1481,6 +1575,59 @@ async function eseguiOpposizione(c: Record<string, unknown>, chiave: string) {
   };
 }
 
+/* Lo spostamento vero.
+ *
+ * La coda si rilegge adesso, non quando la proposta e' stata
+ * fatta: fra i due momenti il cron puo' averne mandati, e
+ * riprogrammare un messaggio gia' partito non si puo'.
+ *
+ * E si raggruppa per casella. posta-programma vuole una casella
+ * per chiamata e la riscrive su tutti gli id che riceve: passarne
+ * una sola sposterebbe in silenzio messaggi su una casella
+ * diversa da quella da cui dovevano partire. Nessuno l'ha
+ * chiesto, quindi non si fa.
+ */
+async function eseguiRiprogrammaCoda(c: Record<string, unknown>, chiave: string) {
+  const quando = testo(c.quando, 40);
+  if (!quando) throw new Error("Manca la data");
+  const d = new Date(quando);
+  if (isNaN(d.getTime())) throw new Error("La data non è leggibile.");
+  if (d.getTime() <= Date.now()) throw new Error("L'orario è già passato: scegline uno futuro.");
+
+  const { data: coda } = await db.from("mm_email")
+    .select("id,smtp_id").eq("stato", "in_coda");
+  if (!coda?.length) {
+    return { messaggio: "La coda si è svuotata nel frattempo: non c'era più niente da spostare." };
+  }
+
+  const perCasella = new Map<string, string[]>();
+  let senzaCasella = 0;
+  for (const r of coda as { id: string; smtp_id: string | null }[]) {
+    if (!r.smtp_id) { senzaCasella++; continue; }
+    perCasella.set(r.smtp_id, [...(perCasella.get(r.smtp_id) ?? []), r.id]);
+  }
+
+  let spostati = 0;
+  for (const [smtpId, ids] of perCasella) {
+    const e = await chiamaAltrove(URL_MM, "posta-programma", {
+      ids, smtp_id: smtpId, quando: d.toISOString(),
+    }, chiave);
+    spostati += Number(e.programmati ?? 0);
+  }
+
+  const data = d.toLocaleString("it-IT", {
+    timeZone: "Europe/Rome", dateStyle: "long", timeStyle: "short",
+  });
+  return {
+    messaggio:
+      `${spostati === 1 ? "Un messaggio spostato" : `${spostati} messaggi spostati`} al ${data}. ` +
+      `Restano in coda: partiranno da soli a quell'ora.` +
+      (senzaCasella
+        ? ` ${senzaCasella} ${senzaCasella === 1 ? "è rimasto" : "sono rimasti"} fermi perché non hanno una casella assegnata: aprili in Email Ready.`
+        : ""),
+  };
+}
+
 async function eseguiEliminaContatto(c: Record<string, unknown>, chiave: string) {
   const id = testo(c.lead_id, 40);
   if (!id) throw new Error("Manca il contatto");
@@ -1557,6 +1704,7 @@ async function interpreta(d: Record<string, unknown>, chiave: string) {
     case "cerca_e_salva":   return await propostaCercaSalva(m.argomenti, frase);
     case "aggiorna_contatto":    return await propostaAggiornaContatto(m.argomenti, frase, ultimo);
     case "opposizione_contatto": return await propostaOpposizione(m.argomenti, frase, ultimo);
+    case "riprogramma_coda": return await propostaRiprogrammaCoda(m.argomenti, frase);
     case "elimina_contatto":     return await propostaEliminaContatto(m.argomenti, frase, ultimo);
     case "collaboratore":        return await propostaCollaboratore(m.argomenti, frase);
     case "salva_contatto":  return await propostaContatto(m.argomenti, frase);
@@ -1655,6 +1803,7 @@ async function esegui(d: Record<string, unknown>, chiave: string) {
   if (azione === "cerca_e_salva") return await cercaESalva(campi, chiave);
   if (azione === "aggiorna_contatto") return await eseguiAggiornaContatto(campi, chiave);
   if (azione === "opposizione_contatto") return await eseguiOpposizione(campi, chiave);
+  if (azione === "riprogramma_coda") return await eseguiRiprogrammaCoda(campi, chiave);
   if (azione === "elimina_contatto") return await eseguiEliminaContatto(campi, chiave);
   if (azione === "collaboratore") return await eseguiCollaboratore(campi, chiave);
   throw new Error("Azione non riconosciuta");

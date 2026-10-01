@@ -532,6 +532,40 @@ stessi quattro controlli, lo stesso inserimento. Cambia solo il messaggio quando
 scrivere: con un lead solo il motivo è uno e si dice al singolare («*Trattoria del Centro* non ha un
 indirizzo email: cercalo sul suo sito, oppure telefona»), invece di stampare «1 senza indirizzo».
 
+### Il chatbot può spostare la coda, non può inviare
+
+Quindicesimo strumento di `qf-chat`: `riprogramma_coda`. «Sposta la coda a domani alle nove» muove
+data e ora di **tutti** i messaggi già in coda, e nient'altro.
+
+La riga che ho scelto è questa: **il modello può cambiare *quando*, mai *se*.** Non è prudenza
+generica, è un'asimmetria con un motivo —
+
+- **spostare si disfa**: se la data è sbagliata si risposta, e nel frattempo non è uscito niente;
+- **inviare no**: una frase capita male al telefono non deve poter mandare email a nessuno, e
+  guardare cosa sta per uscire a nome della società resta un gesto di una persona.
+
+La regola 4 delle istruzioni lo dice al modello in questi termini, e non esiste nessuno strumento di
+invio da chiamare.
+
+Le proprietà di sicurezza restano quelle di sempre: è una **scrittura**, quindi diventa una proposta
+con la data in chiaro, e la conferma non ripassa dal modello. Quanti sono li conta il server e il
+numero finisce nel titolo che leggi — al modello non torna indietro niente.
+
+Tre dettagli che cambiano il comportamento:
+
+1. **La data di oggi va davanti alla frase, non nelle istruzioni.** Le istruzioni sono una costante
+   valutata all'avvio dell'istanza: un'istanza viva da ieri direbbe al modello che oggi è ieri, e
+   «domani alle nove» finirebbe nel passato.
+2. **Se la data non si capisce, o è passata**, il campo si riempie con «fra un'ora» e la nota lo
+   dice. A voce le date si sbagliano spesso: meglio un valore ragionevole da correggere che un
+   errore secco.
+3. **Si raggruppa per casella.** `posta-programma` riscrive la casella su tutti gli id che riceve:
+   passarne una sola sposterebbe in silenzio messaggi su una casella diversa da quella da cui
+   dovevano partire. Nessuno l'ha chiesto, quindi non si fa.
+
+E la coda si rilegge **alla conferma**, non quando la proposta è stata fatta: fra i due momenti il
+cron può averne mandati, e riprogrammare un messaggio già partito non si può.
+
 ### 🔴 Quello che manca ancora, e perché non l'ho fatto
 
 Su Lovable il pannello del lead faceva una cosa in più: leggeva **le pagine del sito**
