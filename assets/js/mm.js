@@ -816,6 +816,21 @@
     }
   }
 
+  /* Quanto si è consumato, detto con quello che si sa davvero.
+     I token li conta Google e tornano con ogni risposta; il
+     prezzo in dollari esiste solo se sul progetto Supabase sono
+     configurati QF_MM_COSTO_INGRESSO e QF_MM_COSTO_USCITA. Senza
+     quelli una cifra in denaro sarebbe inventata — e una cifra
+     inventata con quattro decimali ha l'aria di essere stata
+     misurata, che è il modo peggiore di sbagliare. */
+  function consumo(e) {
+    if (e?.costoNoto && typeof e.costo === "number") {
+      return e.costo < 0.01 ? "meno di un centesimo di dollaro" : `${e.costo.toFixed(4)} $`;
+    }
+    const n = (e?.token?.in || 0) + (e?.token?.out || 0);
+    return n ? `${n.toLocaleString("it-IT")} token` : "";
+  }
+
   let generaAperto = false;
   /* Quando si scrive per un lead solo, qui c'è il lead: serve al
      titolo e a sapere che la tendina delle liste non va mostrata.
@@ -1107,7 +1122,7 @@
         <div class="mm-barra-scelta" style="align-items:flex-start">
           <div>
             <strong>${plurale(g.creati, "bozza scritta", "bozze scritte")}</strong>
-            ${g.costo ? ` · costo del blocco: ${g.costo.toFixed(4)} $` : ""}
+            ${consumo(g) ? ` · il blocco ha consumato ${consumo(g)}` : ""}
             ${motivi ? `<br><span class="muted" style="font-size:.85rem">Saltati: ${esc(motivi)}.</span>` : ""}
             ${(g.falliti || []).length ? `<br><span class="muted" style="font-size:.85rem">Non riuscite: ${
               esc((g.falliti || []).map(f => f.nome).join(", "))}.</span>` : ""}
@@ -1677,7 +1692,7 @@
         <div class="mm-azioni" style="margin-top:.8rem">
           <button type="submit" class="btn btn-primary btn-sm" ${scrivendo ? "disabled" : ""}>
             ${scrivendo ? "Scrive…" : "✨ Scrivi la bozza"}</button>
-          <span class="muted" style="font-size:.78rem">Ogni bozza costa: il conto esatto compare qui sotto.</span>
+          <span class="muted" style="font-size:.78rem">Ogni bozza è una chiamata a pagamento: quanto ha consumato compare qui sotto.</span>
         </div>
       </form>
     </div>
@@ -1687,8 +1702,7 @@
         <div class="mm-testata">
           <h3>Bozza</h3>
           <span class="muted" style="font-size:.75rem">
-            ${esc(bozza.modello)} · ${bozza.token.ingresso}+${bozza.token.uscita} token ·
-            ${bozza.costo < 0.01 ? "meno di un centesimo di dollaro" : `${bozza.costo.toFixed(3)} $`}
+            ${esc(bozza.modello || "")}${consumo(bozza) ? ` · ${consumo(bozza)}` : ""}
           </span>
         </div>
         ${!bozza.oggetto ? `
@@ -1705,9 +1719,11 @@
           <button class="btn btn-ghost btn-sm" id="mm-bozza-scarta">Scarta</button>
         </div>
         <p class="privacy-hint">
-          Per scrivere questa bozza il nome, il settore, la città e il sito dell'azienda sono usciti dal
-          database e sono arrivati ad Anthropic, che elabora il testo. È un trattamento in più rispetto a
-          quelli dichiarati nell'informativa: se questa sezione entra nell'uso quotidiano, va aggiunto lì.
+          Per scrivere questa bozza il nome, il settore, la città, il sito e la valutazione pubblica
+          dell'azienda sono usciti dal database e sono arrivati a Google, che elabora il testo.
+          L'indirizzo email del destinatario no. È il trattamento dichiarato al punto 5
+          dell'<a href="#/privacy">informativa</a> e nell'<a href="#/privacy-imprese">informativa per le
+          aziende contattate</a>.
         </p>
       </div>` : ""}`;
   }
@@ -3755,24 +3771,30 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     /* Riscrivere i selezionati. Uno alla volta e non in parallelo:
        sono già tre chiamate in parallelo dentro il server, e
        moltiplicarle qui vorrebbe dire prendersi un 429 da
-       Anthropic a metà del gruppo. */
+       Google a metà del gruppo. */
     $("#mm-rigenera-massa")?.addEventListener("click", async () => {
       const ids = [...scelte];
       if (!ids.length) return;
       if (!confirm(`Riscrivere ${plurale(ids.length, "messaggio", "messaggi")}? Il testo di adesso viene sostituito e non si recupera.`)) return;
       inGenerazione = true;
       QF().render();
-      let fatti = 0, falliti = 0, costo = 0, primoErrore = "";
+      let fatti = 0, falliti = 0, primoErrore = "";
+      const totale = { costoNoto: false, costo: 0, token: { in: 0, out: 0 } };
       for (const id of ids) {
         const e = await chiamaAi("rigenera", { id, ritocco: "naturale" });
-        if (e.ok) { fatti++; costo += e.costo || 0; }
-        else { falliti++; if (!primoErrore) primoErrore = e.errore || ""; }
+        if (e.ok) {
+          fatti++;
+          totale.costoNoto = totale.costoNoto || e.costoNoto === true;
+          totale.costo += e.costo || 0;
+          totale.token.in += e.token?.in || 0;
+          totale.token.out += e.token?.out || 0;
+        } else { falliti++; if (!primoErrore) primoErrore = e.errore || ""; }
       }
       inGenerazione = false;
       scelte = new Set();
       QF().toast(`${plurale(fatti, "messaggio riscritto", "messaggi riscritti")}${
         falliti ? `, ${falliti} non riuscit${falliti === 1 ? "o" : "i"}${primoErrore ? `: ${primoErrore}` : ""}` : ""
-      }${costo ? ` · ${costo.toFixed(4)} $` : ""}.`);
+      }${consumo(totale) ? ` · ${consumo(totale)}` : ""}.`);
       await caricaPosta2();
     });
 
@@ -3789,7 +3811,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
         if (!e.ok) { QF().toast(e.errore || "Non riscritto."); QF().render(); return; }
         postaAperta = { ...postaAperta, oggetto: e.oggetto, corpo: e.corpo, modificata: true,
           ...(e.uscitaDallaCoda ? { stato: "pronta", programmata_per: null } : {}) };
-        QF().toast(`Riscritta${e.costo ? ` · ${e.costo.toFixed(5)} $` : ""}${
+        QF().toast(`Riscritta${consumo(e) ? ` · ${consumo(e)}` : ""}${
           e.uscitaDallaCoda ? " · uscita dalla coda, riprogrammala quando ti va bene" : ""}.`);
         QF().render();
         await caricaPosta2();
@@ -3978,7 +4000,11 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
       scrittura.lead_id = $("#a-lead").value;
       scrittura.istruzioni = $("#a-istruzioni").value;
       scrivendo = true; QF().render();
-      const esito = await chiama("ai-scrivi", { ...scrittura, mittente_id: mittente()?.id }, 120000);
+      /* Questa bozza la scrive qf-mm-ai come tutte le altre: una
+         chiave sola, un fornitore solo, una riga sola
+         nell'informativa. In qf-mm l'azione «ai-scrivi» esiste
+         ancora ma non la chiama più nessuno. */
+      const esito = await chiamaAi("bozza", { ...scrittura, mittente_id: mittente()?.id }, 120000);
       scrivendo = false;
       if (!esito.ok) { QF().toast(esito.errore || "Scrittura non riuscita."); QF().render(); return; }
       bozza = esito;

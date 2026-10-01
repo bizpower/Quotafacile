@@ -1,9 +1,10 @@
 // ============================================================
 // QuotaFacile — Scrittura assistita del mail marketing
 // ------------------------------------------------------------
-// Due azioni sole, e stanno qui e non in qf-mm per un motivo
+// Tre azioni sole, e stanno qui e non in qf-mm per un motivo
 // che non è la comodità:
 //
+//   bozza     scrive un testo di prova, senza salvarlo
 //   genera    scrive una bozza per ogni lead di una lista
 //   rigenera  riscrive un messaggio già scritto, con un ritocco
 //
@@ -19,14 +20,15 @@
 // ritmi di modifica così diversi vuol dire che ogni limatura al
 // prompt rimette in gioco anche la coda di invio.
 //
-// IL COSTO SI DICE, NON SI SCOPRE
+// QUANTO SI CONSUMA SI DICE, NON SI SCOPRE
 // Generare per una lista di cento aziende sono cento chiamate a
 // pagamento. Quindi: si lavora a blocchi, si dice quanti ne
-// restano, e si riporta quanto è costato il blocco. Chi preme il
-// bottone deve sapere cosa sta spendendo prima di premerlo una
-// seconda volta.
+// restano, e si riportano i token consumati dal blocco. Chi preme
+// il bottone deve sapere cosa sta spendendo prima di premerlo una
+// seconda volta. In denaro si traduce solo se i prezzi sono
+// configurati — vedi il commento su COSTO_INGRESSO.
 //
-// COSA ESCE DAL DATABASE E ARRIVA AD ANTHROPIC
+// COSA ESCE DAL DATABASE E ARRIVA A GOOGLE
 // Soltanto: denominazione, settore, città, sito, valutazione
 // pubblica. È la stessa lista — parola per parola — scritta
 // nell'informativa alle imprese. L'indirizzo email del
@@ -91,25 +93,96 @@ async function improntaAttesa(): Promise<string | null> {
 
 // ---------------- Il modello ----------------
 
-const MODELLO_AI = Deno.env.get("QF_MM_MODELLO_AI") || "claude-opus-5";
+/* Il nome del modello, con due scavalchi in fila.
+ *
+ * QF_MM_MODELLO_AI vale solo qui, per poter dare alla scrittura
+ * delle email un modello diverso da quello dell'assistente:
+ * tradurre una frase in un comando e scrivere un'email non sono
+ * lo stesso lavoro. Se non c'e', vale QF_GEMINI_MODELLO, cosi'
+ * di base c'e' un segreto solo da ricordare per entrambi.
+ */
+const MODELLO_SCELTO =
+  Deno.env.get("QF_MM_MODELLO_AI") || Deno.env.get("QF_GEMINI_MODELLO") || "";
+const MODELLO_PREDEFINITO = "gemini-3.5-flash";
+let modelloInUso = MODELLO_SCELTO || MODELLO_PREDEFINITO;
 
-/* Dollari per milione di token, per poter dire quanto è costato
-   un blocco. Se si cambia modello vanno cambiati anche questi,
-   altrimenti il numero a schermo diventa una bugia precisa. */
-const COSTO_INGRESSO = Number(Deno.env.get("QF_MM_COSTO_INGRESSO") || 5);
-const COSTO_USCITA = Number(Deno.env.get("QF_MM_COSTO_USCITA") || 25);
+/* IL COSTO IN DENARO NON SI INVENTA
+ *
+ * Qui c'erano 5 e 25 dollari per milione di token, i prezzi di
+ * Opus, e il blocco diceva "0,1834 $". Con un altro modello quel
+ * numero diventa falso, e un numero falso con quattro decimali
+ * e' peggio di nessun numero: ha l'aria di essere stato misurato.
+ *
+ * E i prezzi si muovono. Gemini 3.8 Flash, per dirne una, oggi
+ * costa meta' di 3.5 Flash perche' e' in tariffa introduttiva, e
+ * il primo gennaio 2027 raddoppia.
+ *
+ * Quindi: i token li contiamo e li diciamo, perche' sono un fatto
+ * che misuriamo. Il prezzo lo diciamo solo se qualcuno ce l'ha
+ * scritto in questi due segreti - e chi li scrive sa quando
+ * cambiarli.
+ */
+const COSTO_INGRESSO = Number(Deno.env.get("QF_MM_COSTO_INGRESSO") || 0);
+const COSTO_USCITA = Number(Deno.env.get("QF_MM_COSTO_USCITA") || 0);
+const COSTO_NOTO = COSTO_INGRESSO > 0 || COSTO_USCITA > 0;
 
 function chiaveAi(): string {
-  const k = Deno.env.get("QF_ANTHROPIC_KEY");
+  const k = Deno.env.get("QF_GEMINI_KEY");
   if (!k) {
     throw new ErroreCliente(
-      "Scrittura assistita non attiva: manca il segreto QF_ANTHROPIC_KEY fra le impostazioni del " +
-      "progetto Supabase. La chiave si crea su console.anthropic.com; ogni email scritta ha un costo, " +
-      "che compare accanto alla bozza.",
+      "Scrittura assistita non attiva: manca il segreto QF_GEMINI_KEY fra le impostazioni del " +
+      "progetto Supabase. È la stessa chiave che usa l'assistente del CRM, e si crea su " +
+      "aistudio.google.com/apikey.",
       503,
     );
   }
   return k;
+}
+
+// Da "models/gemini-3.8-flash" a 3.8, per poter confrontare.
+function versioneDi(nome: string): number {
+  const m = nome.match(/gemini-(\d+)(?:\.(\d+))?/);
+  if (!m) return 0;
+  return Number(m[1]) + (m[2] ? Number(m[2]) / 100 : 0);
+}
+
+/* Se il nome in uso non esiste piu', si chiede l'elenco e si
+   riprova. La stessa logica dell'assistente, e per la stessa
+   ragione: "gemini-2.0-flash" e' stato ritirato il primo giugno
+   2026 e ogni richiesta tornava un 404 che sembrava la chiave.
+   Duplicata e non condivisa perche' due Edge Function non
+   condividono un modulo: il commento vale da promemoria che se
+   si corregge qui va corretta anche in qf-chat. */
+async function scegliModello(chiave: string): Promise<string | null> {
+  let elenco: Array<Record<string, unknown>>;
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+      headers: { "x-goog-api-key": chiave },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    elenco = Array.isArray(j?.models) ? j.models : [];
+  } catch {
+    return null;
+  }
+
+  const adatti = elenco
+    .filter((m) => {
+      const metodi = m.supportedGenerationMethods;
+      return Array.isArray(metodi) && metodi.includes("generateContent");
+    })
+    .map((m) => String(m.name ?? "").replace(/^models\//, ""))
+    .filter((n) => n && !/embedding|aqa|imagen|veo|tts|image|audio/i.test(n));
+
+  if (!adatti.length) return null;
+
+  const perVersione = (a: string, b: string) => versioneDi(b) - versioneDi(a);
+  const flashPieni = adatti.filter((n) => /flash/i.test(n) && !/lite|preview|exp/i.test(n));
+  if (flashPieni.length) return flashPieni.sort(perVersione)[0];
+  const flash = adatti.filter((n) => /flash/i.test(n) && !/preview|exp/i.test(n));
+  if (flash.length) return flash.sort(perVersione)[0];
+  return adatti.sort(perVersione)[0];
 }
 
 const TONI: Record<string, string> = {
@@ -142,7 +215,7 @@ const COLONNE_LEAD =
   "id,nome,categoria,citta,provincia,telefono,sito,email," +
   "valutazione,recensioni,no_contatto";
 
-/* La scheda che parte verso Anthropic. Cinque campi, gli stessi
+/* La scheda che parte verso Google. Cinque campi, gli stessi
    cinque dell'informativa. L'email non c'è, e non è una
    dimenticanza: scrivere il testo non la richiede. */
 function schedaDi(l: Record<string, unknown>): string {
@@ -175,76 +248,151 @@ function sistemaDi(firma: string): string {
     `<il testo del messaggio, senza firma: la firma la aggiunge il sistema>`;
 }
 
-type Scritta = { oggetto: string; corpo: string; costo: number };
+type Scritta = {
+  oggetto: string;
+  corpo: string;
+  costo: number;        // 0 se i prezzi non sono configurati
+  tokenIn: number;
+  tokenOut: number;
+};
 
-/* Una chiamata al modello. Gli errori di configurazione e di
-   credito salgono come ErroreCliente perché a chi preme il
-   bottone va detto cosa fare, non "errore interno". */
+/* Una chiamata a Gemini.
+ *
+ * Gli errori di configurazione e di quota salgono come
+ * ErroreCliente perche' a chi preme il bottone va detto cosa
+ * fare, non "errore interno".
+ *
+ * Il 404 e' il caso particolare che vale la pena gestire: vuol
+ * dire che il nome del modello e' stato ritirato, non che la
+ * chiave e' sbagliata. Si chiede l'elenco a Google e si riprova
+ * una volta sola.
+ */
 async function scrivi(
   firma: string,
   richiesta: string,
 ): Promise<Scritta> {
-  const { default: Anthropic } = await import("npm:@anthropic-ai/sdk");
-  const claude = new Anthropic({ apiKey: chiaveAi() });
+  const chiave = chiaveAi();
 
-  let risposta;
-  try {
-    risposta = await claude.beta.messages.create({
-      model: MODELLO_AI,
-      max_tokens: 2000,
-      /* Un'email di centotrenta parole non è un problema
-         difficile: allo sforzo minimo costa meno e non scrive
-         peggio. */
-      output_config: { effort: "low" },
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      system: sistemaDi(firma),
-      messages: [{ role: "user", content: richiesta }],
-    });
-  } catch (e) {
-    const m = e instanceof Error ? e.message : String(e);
-    if (/401|authentication|api key/i.test(m)) {
-      throw new ErroreCliente("La chiave QF_ANTHROPIC_KEY è stata rifiutata: controllala su console.anthropic.com.");
+  const corpoRichiesta = JSON.stringify({
+    systemInstruction: { parts: [{ text: sistemaDi(firma) }] },
+    contents: [{ role: "user", parts: [{ text: richiesta }] }],
+    /* Qui un po' di varieta' serve, al contrario dell'assistente
+       che traduce comandi e sta a zero: due email alla stessa
+       categoria non devono uscire identiche parola per parola. Ma
+       nemmeno fantasiose: le regole del prompt contano piu' della
+       temperatura. */
+    generationConfig: { temperature: 0.5, maxOutputTokens: 800 },
+  });
+
+  const chiedi = async (modello: string) => {
+    try {
+      return await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": chiave },
+          signal: AbortSignal.timeout(30000),
+          body: corpoRichiesta,
+        },
+      );
+    } catch {
+      throw new ErroreCliente("Il servizio di Google non ha risposto in tempo. Riprova fra poco.");
     }
-    if (/429|rate.?limit/i.test(m)) {
-      throw new ErroreCliente("Troppe richieste di seguito al modello. Riprova fra qualche secondo.");
+  };
+
+  let r = await chiedi(modelloInUso);
+
+  if (r.status === 404 && !MODELLO_SCELTO) {
+    const altro = await scegliModello(chiave);
+    if (altro && altro !== modelloInUso) {
+      console.warn("[qf-mm-ai] modello", modelloInUso, "non disponibile: passo a", altro);
+      modelloInUso = altro;
+      r = await chiedi(modelloInUso);
     }
-    if (/credit|billing|quota/i.test(m)) {
-      throw new ErroreCliente("Il credito del profilo Anthropic è esaurito: ricaricalo su console.anthropic.com.");
-    }
-    throw new ErroreCliente(`Il modello non ha risposto: ${m.slice(0, 300)}`);
   }
 
-  /* Il modello può rifiutarsi, e la risposta arriva comunque con
-     stato 200: leggerne il contenuto senza guardare il motivo
-     darebbe una bozza vuota senza spiegazione. */
-  if (risposta.stop_reason === "refusal") {
+  if (r.status === 429) {
     throw new ErroreCliente(
-      "Il modello ha rifiutato di scrivere questo messaggio" +
-      (risposta.stop_details?.category ? ` (${risposta.stop_details.category})` : "") +
-      ". Prova a riformulare le indicazioni aggiuntive.",
+      "Google ha risposto che hai superato il limite: se sei sul piano gratuito " +
+      "l'assistenza torna domani, altrimenti riprova fra qualche minuto.",
+    );
+  }
+  if (r.status === 400 || r.status === 403) {
+    throw new ErroreCliente(
+      "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva.",
+    );
+  }
+  if (!r.ok) {
+    const e = await r.json().catch(() => null);
+    const messaggio = e?.error?.message || null;
+    if (r.status === 404) {
+      console.error("[qf-mm-ai] modello non trovato:", modelloInUso, "-", messaggio || "(nessun messaggio)");
+      throw new ErroreCliente(
+        "Il modello \u00ab" + modelloInUso + "\u00bb non \u00e8 disponibile su questa chiave" +
+          (MODELLO_SCELTO
+            ? ": \u00e8 il nome fissato in QF_MM_MODELLO_AI o QF_GEMINI_MODELLO, che va aggiornato o rimosso."
+            : ", e non ne ho trovato un altro adatto.") +
+          (messaggio ? " Google dice: " + messaggio : ""),
+      );
+    }
+    console.error("[qf-mm-ai] Google ha risposto", r.status, "-", messaggio || "(nessun messaggio)");
+    throw new ErroreCliente(
+      "Il servizio di Google ha risposto con un errore (" + r.status + ")" +
+      (messaggio ? ": " + messaggio : "."),
     );
   }
 
-  const testoIntero = risposta.content
-    .filter((b: { type: string }) => b.type === "text")
-    .map((b: { text: string }) => b.text)
-    .join("\n").trim();
+  const j = await r.json().catch(() => null);
 
-  /* Il formato chiesto è "Oggetto: …" sulla prima riga. Se non
-     arriva così il testo non si butta: va tutto nel corpo e
-     l'oggetto resta da scrivere, che è visibile invece di essere
+  /* Gemini puo' rifiutarsi, e la risposta arriva comunque con
+     stato 200: leggerne il contenuto senza guardare il motivo
+     darebbe una bozza vuota senza spiegazione. I due posti in cui
+     lo dice sono diversi - prima della generazione e dopo - e
+     vanno guardati entrambi. */
+  const bloccoPrompt = j?.promptFeedback?.blockReason;
+  if (bloccoPrompt) {
+    throw new ErroreCliente(
+      `Google ha rifiutato di elaborare la richiesta (${bloccoPrompt}). ` +
+      "Prova a riformulare le indicazioni aggiuntive.",
+    );
+  }
+  const candidato = j?.candidates?.[0];
+  const motivo = candidato?.finishReason;
+  if (motivo && motivo !== "STOP" && motivo !== "MAX_TOKENS") {
+    throw new ErroreCliente(
+      `Google ha interrotto la scrittura (${motivo}). ` +
+      "Prova a riformulare le indicazioni aggiuntive.",
+    );
+  }
+
+  const parti = candidato?.content?.parts;
+  const testoIntero = Array.isArray(parti)
+    ? parti.map((x: Record<string, unknown>) => x?.text ?? "").join("").trim()
+    : "";
+  if (!testoIntero) {
+    throw new ErroreCliente("Google ha risposto senza testo: riprova.");
+  }
+
+  /* Il formato chiesto e' "Oggetto: ..." sulla prima riga. Se non
+     arriva cosi' il testo non si butta: va tutto nel corpo e
+     l'oggetto resta da scrivere, che e' visibile invece di essere
      sbagliato in silenzio. */
   const righe = testoIntero.split("\n");
   const prima = righe[0]?.trim() ?? "";
   const conOggetto = /^oggetto\s*:/i.test(prima);
 
-  const uso = risposta.usage;
+  const uso = j?.usageMetadata ?? {};
+  const tokenIn = Number(uso.promptTokenCount ?? 0);
+  const tokenOut = Number(uso.candidatesTokenCount ?? 0);
+
   return {
     oggetto: conOggetto ? prima.replace(/^oggetto\s*:\s*/i, "").trim() : "",
     corpo: (conOggetto ? righe.slice(1).join("\n") : testoIntero).trim(),
-    costo: (uso.input_tokens / 1_000_000) * COSTO_INGRESSO +
-      (uso.output_tokens / 1_000_000) * COSTO_USCITA,
+    costo: COSTO_NOTO
+      ? (tokenIn / 1_000_000) * COSTO_INGRESSO + (tokenOut / 1_000_000) * COSTO_USCITA
+      : 0,
+    tokenIn,
+    tokenOut,
   };
 }
 
@@ -253,6 +401,59 @@ async function firmaDi(mittenteId: string | null): Promise<string> {
   const { data } = await db.from("mm_mittenti")
     .select("etichetta,from_nome").eq("id", mittenteId).maybeSingle();
   return data ? String(data.from_nome || data.etichetta || "QuotaFacile") : "QuotaFacile";
+}
+
+// ---------------- bozza ----------------
+//
+// Una bozza sola, che non viene salvata da nessuna parte: è la
+// schermata «Email AI Writer», dove si prova un testo prima di
+// decidere se diventa un modello.
+//
+// Stava in qf-mm e chiamava Anthropic. È venuta qui per una
+// ragione sola: due fornitori di modelli per lo stesso lavoro
+// vogliono due chiavi, due crediti da controllare e due righe
+// nell'informativa. Il codice di qf-mm resta dov'è e non viene
+// toccato — semplicemente non lo chiama più nessuno.
+
+async function bozza(d: Record<string, unknown>) {
+  const scopo = SCOPI[String(d.scopo)] ? String(d.scopo) : "presentazione";
+  const tono = TONI[String(d.tono)] ? String(d.tono) : "cordiale";
+  const istruzioni = testo(d.istruzioni, 1000);
+
+  let scheda =
+    "Nessun destinatario specifico: scrivi un testo che vada bene per più aziende, usando i segnaposto.";
+  const leadId = testo(d.lead_id, 40);
+  if (leadId) {
+    const { data: l } = await db.from("crm_lead")
+      .select(COLONNE_LEAD).eq("id", leadId).maybeSingle();
+    if (!l) throw new ErroreCliente("Il lead indicato non esiste più.");
+    /* Chi si è opposto non riceve messaggi, quindi non ha senso
+       nemmeno scriverne uno: fermarsi qui evita di pagare una
+       generazione che non si potrà usare. */
+    if (l.no_contatto) {
+      throw new ErroreCliente(`${l.nome} si è opposto a ricevere comunicazioni: non c'è niente da scrivere.`);
+    }
+    scheda = schedaDi(l);
+  }
+
+  const firma = await firmaDi(testo(d.mittente_id, 40));
+
+  const s = await scrivi(
+    firma,
+    `Scopo del messaggio: ${SCOPI[scopo]}.\n` +
+    `Tono: ${TONI[tono]}.\n\n` +
+    `Azienda destinataria:\n${scheda}\n` +
+    (istruzioni ? `\nIndicazioni aggiuntive di chi firma: ${istruzioni}\n` : ""),
+  );
+
+  return {
+    oggetto: s.oggetto,
+    corpo: s.corpo,
+    modello: modelloInUso,
+    token: { in: s.tokenIn, out: s.tokenOut },
+    costoNoto: COSTO_NOTO,
+    ...(COSTO_NOTO ? { costo: Number(s.costo.toFixed(5)) } : {}),
+  };
 }
 
 // ---------------- genera ----------------
@@ -388,6 +589,8 @@ async function genera(d: Record<string, unknown>) {
   const righe: Record<string, unknown>[] = [];
   const falliti: { nome: string; motivo: string }[] = [];
   let costo = 0;
+  let tokenIn = 0;
+  let tokenOut = 0;
 
   let i = 0;
   await Promise.all(Array.from({ length: Math.min(PARALLELI, blocco.length) }, async () => {
@@ -401,6 +604,8 @@ async function genera(d: Record<string, unknown>) {
       try {
         const s = await scrivi(firma, richiesta);
         costo += s.costo;
+        tokenIn += s.tokenIn;
+        tokenOut += s.tokenOut;
         righe.push({
           mittente_id: mittenteId,
           smtp_id: smtpId,
@@ -409,7 +614,14 @@ async function genera(d: Record<string, unknown>) {
           oggetto: s.oggetto || "(oggetto da scrivere)",
           corpo: s.corpo,
           stato: "bozza",
-          meta: { origine: "ai", scopo, tono, modello: MODELLO_AI, costo: Number(s.costo.toFixed(5)) },
+          meta: {
+            origine: "ai",
+            scopo,
+            tono,
+            modello: modelloInUso,
+            token: { in: s.tokenIn, out: s.tokenOut },
+            ...(COSTO_NOTO ? { costo: Number(s.costo.toFixed(5)) } : {}),
+          },
         });
       } catch (e) {
         /* Un lead che fallisce non ferma gli altri undici: il suo
@@ -424,12 +636,18 @@ async function genera(d: Record<string, unknown>) {
     if (error) throw new Error(error.message);
   }
 
+  /* Il costo si restituisce solo se i due prezzi sono configurati:
+     altrimenti sarebbe una cifra inventata. I token invece sono
+     misurati da Google, e quelli si possono mostrare sempre. */
   return {
     creati: righe.length,
     falliti,
     saltati,
     restanti,
-    costo: Number(costo.toFixed(4)),
+    modello: modelloInUso,
+    token: { in: tokenIn, out: tokenOut },
+    costoNoto: COSTO_NOTO,
+    ...(COSTO_NOTO ? { costo: Number(costo.toFixed(4)) } : {}),
   };
 }
 
@@ -503,7 +721,16 @@ async function rigenera(d: Record<string, unknown>) {
     corpo: s.corpo,
     modificata: true,
     ...(eraInCoda ? { stato: "pronta", programmata_per: null } : {}),
-    meta: { ...meta, origine: "ai", scopo, tono, modello: MODELLO_AI, ritocco: chiave, costo: Number(s.costo.toFixed(5)) },
+    meta: {
+      ...meta,
+      origine: "ai",
+      scopo,
+      tono,
+      modello: modelloInUso,
+      ritocco: chiave,
+      token: { in: s.tokenIn, out: s.tokenOut },
+      ...(COSTO_NOTO ? { costo: Number(s.costo.toFixed(5)) } : {}),
+    },
   }).eq("id", id);
   if (error) throw new Error(error.message);
 
@@ -511,7 +738,10 @@ async function rigenera(d: Record<string, unknown>) {
     id,
     oggetto: s.oggetto || m.oggetto,
     corpo: s.corpo,
-    costo: Number(s.costo.toFixed(5)),
+    modello: modelloInUso,
+    token: { in: s.tokenIn, out: s.tokenOut },
+    costoNoto: COSTO_NOTO,
+    ...(COSTO_NOTO ? { costo: Number(s.costo.toFixed(5)) } : {}),
     uscitaDallaCoda: eraInCoda,
   };
 }
@@ -519,6 +749,7 @@ async function rigenera(d: Record<string, unknown>) {
 // ---------------- Instradamento ----------------
 
 const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
+  bozza,
   genera,
   rigenera,
 };

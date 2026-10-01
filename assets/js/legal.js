@@ -61,8 +61,12 @@
     hosting: "GitHub Pages — GitHub Inc., 88 Colin P. Kelly Jr. Street, San Francisco, CA (USA), gruppo Microsoft",
     hostingNota: "Fornitore aderente al EU-U.S. Data Privacy Framework",
 
-    ultimoAggiornamento: "30 settembre 2026",
-    versione: "1.2"
+    /* Cambia quando cambia il testo, non quando cambia il codice.
+       La 1.3 è il passaggio del fornitore della scrittura assistita
+       da Anthropic a Google: un responsabile del trattamento
+       diverso è una modifica sostanziale, non una limatura. */
+    ultimoAggiornamento: "1 ottobre 2026",
+    versione: "1.3"
   };
 
   /* Locale, per non dipendere da un binding globale definito altrove:
@@ -285,13 +289,14 @@
       a quest'ultimo. L'avviso è recapitato tramite un fornitore di posta elettronica o di
       messaggistica, anch'esso responsabile del trattamento. Il nome del fornitore in uso è
       comunicato su richiesta a <a href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a>.</li>
-      <li><strong>A un fornitore di intelligenza artificiale, per la sola scrittura di bozze
+      <li><strong>A Google, per la sola scrittura di bozze
       commerciali.</strong> Quando prepariamo una email verso un'azienda con l'aiuto di un modello
       linguistico, i dati dell'<em>azienda destinataria</em> (denominazione, settore, città, sito,
-      valutazione pubblica su Google) sono inviati ad <strong>Anthropic PBC</strong>, Stati Uniti,
-      nominata responsabile del trattamento. Il testo prodotto è una bozza che una persona legge e
-      approva prima dell'invio. <strong>In questo trattamento non entra nessun dato di chi usa il
-      sito:</strong> ciò che scrivi nei moduli non viene inviato per scrivere quelle bozze. I dettagli sono
+      valutazione pubblica su Google) sono inviati a <strong>Google</strong> (servizio Gemini,
+      Stati Uniti), nominata responsabile del trattamento. Il testo prodotto è una bozza che una
+      persona legge e approva prima dell'invio. <strong>In questo trattamento non entra nessun dato
+      di chi usa il sito:</strong> ciò che scrivi nei moduli non viene inviato per scrivere quelle
+      bozze. I dettagli sono
       nell'<a href="#/privacy-imprese">informativa per le aziende contattate</a>.</li>
       <li><strong>A Google, per l'assistente interno dell'area riservata.</strong> Nel gestionale
       con cui lavoriamo c'è un assistente che trasforma una frase in un comando: chi scrive
@@ -317,13 +322,11 @@
     <strong>I dati dei moduli sono invece conservati su server situati nell'Unione Europea</strong>
     (Francoforte): per le richieste degli utenti non avviene alcun trasferimento verso paesi terzi.
     Un trasferimento può interessare il solo servizio di notifica, se configurato con un fornitore
-    extra-UE, e la scrittura assistita delle email commerciali verso le aziende, che invia i dati
-    dell'<em>azienda destinataria</em> ad <strong>Anthropic PBC (Stati Uniti)</strong> sulla base
-    delle Clausole Contrattuali Standard: nessun dato di chi usa il sito segue quella strada.
-    Un secondo trasferimento riguarda l'<strong>assistente interno dell'area riservata</strong>
-    descritto al punto 5, che invia a <strong>Google (Stati Uniti)</strong> la sola frase
-    digitata dall'operatore — mai una riga del database — sulla base delle medesime Clausole
-    Contrattuali Standard.
+    extra-UE, e i due trattamenti affidati a <strong>Google (Stati Uniti)</strong>, entrambi sulla
+    base delle Clausole Contrattuali Standard e descritti al punto 5: la scrittura assistita delle
+    email commerciali verso le aziende, che invia i dati dell'<em>azienda destinataria</em> —
+    nessun dato di chi usa il sito segue quella strada — e l'<strong>assistente interno dell'area
+    riservata</strong>, che invia la sola frase digitata dall'operatore, mai una riga del database.
     Eventuali trasferimenti verso paesi terzi
     avvengono sulla base di una decisione di adeguatezza della Commissione europea o delle Clausole
     Contrattuali Standard (art. 46 GDPR). L'elenco aggiornato dei fornitori è disponibile su richiesta
@@ -665,7 +668,7 @@
       responsabile del trattamento.</li>
       <li><strong>A un fornitore di intelligenza artificiale, ma solo se usiamo la scrittura
       assistita.</strong> Quando prepariamo una bozza con l'aiuto di un modello linguistico
-      (<strong>Anthropic PBC</strong>, Stati Uniti), gli inviamo i dati dell'attività destinataria:
+      (<strong>Google</strong>, servizio Gemini, Stati Uniti), gli inviamo i dati dell'attività destinataria:
       denominazione, settore, città, sito e valutazione pubblica. <strong>Non gli inviamo il tuo
       indirizzo email.</strong> Il fornitore è nominato responsabile del trattamento e il
       trasferimento è coperto dalle Clausole Contrattuali Standard (art. 46 GDPR).

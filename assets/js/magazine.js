@@ -20,9 +20,10 @@
      server, che è l'unico posto dove non la si può saltare.
 
    - non c'è nessun generatore AI collegato al gateway di
-     Lovable. Se servirà, parlerà con Anthropic dalla Edge
-     Function: dipendere da ai.gateway.lovable.dev significa che
-     spegnere Lovable spegne il Magazine.
+     Lovable. Se servirà, parlerà con Google dalla Edge Function,
+     come già fanno l'assistente e la scrittura delle email:
+     dipendere da ai.gateway.lovable.dev significa che spegnere
+     Lovable spegne il Magazine.
    ============================================================ */
 "use strict";
 
