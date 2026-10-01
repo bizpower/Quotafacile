@@ -128,8 +128,76 @@ async function improntaAttesa(): Promise<string | null> {
 }
 
 // ---------------- Il modello ----------------
+//
+// PERCHE' IL NOME NON E' SOLO UNA COSTANTE
+//
+// Qui c'era "gemini-2.0-flash", scritto una volta e dato per
+// buono. Google l'ha ritirato il primo giugno 2026, e da quel
+// giorno ogni richiesta tornava 404. A schermo si leggeva "il
+// servizio di Google ha risposto con un errore (404)", che non
+// dice niente a nessuno: sembrava la chiave, ed era il nome.
+//
+// I nomi dei modelli scadono, e scadono con un 404 secco. Quindi
+// non si rimette un altro nome destinato a scadere e si aspetta:
+// se il nome in uso non esiste piu', la funzione chiede a Google
+// l'elenco dei modelli disponibili, ne sceglie uno adatto e
+// riprova una volta sola. La scelta resta in memoria per le
+// richieste successive della stessa istanza.
+//
+// L'ordine di preferenza: un "flash" non-lite col numero di
+// versione piu' alto, poi un "flash" qualsiasi, poi qualunque
+// modello che sappia generateContent. Serve un modello veloce e
+// capace di function calling, non il piu' potente: qui si traduce
+// una frase in un comando.
+//
+// QF_GEMINI_MODELLO continua a scavalcare tutto, per poter fissare
+// un nome preciso senza ripubblicare la funzione.
 
-const MODELLO = Deno.env.get("QF_GEMINI_MODELLO") || "gemini-2.0-flash";
+const MODELLO_SCELTO = Deno.env.get("QF_GEMINI_MODELLO") || "";
+const MODELLO_PREDEFINITO = "gemini-3.5-flash";
+
+// Il nome in uso adesso. Parte dal segreto, o dal predefinito, e
+// cambia solo se Google dice che quel modello non esiste.
+let modelloInUso = MODELLO_SCELTO || MODELLO_PREDEFINITO;
+
+// Da "models/gemini-3.8-flash" a 3.8, per poter confrontare.
+function versioneDi(nome: string): number {
+  const m = nome.match(/gemini-(\d+)(?:\.(\d+))?/);
+  if (!m) return 0;
+  return Number(m[1]) + (m[2] ? Number(m[2]) / 100 : 0);
+}
+
+async function scegliModello(chiave: string): Promise<string | null> {
+  let elenco: Array<Record<string, unknown>>;
+  try {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+      headers: { "x-goog-api-key": chiave },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!r.ok) return null;
+    const j = await r.json().catch(() => null);
+    elenco = Array.isArray(j?.models) ? j.models : [];
+  } catch {
+    return null;
+  }
+
+  const adatti = elenco
+    .filter((m) => {
+      const metodi = m.supportedGenerationMethods;
+      return Array.isArray(metodi) && metodi.includes("generateContent");
+    })
+    .map((m) => String(m.name ?? "").replace(/^models\//, ""))
+    .filter((n) => n && !/embedding|aqa|imagen|veo|tts|image|audio/i.test(n));
+
+  if (!adatti.length) return null;
+
+  const perVersione = (a: string, b: string) => versioneDi(b) - versioneDi(a);
+  const flashPieni = adatti.filter((n) => /flash/i.test(n) && !/lite|preview|exp/i.test(n));
+  if (flashPieni.length) return flashPieni.sort(perVersione)[0];
+  const flash = adatti.filter((n) => /flash/i.test(n) && !/preview|exp/i.test(n));
+  if (flash.length) return flash.sort(perVersione)[0];
+  return adatti.sort(perVersione)[0];
+}
 
 // ---------------- Gli strumenti ----------------
 //
@@ -458,31 +526,51 @@ async function interroga(frase: string): Promise<Mossa> {
     throw e;
   }
 
-  const stop = AbortSignal.timeout(20000);
-  let r: Response;
-  try {
-    r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODELLO}:generateContent`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": chiave },
-        signal: stop,
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: ISTRUZIONI }] },
-          contents: [{ role: "user", parts: [{ text: frase }] }],
-          tools: [{ functionDeclarations: STRUMENTI }],
-          // AUTO e non ANY: deve poter rispondere "questo non so
-          // farlo" invece di essere costretto a chiamare lo
-          // strumento meno sbagliato fra quelli che ha.
-          toolConfig: { functionCallingConfig: { mode: "AUTO" } },
-          // temperatura 0: qui non si vuole fantasia, si vuole
-          // che la stessa frase produca sempre lo stesso comando
-          generationConfig: { temperature: 0, maxOutputTokens: 500 },
-        }),
-      },
-    );
-  } catch {
-    throw new Error("Il servizio di Google non ha risposto in tempo. Riprova fra poco.");
+  const corpo = JSON.stringify({
+    systemInstruction: { parts: [{ text: ISTRUZIONI }] },
+    contents: [{ role: "user", parts: [{ text: frase }] }],
+    tools: [{ functionDeclarations: STRUMENTI }],
+    // AUTO e non ANY: deve poter rispondere "questo non so
+    // farlo" invece di essere costretto a chiamare lo
+    // strumento meno sbagliato fra quelli che ha.
+    toolConfig: { functionCallingConfig: { mode: "AUTO" } },
+    // temperatura 0: qui non si vuole fantasia, si vuole
+    // che la stessa frase produca sempre lo stesso comando
+    generationConfig: { temperature: 0, maxOutputTokens: 500 },
+  });
+
+  const chiedi = async (modello: string) => {
+    try {
+      return await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": chiave },
+          signal: AbortSignal.timeout(20000),
+          body: corpo,
+        },
+      );
+    } catch {
+      throw new Error("Il servizio di Google non ha risposto in tempo. Riprova fra poco.");
+    }
+  };
+
+  let r = await chiedi(modelloInUso);
+
+  /* 404 vuol dire "quel modello non esiste (piu')", non "chiave
+     sbagliata". Succede quando Google ritira un nome, e succede
+     senza preavviso utile: si chiede l'elenco, si prende il
+     migliore e si riprova una volta. Se il nome e' stato fissato
+     a mano con QF_GEMINI_MODELLO non si cambia di nascosto -
+     quella e' una scelta di chi l'ha scritta, e va detto che non
+     vale piu'. */
+  if (r.status === 404 && !MODELLO_SCELTO) {
+    const altro = await scegliModello(chiave);
+    if (altro && altro !== modelloInUso) {
+      console.warn("[qf-chat] modello", modelloInUso, "non disponibile: passo a", altro);
+      modelloInUso = altro;
+      r = await chiedi(modelloInUso);
+    }
   }
 
   if (r.status === 429) {
@@ -494,7 +582,30 @@ async function interroga(frase: string): Promise<Mossa> {
   if (r.status === 400 || r.status === 403) {
     throw new Error("Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva.");
   }
-  if (!r.ok) throw new Error("Il servizio di Google ha risposto con un errore (" + r.status + ").");
+
+  /* Quello che Google ha scritto, non un numero.
+     Prima qui c'era "ha risposto con un errore (404)", e per mesi
+     quel 404 ha significato "il modello e' stato ritirato" senza
+     che la frase lo dicesse: si e' cercato il guasto nella chiave,
+     che era giusta. Il messaggio di Google lo diceva, e veniva
+     buttato via. */
+  if (!r.ok) {
+    const e = await r.json().catch(() => null);
+    const messaggio = e?.error?.message || null;
+    if (r.status === 404) {
+      console.error("[qf-chat] modello non trovato:", modelloInUso, "-", messaggio || "(nessun messaggio)");
+      throw new Error(
+        "Il modello «" + modelloInUso + "» non è disponibile su questa chiave" +
+          (MODELLO_SCELTO
+            ? ": è il nome fissato nel segreto QF_GEMINI_MODELLO, che va aggiornato o rimosso."
+            : ", e non ne ho trovato un altro adatto.") +
+          (messaggio ? " Google dice: " + messaggio : ""),
+      );
+    }
+    console.error("[qf-chat] Google ha risposto", r.status, "-", messaggio || "(nessun messaggio)");
+    throw new Error("Il servizio di Google ha risposto con un errore (" + r.status + ")" +
+      (messaggio ? ": " + messaggio : "."));
+  }
 
   const j = await r.json().catch(() => null);
   const parti = j?.candidates?.[0]?.content?.parts;
