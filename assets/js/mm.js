@@ -595,7 +595,8 @@
       </div>`}
 
     ${listaModulo ? listaModuloView() : ""}
-    ${leadModulo ? leadModuloView() : ""}`;
+    ${leadModulo ? leadModuloView() : ""}
+    ${generaAperto ? generaView() : ""}`;
   }
 
   function contenutoView() {
@@ -659,7 +660,12 @@
                   ${esc(x.fonte === "google_places" ? "Google" : x.fonte === "file" ? "da file" : "a mano")}
                   ${x.raccolto_il ? `<br>${dataOra(x.raccolto_il)}` : ""}
                 </td>
-                <td><button class="btn btn-ghost btn-sm danger" data-togli="${esc(x.id)}" title="Togli dalla lista">✕</button></td>
+                <td class="mm-riga-azioni">
+                  ${x.no_contatto || !x.email ? "" : `
+                    <button class="btn btn-ghost btn-sm" data-scrivi-lead="${esc(x.id)}"
+                      title="Scrivi la bozza per questa attività">✨</button>`}
+                  <button class="btn btn-ghost btn-sm danger" data-togli="${esc(x.id)}" title="Togli dalla lista">✕</button>
+                </td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -811,6 +817,11 @@
   }
 
   let generaAperto = false;
+  /* Quando si scrive per un lead solo, qui c'è il lead: serve al
+     titolo e a sapere che la tendina delle liste non va mostrata.
+     La finestra è la stessa — una lista di uno non merita un
+     secondo modulo da tenere allineato. */
+  let generaLead = null;
   let formGenera = { lista_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "", sovrascrivi: false };
   let inGenerazione = false;
   let ultimaGenerazione = null;   // l'esito dell'ultimo blocco, da mostrare
@@ -826,6 +837,79 @@
     ["umana", "Più umana"]
   ];
   let inRitocco = "";   // la chiave del ritocco in corso, per disabilitare i bottoni
+
+  /* I gestori della finestra di generazione, in un posto solo.
+
+     La finestra compare in due sezioni - Email Ready per una
+     lista, Lead Lists per un lead singolo - e ogni sezione ha il
+     suo bind. Duplicare i gestori voleva dire due copie da tenere
+     allineate, e la prima volta che se ne cambia uno solo la
+     finestra fa due cose diverse a seconda di dove l'hai aperta. */
+  function legaGenerazione($) {
+    document.querySelectorAll("[data-chiudi-genera]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        if (inGenerazione) return;   // non si chiude a metà: le bozze stanno arrivando
+        generaAperto = false; generaLead = null; QF().render();
+      }));
+    if (generaAperto) chiudiConEsc(() => {
+      if (!inGenerazione) { generaAperto = false; generaLead = null; }
+    });
+
+    $("#mm-genera-via")?.addEventListener("click", () => { ultimaGenerazione = null; QF().render(); });
+
+    async function generaBlocco() {
+      inGenerazione = true;
+      QF().render();
+      const e = await chiamaAi("genera", formGenera);
+      inGenerazione = false;
+
+      /* La posta si ricarica solo se si è sulla sua schermata:
+         da Lead Lists sarebbe una richiesta buttata. */
+      const rileggi = () => rottaCorrente === "pronte" ? caricaPosta2() : Promise.resolve();
+
+      if (!e.ok) {
+        /* Niente bozze, e il motivo è quello che ha detto il
+           server: la chiave che manca, la lista vuota, oppure il
+           motivo per cui quel lead è stato saltato. */
+        ultimaGenerazione = null;
+        generaAperto = false; generaLead = null;
+        QF().toast(e.errore || "Non è stato scritto niente.");
+        QF().render();
+        await rileggi();
+        return;
+      }
+
+      const unoSolo = !!formGenera.lead_id;
+      ultimaGenerazione = unoSolo ? null : e;
+      generaAperto = false; generaLead = null;
+      QF().toast(unoSolo
+        ? (e.creati
+            ? "Bozza scritta: la trovi in Email Ready."
+            : "Non è stata scritta nessuna bozza.")
+        : `${plurale(e.creati, "bozza scritta", "bozze scritte")}${
+            e.restanti ? `, ne restano ${e.restanti}` : ""}.`);
+      QF().render();
+      await rileggi();
+    }
+
+    $("#mm-genera-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      formGenera = {
+        lista_id: $("#g-lista")?.value || "",
+        lead_id: generaLead ? generaLead.id : null,
+        scopo: $("#g-scopo").value,
+        tono: $("#g-tono").value,
+        istruzioni: $("#g-istruzioni").value.trim(),
+        sovrascrivi: $("#g-sovrascrivi").checked,
+        mittente_id: $("#g-mittente")?.value || null
+      };
+      if (!formGenera.lead_id && !formGenera.lista_id) { QF().toast("Scegli la lista."); return; }
+      await generaBlocco();
+    });
+
+    $("#mm-genera-ancora")?.addEventListener("click", generaBlocco);
+  }
 
   /* Il messaggio in anteprima, separato da quello in modifica.
      Sono due cose diverse: una si guarda, l'altra si cambia, e
@@ -1232,10 +1316,13 @@
     <div class="mm-velo" data-chiudi-genera>
       <div class="card mm-dialogo" role="dialog" aria-modal="true">
         <div class="mm-testata">
-          <h3>Scrivi le email di una lista</h3>
+          <h3>${generaLead ? `Scrivi a ${esc(generaLead.nome)}` : "Scrivi le email di una lista"}</h3>
           <button class="btn btn-ghost btn-sm" data-chiudi-genera>Chiudi</button>
         </div>
-        ${ll.length === 0 ? `
+        ${/* Il vuoto vale solo quando non c'è nessuna lista E non
+             c'è un lead: con un lead la finestra ha senso anche
+             senza liste, perché la lista non la chiede. */
+          (!generaLead && ll.length === 0) ? `
           <p class="privacy-hint">
             Non c'è nessuna lista. Creane una in
             <a href="#/admin/crm/mail/liste">Lead Lists</a>, oppure riempila dal
@@ -1246,12 +1333,22 @@
           </div>`
         : `
         <form id="mm-genera-form">
+          ${generaLead ? `
+            <table class="admin-kv">
+              <tr><th>Attività</th><td><strong>${esc(generaLead.nome)}</strong></td></tr>
+              <tr><th>Indirizzo email</th><td>${generaLead.email
+                ? esc(generaLead.email)
+                : `<span style="color:var(--rosso,#c0392b)">non ce l'ha</span>`}</td></tr>
+              ${generaLead.citta ? `<tr><th>Dove</th><td>${esc(generaLead.citta)}</td></tr>` : ""}
+              ${generaLead.sito ? `<tr><th>Sito</th><td>${esc(generaLead.sito.replace(/^https?:\/\//, ""))}</td></tr>` : ""}
+            </table>`
+          : `
           <label class="field"><span>Quale lista</span>
             <select id="g-lista" required>
               <option value="">— scegli la lista —</option>
               ${ll.map(l => `<option value="${esc(l.id)}" ${formGenera.lista_id === l.id ? "selected" : ""}>${
                 esc(l.nome)}${l.quanti != null ? ` · ${l.quanti} aziende` : ""}</option>`).join("")}
-            </select></label>
+            </select></label>`}
 
           <label class="field" style="margin-top:.6rem"><span>Scopo del messaggio</span>
             <select id="g-scopo">
@@ -1281,29 +1378,36 @@
 
           <label class="field mm-interruttore" style="margin-top:.6rem">
             <input type="checkbox" id="g-sovrascrivi" ${formGenera.sovrascrivi ? "checked" : ""}>
-            <span>Rifai anche chi ha già una bozza
-              <em>Senza la spunta, le aziende con una bozza non spedita vengono saltate invece di
-              ritrovarsi due messaggi identici.</em></span>
+            <span>${generaLead ? "Rifai anche se ha già una bozza" : "Rifai anche chi ha già una bozza"}
+              <em>${generaLead
+                ? "Senza la spunta, se ha già una bozza non spedita non se ne scrive una seconda."
+                : "Senza la spunta, le aziende con una bozza non spedita vengono saltate invece di ritrovarsi due messaggi identici."}</em></span>
           </label>
 
           <p class="privacy-hint">
-            Si scrivono <strong>dodici aziende per volta</strong>, e alla fine ti dico quante ne
-            restano: ogni email è una chiamata a pagamento di qualche secondo, e duecento in una
-            richiesta sola non ci starebbero.
-            ${quante != null && quante > 12
-              ? `Questa lista ne ha ${quante}, quindi serviranno più passaggi.`
-              : ""}
+            ${generaLead ? `
+              Una chiamata a pagamento, qualche secondo. La bozza finisce in
+              <a href="#/admin/crm/mail/pronte">Email Ready</a>, in stato «bozza»: da lì si rilegge,
+              si ritocca e si approva. Non parte niente da sola.`
+            : `
+              Si scrivono <strong>dodici aziende per volta</strong>, e alla fine ti dico quante ne
+              restano: ogni email è una chiamata a pagamento di qualche secondo, e duecento in una
+              richiesta sola non ci starebbero.
+              ${quante != null && quante > 12
+                ? `Questa lista ne ha ${quante}, quindi serviranno più passaggi.`
+                : ""}`}
             <br>Al modello vanno solo <strong>nome, settore, città, sito e valutazione pubblica</strong>
             dell'azienda — gli stessi cinque campi dichiarati nell'informativa.
-            <strong>L'indirizzo email non parte.</strong>
-            <br>Chi si è opposto, chi è in blacklist e chi è già stato contattato viene saltato, e te
-            lo dico contato per motivo.
+            <strong>L'indirizzo email non parte</strong>, e non parte niente del contenuto del sito.
+            ${generaLead ? "" : `
+              <br>Chi si è opposto, chi è in blacklist e chi è già stato contattato viene saltato, e te
+              lo dico contato per motivo.`}
           </p>
 
           <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
             <button type="button" class="btn btn-ghost btn-sm" data-chiudi-genera>Annulla</button>
             <button type="submit" class="btn btn-primary btn-sm" ${inGenerazione ? "disabled" : ""}>
-              ${inGenerazione ? "Scrivo…" : "✨ Scrivi le bozze"}</button>
+              ${inGenerazione ? "Scrivo…" : generaLead ? "✨ Scrivi la bozza" : "✨ Scrivi le bozze"}</button>
           </div>
         </form>`}
       </div>
@@ -3286,6 +3390,24 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
       await carica();
     });
 
+    /* Scrivi la bozza per un lead solo, dalla sua riga.
+       Apre la stessa finestra della generazione da lista: cambia
+       il bersaglio, non il modulo. I gestori della finestra
+       vivono in bindPosta, quindi qui si legano quelli che
+       servono - aprire, chiudere, inviare. */
+    document.querySelectorAll("[data-scrivi-lead]").forEach(b =>
+      b.addEventListener("click", () => {
+        const x = (contenuto?.lead || []).find(l => l.id === b.dataset.scriviLead);
+        if (!x) return;
+        generaLead = x;
+        formGenera = { ...formGenera, lista_id: "", istruzioni: "" };
+        ultimaGenerazione = null;
+        generaAperto = true;
+        QF().render();
+      }));
+
+    if (generaAperto) legaGenerazione($);
+
     document.querySelectorAll("[data-togli]").forEach(b =>
       b.addEventListener("click", async () => {
         const e = await chiama("lista-togli", { lista_id: listaAperta, lead_id: b.dataset.togli });
@@ -3619,61 +3741,16 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     /* ---------------- SCRITTURA ASSISTITA ---------------- */
 
     $("#mm-genera-ai")?.addEventListener("click", () => {
+      /* generaLead a null: senza questo, dopo aver scritto a un
+         lead singolo da Lead Lists, questa finestra si aprirebbe
+         ancora intestata a quel lead. */
+      generaLead = null;
       generaAperto = true;
       ultimaGenerazione = null;
       QF().render();
     });
 
-    document.querySelectorAll("[data-chiudi-genera]").forEach(el =>
-      el.addEventListener("click", e => {
-        if (el.classList.contains("mm-velo") && e.target !== el) return;
-        if (inGenerazione) return;   // non si chiude a metà: le bozze stanno arrivando
-        generaAperto = false; QF().render();
-      }));
-    if (generaAperto) chiudiConEsc(() => { if (!inGenerazione) generaAperto = false; });
-
-    $("#mm-genera-via")?.addEventListener("click", () => { ultimaGenerazione = null; QF().render(); });
-
-    async function generaBlocco() {
-      inGenerazione = true;
-      QF().render();
-      const e = await chiamaAi("genera", formGenera);
-      inGenerazione = false;
-
-      if (!e.ok) {
-        /* Niente bozze, e il motivo è quello che ha detto il
-           server: la chiave che manca, la lista vuota, o i quattro
-           conteggi di chi è stato saltato. */
-        ultimaGenerazione = null;
-        generaAperto = false;
-        QF().toast(e.errore || "Non è stato scritto niente.");
-        QF().render();
-        await caricaPosta2();
-        return;
-      }
-
-      ultimaGenerazione = e;
-      generaAperto = false;
-      QF().toast(`${plurale(e.creati, "bozza scritta", "bozze scritte")}${
-        e.restanti ? `, ne restano ${e.restanti}` : ""}.`);
-      await caricaPosta2();
-    }
-
-    $("#mm-genera-form")?.addEventListener("submit", async e => {
-      e.preventDefault();
-      formGenera = {
-        lista_id: $("#g-lista").value,
-        scopo: $("#g-scopo").value,
-        tono: $("#g-tono").value,
-        istruzioni: $("#g-istruzioni").value.trim(),
-        sovrascrivi: $("#g-sovrascrivi").checked,
-        mittente_id: $("#g-mittente")?.value || null
-      };
-      if (!formGenera.lista_id) { QF().toast("Scegli la lista."); return; }
-      await generaBlocco();
-    });
-
-    $("#mm-genera-ancora")?.addEventListener("click", generaBlocco);
+    legaGenerazione($);
 
     /* Riscrivere i selezionati. Uno alla volta e non in parallelo:
        sono già tre chiamate in parallelo dentro il server, e

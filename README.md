@@ -518,6 +518,36 @@ senza indirizzo, opposto, in blacklist, già contattato. Più un quinto: chi ha 
 spedita viene saltato, a meno che non si spunti «rifai anche chi ha già una bozza» — senza quella
 spunta si eviterebbero due messaggi identici alla stessa azienda.
 
+### Scrivere a un lead solo, dalla sua riga
+
+Lead Lists → apri una lista → il bottone ✨ sulla riga dell'attività. Apre **la stessa finestra**
+della generazione da lista, intestata a quel lead e senza la tendina delle liste: «scrivine una» non
+è un caso particolare, è una lista di uno.
+
+Il bottone compare **solo dove ha senso**: non su chi non ha un indirizzo email e non su chi si è
+opposto. Meglio non offrire un'azione che finirebbe in un rifiuto.
+
+Lato server è `genera` con `lead_id` invece di `lista_id`; da lì in giù non cambia nulla — gli
+stessi quattro controlli, lo stesso inserimento. Cambia solo il messaggio quando non si può
+scrivere: con un lead solo il motivo è uno e si dice al singolare («*Trattoria del Centro* non ha un
+indirizzo email: cercalo sul suo sito, oppure telefona»), invece di stampare «1 senza indirizzo».
+
+### 🔴 Quello che manca ancora, e perché non l'ho fatto
+
+Su Lovable il pannello del lead faceva una cosa in più: leggeva **le pagine del sito**
+(home, chi-siamo, contatti, team), le mandava al modello e ne ricavava due cose — il **nome del
+referente** e un'**intro personalizzata** di 2-3 frasi da usare come apertura.
+
+Non è portato, e non per difficoltà tecnica. Sono due trattamenti che la nostra
+[informativa alle imprese](https://www.quotafacile.net/#/privacy-imprese) **non dichiara**:
+
+1. **il contenuto delle pagine del sito che parte verso Anthropic** — l'informativa enumera cinque
+   campi (nome, settore, città, sito, valutazione pubblica), e il testo di un sito non è fra quelli;
+2. **il nome di una persona fisica**, estratto da una pagina e conservato in archivio.
+
+Finché non sono scritti nell'informativa, non si fanno. Al loro posto, le «indicazioni aggiuntive»
+della finestra: l'aggancio lo scrive chi firma, e quello che scrive è suo.
+
 ### `rigenera` — i cinque ritocchi
 
 Dentro il messaggio aperto: *più naturale, più corta, più premium, più diretta, più umana*.

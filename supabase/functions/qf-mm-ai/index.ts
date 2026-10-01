@@ -266,11 +266,14 @@ async function firmaDi(mittenteId: string | null): Promise<string> {
 // lavora a blocchi, e si dice quanti restano — lo stesso patto
 // che la coda di invio ha già con chi la guarda.
 //
-// TRE DENOMINATORI PER SALTARE QUALCUNO, CONTATI SEPARATI
+// QUATTRO MOTIVI PER SALTARE QUALCUNO, CONTATI SEPARATI
 //
 // Senza indirizzo, opposto, in blacklist, già contattato: sono
-// quattro problemi diversi e si rimediano in modi diversi.
-// L'indirizzo si cerca, l'opposizione no.
+// problemi diversi e si rimediano in modi diversi. L'indirizzo
+// si cerca, l'opposizione no.
+//
+// Con un lead solo il motivo è uno, e si dice al singolare
+// invece di stampare «1 senza indirizzo».
 
 const PER_BLOCCO = 12;
 const PARALLELI = 3;
@@ -280,8 +283,14 @@ async function genera(d: Record<string, unknown>) {
   // subito invece di dopo aver letto trecento righe.
   chiaveAi();
 
-  const listaId = testo(d.lista_id, 40);
-  if (!listaId) throw new ErroreCliente("Scegli la lista da cui generare.");
+  /* Due strade, un solo corpo di funzione: una lista intera,
+     oppure un lead singolo preso dalla sua scheda. Da lì in giù
+     non cambia niente - gli stessi controlli, gli stessi motivi
+     per saltare, lo stesso inserimento - perché "scrivine una"
+     non è un caso particolare: è una lista di uno. */
+  const leadId = testo(d.lead_id, 40);
+  const listaId = leadId ? null : testo(d.lista_id, 40);
+  if (!leadId && !listaId) throw new ErroreCliente("Scegli la lista da cui generare, oppure un lead.");
 
   const scopo = SCOPI[String(d.scopo)] ? String(d.scopo) : "presentazione";
   const tono = TONI[String(d.tono)] ? String(d.tono) : "cordiale";
@@ -290,12 +299,18 @@ async function genera(d: Record<string, unknown>) {
   const smtpId = testo(d.smtp_id, 40);
   const sovrascrivi = d.sovrascrivi === true;
 
-  const { data: dentro } = await db.from("mm_lista_lead")
-    .select("lead_id").eq("lista_id", listaId);
-  const ids = (dentro ?? []).map((r: { lead_id: string }) => r.lead_id);
-  if (!ids.length) throw new ErroreCliente("Questa lista è vuota.");
+  let ids: string[];
+  if (leadId) {
+    ids = [leadId];
+  } else {
+    const { data: dentro } = await db.from("mm_lista_lead")
+      .select("lead_id").eq("lista_id", listaId);
+    ids = (dentro ?? []).map((r: { lead_id: string }) => r.lead_id);
+    if (!ids.length) throw new ErroreCliente("Questa lista è vuota.");
+  }
 
   const { data: lead } = await db.from("crm_lead").select(COLONNE_LEAD).in("id", ids);
+  if (leadId && !lead?.length) throw new ErroreCliente("Questo lead non esiste più.", 404);
 
   const [{ data: vietati }, { data: giaScritti }, { data: giaInBozza }] = await Promise.all([
     db.from("mm_blacklist").select("email"),
@@ -326,6 +341,23 @@ async function genera(d: Record<string, unknown>) {
     if (contattati.has(email)) { saltati.giaContattati++; continue; }
     if (!sovrascrivi && conBozza.has(String(l.id))) { saltati.giaScritti++; continue; }
     candidati.push({ ...l, email });
+  }
+
+  /* Con un lead solo i conteggi suonano sciocchi ("1 senza
+     indirizzo"): il motivo è uno e si dice al singolare. */
+  if (!candidati.length && leadId) {
+    const n = (lead?.[0] as Record<string, unknown> | undefined)?.nome ?? "Questo lead";
+    throw new ErroreCliente(
+      saltati.senzaEmail
+        ? `${n} non ha un indirizzo email: cercalo sul suo sito, oppure telefona.`
+        : saltati.opposti
+        ? `${n} si è opposto a ricevere comunicazioni: non c'è niente da scrivere.`
+        : saltati.inBlacklist
+        ? `L'indirizzo di ${n} è in blacklist.`
+        : saltati.giaContattati
+        ? `A ${n} è già partita un'email: se vuoi riscrivergli, parti da quella nel registro.`
+        : `${n} ha già una bozza non spedita. Aprila in Email Ready, oppure spunta «rifai anche chi ha già una bozza».`,
+    );
   }
 
   if (!candidati.length) {
