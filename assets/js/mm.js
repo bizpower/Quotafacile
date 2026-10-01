@@ -739,6 +739,55 @@
   let quandoInvio = "";
   let inInvio = false;
 
+  /* La scrittura assistita vive in qf-mm-ai, non in qf-mm.
+     Motivo: chiama un modello a pagamento e ci mette secondi,
+     mentre tutto il resto di questa pagina risponde in
+     millisecondi. Due cose con tempi e costi così diversi hanno
+     anche bisogno di due attese diverse — qui il timeout è di
+     tre minuti, non di venticinque secondi. */
+  const API_MM_AI = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-mm-ai";
+
+  async function chiamaAi(azione, d = {}, timeout = 180000) {
+    const stop = new AbortController();
+    const t = setTimeout(() => stop.abort(), timeout);
+    try {
+      const r = await fetch(API_MM_AI, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-qf-admin": chiave() },
+        body: JSON.stringify({ azione, dati: d }),
+        signal: stop.signal
+      });
+      const j = await r.json().catch(() => ({}));
+      return { ok: r.ok && j.ok === true, status: r.status, ...j };
+    } catch (e) {
+      return {
+        ok: false, status: 0,
+        errore: e.name === "AbortError"
+          ? "La generazione ha superato i tre minuti. Quelle già scritte sono salvate: riprova per le altre."
+          : "Servizio non raggiungibile"
+      };
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  let generaAperto = false;
+  let formGenera = { lista_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "", sovrascrivi: false };
+  let inGenerazione = false;
+  let ultimaGenerazione = null;   // l'esito dell'ultimo blocco, da mostrare
+
+  /* I cinque ritocchi. Qui ci sono solo l'etichetta e la parola
+     che si manda: la frase che il modello legge sta sul server,
+     perché è il server a comporre i prompt. */
+  const RITOCCHI = [
+    ["naturale", "Più naturale"],
+    ["corta", "Più corta"],
+    ["premium", "Più premium"],
+    ["diretta", "Più diretta"],
+    ["umana", "Più umana"]
+  ];
+  let inRitocco = "";   // la chiave del ritocco in corso, per disabilitare i bottoni
+
   const STATI_POSTA = {
     bozza: ["✎", "Bozza"], pronta: ["✓", "Pronta"], in_coda: ["🕒", "In coda"],
     inviata: ["📤", "Inviata"], fallita: ["⚠️", "Fallita"], annullata: ["✕", "Annullata"]
@@ -886,8 +935,37 @@
         </div>
         <div class="mm-azioni">
           <button class="btn btn-outline btn-sm" id="mm-posta-csv" ${pp.length ? "" : "disabled"}>⬇ CSV</button>
+          <button class="btn btn-primary btn-sm" id="mm-genera-ai">✨ Genera con AI</button>
         </div>
       </div>
+
+      ${ultimaGenerazione ? (() => {
+        const g = ultimaGenerazione;
+        const s = g.saltati || {};
+        const motivi = [
+          s.senzaEmail ? `${s.senzaEmail} senza indirizzo` : null,
+          s.opposti ? `${s.opposti} opposti` : null,
+          s.inBlacklist ? `${s.inBlacklist} in blacklist` : null,
+          s.giaContattati ? `${s.giaContattati} già contattati` : null,
+          s.giaScritti ? `${s.giaScritti} avevano già una bozza` : null
+        ].filter(Boolean).join(", ");
+        return `
+        <div class="mm-barra-scelta" style="align-items:flex-start">
+          <div>
+            <strong>${plurale(g.creati, "bozza scritta", "bozze scritte")}</strong>
+            ${g.costo ? ` · costo del blocco: ${g.costo.toFixed(4)} $` : ""}
+            ${motivi ? `<br><span class="muted" style="font-size:.85rem">Saltati: ${esc(motivi)}.</span>` : ""}
+            ${(g.falliti || []).length ? `<br><span class="muted" style="font-size:.85rem">Non riuscite: ${
+              esc((g.falliti || []).map(f => f.nome).join(", "))}.</span>` : ""}
+            ${g.restanti ? `<br><span style="font-size:.85rem">Restano <strong>${g.restanti}</strong> aziende in questa lista: premi di nuovo «Genera con AI» per il blocco successivo.</span>` : ""}
+          </div>
+          <div class="mm-azioni">
+            ${g.restanti ? `<button class="btn btn-primary btn-sm" id="mm-genera-ancora" ${inGenerazione ? "disabled" : ""}>${
+              inGenerazione ? "Scrivo…" : "✨ Scrivi i prossimi"}</button>` : ""}
+            <button class="btn btn-ghost btn-sm" id="mm-genera-via">✕</button>
+          </div>
+        </div>`;
+      })() : ""}
 
       ${scelte.size ? `
         <div class="mm-barra-scelta">
@@ -896,6 +974,8 @@
             <button class="btn btn-outline btn-sm" data-massa="pronta">✓ Approva</button>
             <button class="btn btn-outline btn-sm" data-massa="bozza">↩ Rimetti in bozza</button>
             <button class="btn btn-outline btn-sm" data-massa="annullata">✕ Annulla</button>
+            <button class="btn btn-outline btn-sm" id="mm-rigenera-massa" ${inGenerazione ? "disabled" : ""}>${
+              inGenerazione ? "Riscrivo…" : "✨ Riscrivi"}</button>
             <button class="btn btn-ghost btn-sm danger" id="mm-posta-elimina">🗑 Elimina</button>
             <button class="btn btn-outline btn-sm" id="mm-programma" ${caselle.length ? "" : "disabled"}>🕒 Programma</button>
             <button class="btn btn-primary btn-sm" id="mm-invia-ora" ${caselle.length ? "" : "disabled"}>📤 Invia ora</button>
@@ -940,7 +1020,8 @@
     </div>
 
     ${postaAperta ? postaApertaView() : ""}
-    ${invioAperto ? invioView() : ""}`;
+    ${invioAperto ? invioView() : ""}
+    ${generaAperto ? generaView() : ""}`;
   }
 
   function postaApertaView() {
@@ -964,11 +1045,120 @@
           <label class="field" style="margin-top:.6rem"><span>Testo</span>
             <textarea id="p-corpo" rows="14" class="mail-corpo" ${partita ? "readonly" : ""}>${esc(m.corpo)}</textarea></label>
           ${partita ? "" : `
+            <div class="mm-ritocchi">
+              <span class="muted" style="font-size:.85rem">Riscrivila:</span>
+              ${RITOCCHI.map(([k, et]) => `
+                <button type="button" class="btn btn-outline btn-sm" data-ritocco="${k}"
+                  ${inRitocco ? "disabled" : ""}>${inRitocco === k ? "…" : esc(et)}</button>`).join("")}
+            </div>
+            <p class="privacy-hint">
+              Riscrivere costa una chiamata al modello e sostituisce il testo qui sopra: quello
+              di prima non si recupera. ${m.stato === "in_coda"
+                ? "<strong>Questo messaggio è in coda:</strong> riscrivendolo esce dalla coda e torna fra le pronte, perché non parta da solo un testo che non hai ancora letto."
+                : ""}
+            </p>
             <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
               <button type="button" class="btn btn-ghost btn-sm" data-chiudi-posta>Annulla</button>
               <button type="submit" class="btn btn-primary btn-sm">Salva e approva</button>
             </div>`}
         </form>
+      </div>
+    </div>`;
+  }
+
+  /* La finestra di generazione.
+
+     Chiede le stesse quattro cose che chiede lo scrittore AI per
+     un singolo messaggio — scopo, tono, indicazioni, chi firma —
+     perché è lo stesso prompt: quello che cambia è che qui gira
+     su tutta una lista invece che su un lead.
+
+     E dice due cose prima che si prema: quante aziende verranno
+     scritte in questo blocco, e che ognuna costa. Un bottone che
+     spende denaro deve dirlo prima, non dopo. */
+  function generaView() {
+    const ll = D().liste || [];
+    const mittenti = D().mittenti || [];
+    const lista = ll.find(l => l.id === formGenera.lista_id);
+    const quante = lista ? (lista.quanti ?? null) : null;
+    return `
+    <div class="mm-velo" data-chiudi-genera>
+      <div class="card mm-dialogo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Scrivi le email di una lista</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-genera>Chiudi</button>
+        </div>
+        ${ll.length === 0 ? `
+          <p class="privacy-hint">
+            Non c'è nessuna lista. Creane una in
+            <a href="#/admin/crm/mail/liste">Lead Lists</a>, oppure riempila dal
+            <a href="#/admin/crm/mail/lead-finder">Lead Finder</a>.
+          </p>
+          <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-genera>Chiudi</button>
+          </div>`
+        : `
+        <form id="mm-genera-form">
+          <label class="field"><span>Quale lista</span>
+            <select id="g-lista" required>
+              <option value="">— scegli la lista —</option>
+              ${ll.map(l => `<option value="${esc(l.id)}" ${formGenera.lista_id === l.id ? "selected" : ""}>${
+                esc(l.nome)}${l.quanti != null ? ` · ${l.quanti} aziende` : ""}</option>`).join("")}
+            </select></label>
+
+          <label class="field" style="margin-top:.6rem"><span>Scopo del messaggio</span>
+            <select id="g-scopo">
+              <option value="presentazione" ${formGenera.scopo === "presentazione" ? "selected" : ""}>Presentare QuotaFacile</option>
+              <option value="preventivo" ${formGenera.scopo === "preventivo" ? "selected" : ""}>Proporre un preventivo gratuito</option>
+              <option value="sollecito" ${formGenera.scopo === "sollecito" ? "selected" : ""}>Richiamare chi non ha risposto</option>
+              <option value="informativa" ${formGenera.scopo === "informativa" ? "selected" : ""}>Segnalare una novità normativa</option>
+            </select></label>
+
+          <label class="field" style="margin-top:.6rem"><span>Tono</span>
+            <select id="g-tono">
+              <option value="cordiale" ${formGenera.tono === "cordiale" ? "selected" : ""}>Cordiale ma professionale</option>
+              <option value="diretto" ${formGenera.tono === "diretto" ? "selected" : ""}>Diretto e asciutto</option>
+              <option value="formale" ${formGenera.tono === "formale" ? "selected" : ""}>Formale</option>
+            </select></label>
+
+          ${mittenti.length ? `
+            <label class="field" style="margin-top:.6rem"><span>Chi firma</span>
+              <select id="g-mittente">
+                <option value="">— QuotaFacile —</option>
+                ${mittenti.map(m => `<option value="${esc(m.id)}">${esc(m.from_nome || m.etichetta)}</option>`).join("")}
+              </select></label>` : ""}
+
+          <label class="field" style="margin-top:.6rem"><span>Indicazioni aggiuntive (facoltative)</span>
+            <textarea id="g-istruzioni" rows="3" placeholder="Es. nomina che siamo di Monza, e che lavoriamo con intermediari della zona">${
+              esc(formGenera.istruzioni)}</textarea></label>
+
+          <label class="field mm-interruttore" style="margin-top:.6rem">
+            <input type="checkbox" id="g-sovrascrivi" ${formGenera.sovrascrivi ? "checked" : ""}>
+            <span>Rifai anche chi ha già una bozza
+              <em>Senza la spunta, le aziende con una bozza non spedita vengono saltate invece di
+              ritrovarsi due messaggi identici.</em></span>
+          </label>
+
+          <p class="privacy-hint">
+            Si scrivono <strong>dodici aziende per volta</strong>, e alla fine ti dico quante ne
+            restano: ogni email è una chiamata a pagamento di qualche secondo, e duecento in una
+            richiesta sola non ci starebbero.
+            ${quante != null && quante > 12
+              ? `Questa lista ne ha ${quante}, quindi serviranno più passaggi.`
+              : ""}
+            <br>Al modello vanno solo <strong>nome, settore, città, sito e valutazione pubblica</strong>
+            dell'azienda — gli stessi cinque campi dichiarati nell'informativa.
+            <strong>L'indirizzo email non parte.</strong>
+            <br>Chi si è opposto, chi è in blacklist e chi è già stato contattato viene saltato, e te
+            lo dico contato per motivo.
+          </p>
+
+          <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-genera>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm" ${inGenerazione ? "disabled" : ""}>
+              ${inGenerazione ? "Scrivo…" : "✨ Scrivi le bozze"}</button>
+          </div>
+        </form>`}
       </div>
     </div>`;
   }
@@ -3196,6 +3386,108 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
         const persi = e.richiesti - e.aggiornati;
         QF().toast(`${plurale(e.aggiornati, "messaggio aggiornato", "messaggi aggiornati")}${persi ? `; ${persi} già partiti, lasciati com'erano` : ""}.`);
         scelte = new Set();
+        await caricaPosta2();
+      }));
+
+    /* ---------------- SCRITTURA ASSISTITA ---------------- */
+
+    $("#mm-genera-ai")?.addEventListener("click", () => {
+      generaAperto = true;
+      ultimaGenerazione = null;
+      QF().render();
+    });
+
+    document.querySelectorAll("[data-chiudi-genera]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        if (inGenerazione) return;   // non si chiude a metà: le bozze stanno arrivando
+        generaAperto = false; QF().render();
+      }));
+    if (generaAperto) chiudiConEsc(() => { if (!inGenerazione) generaAperto = false; });
+
+    $("#mm-genera-via")?.addEventListener("click", () => { ultimaGenerazione = null; QF().render(); });
+
+    async function generaBlocco() {
+      inGenerazione = true;
+      QF().render();
+      const e = await chiamaAi("genera", formGenera);
+      inGenerazione = false;
+
+      if (!e.ok) {
+        /* Niente bozze, e il motivo è quello che ha detto il
+           server: la chiave che manca, la lista vuota, o i quattro
+           conteggi di chi è stato saltato. */
+        ultimaGenerazione = null;
+        generaAperto = false;
+        QF().toast(e.errore || "Non è stato scritto niente.");
+        QF().render();
+        await caricaPosta2();
+        return;
+      }
+
+      ultimaGenerazione = e;
+      generaAperto = false;
+      QF().toast(`${plurale(e.creati, "bozza scritta", "bozze scritte")}${
+        e.restanti ? `, ne restano ${e.restanti}` : ""}.`);
+      await caricaPosta2();
+    }
+
+    $("#mm-genera-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      formGenera = {
+        lista_id: $("#g-lista").value,
+        scopo: $("#g-scopo").value,
+        tono: $("#g-tono").value,
+        istruzioni: $("#g-istruzioni").value.trim(),
+        sovrascrivi: $("#g-sovrascrivi").checked,
+        mittente_id: $("#g-mittente")?.value || null
+      };
+      if (!formGenera.lista_id) { QF().toast("Scegli la lista."); return; }
+      await generaBlocco();
+    });
+
+    $("#mm-genera-ancora")?.addEventListener("click", generaBlocco);
+
+    /* Riscrivere i selezionati. Uno alla volta e non in parallelo:
+       sono già tre chiamate in parallelo dentro il server, e
+       moltiplicarle qui vorrebbe dire prendersi un 429 da
+       Anthropic a metà del gruppo. */
+    $("#mm-rigenera-massa")?.addEventListener("click", async () => {
+      const ids = [...scelte];
+      if (!ids.length) return;
+      if (!confirm(`Riscrivere ${plurale(ids.length, "messaggio", "messaggi")}? Il testo di adesso viene sostituito e non si recupera.`)) return;
+      inGenerazione = true;
+      QF().render();
+      let fatti = 0, falliti = 0, costo = 0, primoErrore = "";
+      for (const id of ids) {
+        const e = await chiamaAi("rigenera", { id, ritocco: "naturale" });
+        if (e.ok) { fatti++; costo += e.costo || 0; }
+        else { falliti++; if (!primoErrore) primoErrore = e.errore || ""; }
+      }
+      inGenerazione = false;
+      scelte = new Set();
+      QF().toast(`${plurale(fatti, "messaggio riscritto", "messaggi riscritti")}${
+        falliti ? `, ${falliti} non riuscit${falliti === 1 ? "o" : "i"}${primoErrore ? `: ${primoErrore}` : ""}` : ""
+      }${costo ? ` · ${costo.toFixed(4)} $` : ""}.`);
+      await caricaPosta2();
+    });
+
+    /* I cinque ritocchi dentro il messaggio aperto. Il testo
+       riscritto torna nella casella senza essere salvato: si
+       guarda, e si approva col bottone di sempre. */
+    document.querySelectorAll("[data-ritocco]").forEach(b =>
+      b.addEventListener("click", async () => {
+        if (!postaAperta || inRitocco) return;
+        inRitocco = b.dataset.ritocco;
+        QF().render();
+        const e = await chiamaAi("rigenera", { id: postaAperta.id, ritocco: inRitocco });
+        inRitocco = "";
+        if (!e.ok) { QF().toast(e.errore || "Non riscritto."); QF().render(); return; }
+        postaAperta = { ...postaAperta, oggetto: e.oggetto, corpo: e.corpo, modificata: true,
+          ...(e.uscitaDallaCoda ? { stato: "pronta", programmata_per: null } : {}) };
+        QF().toast(`Riscritta${e.costo ? ` · ${e.costo.toFixed(5)} $` : ""}${
+          e.uscitaDallaCoda ? " · uscita dalla coda, riprogrammala quando ti va bene" : ""}.`);
+        QF().render();
         await caricaPosta2();
       }));
 

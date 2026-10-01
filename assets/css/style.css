@@ -1294,6 +1294,13 @@ a.chip { display: inline-block; text-decoration: none; }
 .mm-testata-sezione > p { flex: 1 1 20rem; }
 .mm-testata-sezione > .mm-azioni { flex: 0 0 auto; flex-wrap: nowrap; }
 .mm-azioni { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+
+/* I cinque ritocchi, sotto il testo del messaggio. Vanno a capo
+   da soli perché su un telefono cinque bottoni in fila non ci
+   stanno, e mandarli fuori dallo schermo vorrebbe dire averne
+   tre. */
+.mm-ritocchi { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center;
+  margin-top: .7rem; padding-top: .7rem; border-top: 1px solid var(--line); }
 /* Il cestino sta da solo all'altro capo: cancellare non è
    un'azione da mettere accanto a quelle che si usano ogni giorno. */
 .mm-azioni .danger { margin-left: auto; }
