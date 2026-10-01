@@ -1723,8 +1723,9 @@ async function interpreta(d: Record<string, unknown>, chiave: string) {
       "cercare un contatto in archivio, dirti i comuni di una provincia, cercare " +
       "attività su Google e salvarle in una lista, salvare un contatto, creare una " +
       "lista o metterci dentro qualcuno, cambiare stato o assegnatario di un " +
-      "contatto, registrare un'opposizione, cancellare un contatto, e gestire i " +
-      "collaboratori con i loro accessi. Inviare email no: quelle le mandi tu.",
+      "contatto, registrare un'opposizione, cancellare un contatto, spostare l'ora " +
+      "delle email già in coda, e gestire i collaboratori con i loro accessi. " +
+      "Inviare email no: quelle le mandi tu.",
   };
 }
 
