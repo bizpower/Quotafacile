@@ -294,6 +294,33 @@ async function checkout(d: Record<string, unknown>, req: Request) {
       "Hai già un abbonamento attivo. Per cambiare piano o carta usa la gestione abbonamento.");
   }
 
+  /* NON SI APRE UN PAGAMENTO CHE NON SI PUO' REGISTRARE
+   *
+   * Senza STRIPE_WEBHOOK_SECRET il webhook rifiuta ogni evento con
+   * un 503. Il checkout però funzionerebbe benissimo: la persona
+   * mette la carta, Stripe incassa, e da noi non arriva niente —
+   * pro_abbonamenti resta vuota, il badge non compare, e chi ha
+   * pagato vede la stessa schermata di prima. Il guasto peggiore
+   * della piattaforma e' quello che da fuori sembra riuscito.
+   *
+   * Quindi: se non siamo in grado di registrare l'esito, il
+   * pagamento non parte. Si controlla qui e non a monte perche'
+   * solo un professionista identificato deve poter scoprire come
+   * siamo configurati - e perche' fermarsi prima di clienteStripe
+   * evita di lasciare in Stripe un cliente creato per un
+   * abbonamento che non arrivera' mai.
+   */
+  if (!Deno.env.get("STRIPE_WEBHOOK_SECRET")) {
+    console.error(
+      "[qf-pro] checkout rifiutato: manca STRIPE_WEBHOOK_SECRET, " +
+      "l'abbonamento non sarebbe registrato. Profilo:", p.id);
+    throw new ErroreCliente(
+      "L'abbonamento non è attivabile in questo momento: la conferma dei pagamenti " +
+      "non è ancora collegata, e non vogliamo prendere i tuoi soldi senza poter " +
+      "registrare l'abbonamento. Riprova più tardi, oppure scrivici.",
+      503);
+  }
+
   const ritorno = testo(d.ritorno, 300) || "https://www.quotafacile.net/";
   const cliente = await clienteStripe(p);
 
@@ -442,11 +469,26 @@ async function salvaAbbonamento(sub: Record<string, unknown>) {
 async function webhook(req: Request) {
   const segreto = Deno.env.get("STRIPE_WEBHOOK_SECRET");
   if (!segreto) {
+    /* Questa riga non c'era, e la sua assenza e' costata una
+       diagnosi sbagliata: il 503 tornava a Stripe e nel nostro
+       registro non restava niente. L'unico guasto che perde denaro
+       in silenzio era silenzioso anche per noi. */
+    console.error(
+      "[qf-pro] webhook rifiutato: manca STRIPE_WEBHOOK_SECRET. " +
+      "Stripe riconsegnera' l'evento, ma finche' il segreto manca nessun " +
+      "abbonamento viene registrato.");
     return rispondi({ ok: false, errore: "Manca STRIPE_WEBHOOK_SECRET" }, 503);
   }
 
   const corpo = await req.text();
   if (!await firmaValida(corpo, req.headers.get("Stripe-Signature"), segreto)) {
+    /* Due cose diverse, e vanno guardate entrambe: il segreto
+       configurato non e' quello dell'endpoint (e allora nessun
+       evento passera' mai), oppure qualcuno sta provando a
+       mandarci eventi suoi. */
+    console.warn(
+      "[qf-pro] webhook: firma non valida. O STRIPE_WEBHOOK_SECRET non " +
+      "corrisponde a questo endpoint, o la richiesta non viene da Stripe.");
     return rispondi({ ok: false, errore: "Firma non valida" }, 400);
   }
 
