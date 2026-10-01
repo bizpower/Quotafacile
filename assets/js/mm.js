@@ -595,7 +595,8 @@
       </div>`}
 
     ${listaModulo ? listaModuloView() : ""}
-    ${leadModulo ? leadModuloView() : ""}`;
+    ${leadModulo ? leadModuloView() : ""}
+    ${generaAperto ? generaView() : ""}`;
   }
 
   function contenutoView() {
@@ -659,7 +660,12 @@
                   ${esc(x.fonte === "google_places" ? "Google" : x.fonte === "file" ? "da file" : "a mano")}
                   ${x.raccolto_il ? `<br>${dataOra(x.raccolto_il)}` : ""}
                 </td>
-                <td><button class="btn btn-ghost btn-sm danger" data-togli="${esc(x.id)}" title="Togli dalla lista">✕</button></td>
+                <td class="mm-riga-azioni">
+                  ${x.no_contatto || !x.email ? "" : `
+                    <button class="btn btn-ghost btn-sm" data-scrivi-lead="${esc(x.id)}"
+                      title="Scrivi la bozza per questa attività">✨</button>`}
+                  <button class="btn btn-ghost btn-sm danger" data-togli="${esc(x.id)}" title="Togli dalla lista">✕</button>
+                </td>
               </tr>`;
             }).join("")}
           </tbody>
@@ -738,6 +744,185 @@
   let invioAperto = null;     // "adesso" | "programma"
   let quandoInvio = "";
   let inInvio = false;
+
+  /* Su chi agisce la finestra di invio.
+
+       scelti   i messaggi spuntati a mano, come e' sempre stato
+       pronte   tutte le approvate, filtri a schermo ignorati
+       coda     tutte quelle gia' in coda, per spostarne la data
+
+     Quest'ultimo caso non e' un invio: e' solo una data nuova, e
+     il server lo sa fare da sempre - "in_coda" e' fra gli stati
+     che posta-programma accetta. Mancava il bottone, non il
+     motore.
+
+     "Filtri ignorati" e' la cosa che va detta a schermo. Chi ha
+     appena filtrato su una campagna e preme "invia tutte" si
+     aspetta quella campagna: se invece parte tutto, lo scopre
+     dopo, e dopo e' tardi. */
+  let invioBersaglio = "scelti";
+
+  /* Quanti sono, per il bersaglio in corso: i conteggi del server
+     sono globali, non filtrati, quindi sono gia' il numero giusto
+     da mostrare sul bottone. */
+  const quantiPronte = () => (postaDati?.conteggi?.pronta ?? 0);
+  const quantiInCoda = () => (postaDati?.conteggi?.in_coda ?? 0);
+
+  /* Gli identificativi su cui agire. Per "pronte" e "coda" non
+     bastano quelli a schermo - l'elenco e' filtrato - quindi si
+     richiede l'elenco per stato. Nessuna azione nuova sul server:
+     posta-elenco sa gia' filtrare per stato, e il suo tetto di
+     cinquecento righe e' lo stesso che posta-invia e
+     posta-programma applicano agli id che ricevono. */
+  async function bersaglioIds() {
+    if (invioBersaglio === "scelti") return { ids: [...scelte], troncato: false };
+    const stato = invioBersaglio === "coda" ? "in_coda" : "pronta";
+    const e = await chiama("posta-elenco", { stato, cerca: "", campagna_id: "" }, 30000);
+    if (!e.ok) return { ids: [], errore: e.errore || "Elenco non leggibile." };
+    const ids = (e.posta || []).map(m => m.id);
+    const totale = e.conteggi?.[stato] ?? ids.length;
+    return { ids, troncato: totale > ids.length, totale };
+  }
+
+  /* La scrittura assistita vive in qf-mm-ai, non in qf-mm.
+     Motivo: chiama un modello a pagamento e ci mette secondi,
+     mentre tutto il resto di questa pagina risponde in
+     millisecondi. Due cose con tempi e costi così diversi hanno
+     anche bisogno di due attese diverse — qui il timeout è di
+     tre minuti, non di venticinque secondi. */
+  const API_MM_AI = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-mm-ai";
+
+  async function chiamaAi(azione, d = {}, timeout = 180000) {
+    const stop = new AbortController();
+    const t = setTimeout(() => stop.abort(), timeout);
+    try {
+      const r = await fetch(API_MM_AI, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-qf-admin": chiave() },
+        body: JSON.stringify({ azione, dati: d }),
+        signal: stop.signal
+      });
+      const j = await r.json().catch(() => ({}));
+      return { ok: r.ok && j.ok === true, status: r.status, ...j };
+    } catch (e) {
+      return {
+        ok: false, status: 0,
+        errore: e.name === "AbortError"
+          ? "La generazione ha superato i tre minuti. Quelle già scritte sono salvate: riprova per le altre."
+          : "Servizio non raggiungibile"
+      };
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  let generaAperto = false;
+  /* Quando si scrive per un lead solo, qui c'è il lead: serve al
+     titolo e a sapere che la tendina delle liste non va mostrata.
+     La finestra è la stessa — una lista di uno non merita un
+     secondo modulo da tenere allineato. */
+  let generaLead = null;
+  let formGenera = { lista_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "", sovrascrivi: false };
+  let inGenerazione = false;
+  let ultimaGenerazione = null;   // l'esito dell'ultimo blocco, da mostrare
+
+  /* I cinque ritocchi. Qui ci sono solo l'etichetta e la parola
+     che si manda: la frase che il modello legge sta sul server,
+     perché è il server a comporre i prompt. */
+  const RITOCCHI = [
+    ["naturale", "Più naturale"],
+    ["corta", "Più corta"],
+    ["premium", "Più premium"],
+    ["diretta", "Più diretta"],
+    ["umana", "Più umana"]
+  ];
+  let inRitocco = "";   // la chiave del ritocco in corso, per disabilitare i bottoni
+
+  /* I gestori della finestra di generazione, in un posto solo.
+
+     La finestra compare in due sezioni - Email Ready per una
+     lista, Lead Lists per un lead singolo - e ogni sezione ha il
+     suo bind. Duplicare i gestori voleva dire due copie da tenere
+     allineate, e la prima volta che se ne cambia uno solo la
+     finestra fa due cose diverse a seconda di dove l'hai aperta. */
+  function legaGenerazione($) {
+    document.querySelectorAll("[data-chiudi-genera]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        if (inGenerazione) return;   // non si chiude a metà: le bozze stanno arrivando
+        generaAperto = false; generaLead = null; QF().render();
+      }));
+    if (generaAperto) chiudiConEsc(() => {
+      if (!inGenerazione) { generaAperto = false; generaLead = null; }
+    });
+
+    $("#mm-genera-via")?.addEventListener("click", () => { ultimaGenerazione = null; QF().render(); });
+
+    async function generaBlocco() {
+      inGenerazione = true;
+      QF().render();
+      const e = await chiamaAi("genera", formGenera);
+      inGenerazione = false;
+
+      /* La posta si ricarica solo se si è sulla sua schermata:
+         da Lead Lists sarebbe una richiesta buttata. */
+      const rileggi = () => rottaCorrente === "pronte" ? caricaPosta2() : Promise.resolve();
+
+      if (!e.ok) {
+        /* Niente bozze, e il motivo è quello che ha detto il
+           server: la chiave che manca, la lista vuota, oppure il
+           motivo per cui quel lead è stato saltato. */
+        ultimaGenerazione = null;
+        generaAperto = false; generaLead = null;
+        QF().toast(e.errore || "Non è stato scritto niente.");
+        QF().render();
+        await rileggi();
+        return;
+      }
+
+      const unoSolo = !!formGenera.lead_id;
+      ultimaGenerazione = unoSolo ? null : e;
+      generaAperto = false; generaLead = null;
+      QF().toast(unoSolo
+        ? (e.creati
+            ? "Bozza scritta: la trovi in Email Ready."
+            : "Non è stata scritta nessuna bozza.")
+        : `${plurale(e.creati, "bozza scritta", "bozze scritte")}${
+            e.restanti ? `, ne restano ${e.restanti}` : ""}.`);
+      QF().render();
+      await rileggi();
+    }
+
+    $("#mm-genera-form")?.addEventListener("submit", async e => {
+      e.preventDefault();
+      formGenera = {
+        lista_id: $("#g-lista")?.value || "",
+        lead_id: generaLead ? generaLead.id : null,
+        scopo: $("#g-scopo").value,
+        tono: $("#g-tono").value,
+        istruzioni: $("#g-istruzioni").value.trim(),
+        sovrascrivi: $("#g-sovrascrivi").checked,
+        mittente_id: $("#g-mittente")?.value || null
+      };
+      if (!formGenera.lead_id && !formGenera.lista_id) { QF().toast("Scegli la lista."); return; }
+      await generaBlocco();
+    });
+
+    $("#mm-genera-ancora")?.addEventListener("click", generaBlocco);
+  }
+
+  /* Il messaggio in anteprima, separato da quello in modifica.
+     Sono due cose diverse: una si guarda, l'altra si cambia, e
+     chi vuole solo rileggere un testo prima di approvarlo non
+     deve trovarsi dentro un modulo con i campi aperti. */
+  let postaAnteprima = null;
+  let inModello = false;
+
+  /* I segnaposto rimasti. Un messaggio che parte con "{citta}"
+     scritto in chiaro è la figura peggiore che questa sezione
+     possa fare, e si vede solo rileggendo: qui si vede prima. */
+  const segnapostiRimasti = t =>
+    [...new Set([...String(t || "").matchAll(/\{(\w+)\}/g)].map(m => m[1]))];
 
   const STATI_POSTA = {
     bozza: ["✎", "Bozza"], pronta: ["✓", "Pronta"], in_coda: ["🕒", "In coda"],
@@ -886,8 +1071,55 @@
         </div>
         <div class="mm-azioni">
           <button class="btn btn-outline btn-sm" id="mm-posta-csv" ${pp.length ? "" : "disabled"}>⬇ CSV</button>
+          <button class="btn btn-primary btn-sm" id="mm-genera-ai">✨ Genera con AI</button>
         </div>
       </div>
+
+      ${/* Le azioni che prendono tutto, non i selezionati. Stanno
+            su una riga loro e non accanto a «CSV» perché fanno una
+            cosa di natura diversa: ignorano i filtri a schermo. */
+        (quantiPronte() || quantiInCoda()) ? `
+        <div class="mm-tutte">
+          ${quantiPronte() ? `
+            <button class="btn btn-outline btn-sm" id="mm-tutte-invia" ${caselle.length ? "" : "disabled"}
+              title="${caselle.length ? "" : "Serve prima una casella di invio attiva"}">
+              📤 Invia tutte le pronte (${quantiPronte()})</button>
+            <button class="btn btn-outline btn-sm" id="mm-tutte-programma" ${caselle.length ? "" : "disabled"}
+              title="${caselle.length ? "" : "Serve prima una casella di invio attiva"}">
+              🕒 Programma tutte le pronte (${quantiPronte()})</button>` : ""}
+          ${quantiInCoda() ? `
+            <button class="btn btn-outline btn-sm" id="mm-tutte-coda" ${caselle.length ? "" : "disabled"}>
+              🔄 Riprogramma la coda (${quantiInCoda()})</button>` : ""}
+          <span class="mm-tutte-nota">I filtri qui sopra non contano: questi bottoni prendono tutto.</span>
+        </div>` : ""}
+
+      ${ultimaGenerazione ? (() => {
+        const g = ultimaGenerazione;
+        const s = g.saltati || {};
+        const motivi = [
+          s.senzaEmail ? `${s.senzaEmail} senza indirizzo` : null,
+          s.opposti ? `${s.opposti} opposti` : null,
+          s.inBlacklist ? `${s.inBlacklist} in blacklist` : null,
+          s.giaContattati ? `${s.giaContattati} già contattati` : null,
+          s.giaScritti ? `${s.giaScritti} avevano già una bozza` : null
+        ].filter(Boolean).join(", ");
+        return `
+        <div class="mm-barra-scelta" style="align-items:flex-start">
+          <div>
+            <strong>${plurale(g.creati, "bozza scritta", "bozze scritte")}</strong>
+            ${g.costo ? ` · costo del blocco: ${g.costo.toFixed(4)} $` : ""}
+            ${motivi ? `<br><span class="muted" style="font-size:.85rem">Saltati: ${esc(motivi)}.</span>` : ""}
+            ${(g.falliti || []).length ? `<br><span class="muted" style="font-size:.85rem">Non riuscite: ${
+              esc((g.falliti || []).map(f => f.nome).join(", "))}.</span>` : ""}
+            ${g.restanti ? `<br><span style="font-size:.85rem">Restano <strong>${g.restanti}</strong> aziende in questa lista: premi di nuovo «Genera con AI» per il blocco successivo.</span>` : ""}
+          </div>
+          <div class="mm-azioni">
+            ${g.restanti ? `<button class="btn btn-primary btn-sm" id="mm-genera-ancora" ${inGenerazione ? "disabled" : ""}>${
+              inGenerazione ? "Scrivo…" : "✨ Scrivi i prossimi"}</button>` : ""}
+            <button class="btn btn-ghost btn-sm" id="mm-genera-via">✕</button>
+          </div>
+        </div>`;
+      })() : ""}
 
       ${scelte.size ? `
         <div class="mm-barra-scelta">
@@ -896,6 +1128,8 @@
             <button class="btn btn-outline btn-sm" data-massa="pronta">✓ Approva</button>
             <button class="btn btn-outline btn-sm" data-massa="bozza">↩ Rimetti in bozza</button>
             <button class="btn btn-outline btn-sm" data-massa="annullata">✕ Annulla</button>
+            <button class="btn btn-outline btn-sm" id="mm-rigenera-massa" ${inGenerazione ? "disabled" : ""}>${
+              inGenerazione ? "Riscrivo…" : "✨ Riscrivi"}</button>
             <button class="btn btn-ghost btn-sm danger" id="mm-posta-elimina">🗑 Elimina</button>
             <button class="btn btn-outline btn-sm" id="mm-programma" ${caselle.length ? "" : "disabled"}>🕒 Programma</button>
             <button class="btn btn-primary btn-sm" id="mm-invia-ora" ${caselle.length ? "" : "disabled"}>📤 Invia ora</button>
@@ -932,7 +1166,10 @@
                     ${m.modificata ? `<span class="muted" style="display:block;font-size:.7rem">corretta a mano</span>` : ""}
                     ${m.errore ? `<span class="mm-errore" style="display:block;font-size:.7rem">${esc(m.errore.slice(0, 70))}</span>` : ""}
                   </td>
-                  <td><button class="btn btn-ghost btn-sm" data-apri="${esc(m.id)}">Apri</button></td>
+                  <td class="mm-riga-azioni">
+                    <button class="btn btn-ghost btn-sm" data-anteprima="${esc(m.id)}" title="Come arriva">👁</button>
+                    <button class="btn btn-ghost btn-sm" data-apri="${esc(m.id)}">Apri</button>
+                  </td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -940,7 +1177,82 @@
     </div>
 
     ${postaAperta ? postaApertaView() : ""}
-    ${invioAperto ? invioView() : ""}`;
+    ${postaAnteprima ? postaAnteprimaView() : ""}
+    ${invioAperto ? invioView() : ""}
+    ${generaAperto ? generaView() : ""}`;
+  }
+
+  /* L'anteprima: quello che arriva a chi lo riceve, non quello
+     che c'è nel database.
+
+     In fondo a ogni messaggio il server mette due cose che qui
+     non sono scritte: la firma della casella, se ne ha una, e il
+     piede di legge. La firma la conosciamo — arriva con la
+     panoramica — e quindi si mostra. Il piede no, e NON lo
+     copiamo qui: è un testo che dice da dove viene l'indirizzo e
+     come opporsi, e due copie di un testo legale sono due testi
+     che prima o poi divergono. Vive in un posto solo, sul
+     server, dove nessuno lo può svuotare per sbaglio. Qui si
+     dice cosa contiene e si rimanda all'informativa.
+
+     Il nome e' postaAnteprimaView e non anteprimaView perche'
+     quest'ultimo esiste gia': e' l'anteprima dell'AI writer, piu'
+     in basso. Due funzioni con lo stesso nome nello stesso scope
+     non danno errore - la seconda vince in silenzio - e la prima
+     volta e' andata proprio cosi'. */
+  function postaAnteprimaView() {
+    const m = postaAnteprima;
+    const casella = (D().smtp || []).find(s => s.id === m.smtp_id);
+    const firma = casella && casella.firma_attiva && casella.firma ? casella.firma : "";
+    const buchi = segnapostiRimasti(m.corpo).concat(segnapostiRimasti(m.oggetto));
+    return `
+    <div class="mm-velo" data-chiudi-ant-posta>
+      <div class="card mm-dialogo mm-dialogo-largo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>Come arriva</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-ant-posta>Chiudi</button>
+        </div>
+
+        ${buchi.length ? `
+          <div class="mm-avviso">
+            <strong>Restano dei segnaposto non compilati:</strong>
+            ${buchi.map(b => `<code>{${esc(b)}}</code>`).join(" ")}.
+            Partirebbero scritti così, graffe comprese. Succede quando il dato non c'era sul lead:
+            correggi il testo a mano, oppure riempi la scheda e riscrivi il messaggio.
+          </div>` : ""}
+
+        <table class="admin-kv">
+          <tr><th>A</th><td>${esc(m.destinatario)}</td></tr>
+          <tr><th>Oggetto</th><td><strong>${esc(m.oggetto)}</strong></td></tr>
+          ${casella ? `<tr><th>Da</th><td>${esc(casella.nome)} · ${esc(casella.from_email)}</td></tr>`
+            : `<tr><th>Da</th><td class="muted">Nessuna casella ancora assegnata: si scegli al momento dell'invio.</td></tr>`}
+        </table>
+
+        <div class="mm-anteprima-foglio">
+          <div class="mm-anteprima-corpo">${esc(m.corpo)}</div>
+          ${firma ? `<div class="mm-anteprima-firma">${esc(firma)}</div>` : ""}
+          <div class="mm-anteprima-piede">
+            <strong>— qui il server aggiunge il piede di legge, sempre —</strong>
+            <ul>
+              <li>da dove viene il suo indirizzo;</li>
+              <li>che per non ricevere più niente basta rispondere <strong>NO</strong>, senza motivare;</li>
+              <li>chi scrive, con partita IVA e indirizzo, e il rimando
+                  all'<a href="#/privacy-imprese">informativa alle imprese</a>.</li>
+            </ul>
+            Non è configurabile e non si può togliere. Il testo esatto sta in un posto solo, sul
+            server: due copie di una frase del genere sono due frasi che prima o poi divergono.
+          </div>
+        </div>
+
+        <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+          <button type="button" class="btn btn-outline btn-sm" id="mm-ant-modello" ${inModello ? "disabled" : ""}>
+            ${inModello ? "Salvo…" : "📄 Salva come modello"}</button>
+          ${m.stato === "inviata" ? "" : `
+            <button type="button" class="btn btn-outline btn-sm" id="mm-ant-modifica">✎ Modifica</button>`}
+          <button type="button" class="btn btn-ghost btn-sm" data-chiudi-ant-posta>Chiudi</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   function postaApertaView() {
@@ -964,6 +1276,18 @@
           <label class="field" style="margin-top:.6rem"><span>Testo</span>
             <textarea id="p-corpo" rows="14" class="mail-corpo" ${partita ? "readonly" : ""}>${esc(m.corpo)}</textarea></label>
           ${partita ? "" : `
+            <div class="mm-ritocchi">
+              <span class="muted" style="font-size:.85rem">Riscrivila:</span>
+              ${RITOCCHI.map(([k, et]) => `
+                <button type="button" class="btn btn-outline btn-sm" data-ritocco="${k}"
+                  ${inRitocco ? "disabled" : ""}>${inRitocco === k ? "…" : esc(et)}</button>`).join("")}
+            </div>
+            <p class="privacy-hint">
+              Riscrivere costa una chiamata al modello e sostituisce il testo qui sopra: quello
+              di prima non si recupera. ${m.stato === "in_coda"
+                ? "<strong>Questo messaggio è in coda:</strong> riscrivendolo esce dalla coda e torna fra le pronte, perché non parta da solo un testo che non hai ancora letto."
+                : ""}
+            </p>
             <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
               <button type="button" class="btn btn-ghost btn-sm" data-chiudi-posta>Annulla</button>
               <button type="submit" class="btn btn-primary btn-sm">Salva e approva</button>
@@ -973,16 +1297,158 @@
     </div>`;
   }
 
+  /* La finestra di generazione.
+
+     Chiede le stesse quattro cose che chiede lo scrittore AI per
+     un singolo messaggio — scopo, tono, indicazioni, chi firma —
+     perché è lo stesso prompt: quello che cambia è che qui gira
+     su tutta una lista invece che su un lead.
+
+     E dice due cose prima che si prema: quante aziende verranno
+     scritte in questo blocco, e che ognuna costa. Un bottone che
+     spende denaro deve dirlo prima, non dopo. */
+  function generaView() {
+    const ll = D().liste || [];
+    const mittenti = D().mittenti || [];
+    const lista = ll.find(l => l.id === formGenera.lista_id);
+    const quante = lista ? (lista.quanti ?? null) : null;
+    return `
+    <div class="mm-velo" data-chiudi-genera>
+      <div class="card mm-dialogo" role="dialog" aria-modal="true">
+        <div class="mm-testata">
+          <h3>${generaLead ? `Scrivi a ${esc(generaLead.nome)}` : "Scrivi le email di una lista"}</h3>
+          <button class="btn btn-ghost btn-sm" data-chiudi-genera>Chiudi</button>
+        </div>
+        ${/* Il vuoto vale solo quando non c'è nessuna lista E non
+             c'è un lead: con un lead la finestra ha senso anche
+             senza liste, perché la lista non la chiede. */
+          (!generaLead && ll.length === 0) ? `
+          <p class="privacy-hint">
+            Non c'è nessuna lista. Creane una in
+            <a href="#/admin/crm/mail/liste">Lead Lists</a>, oppure riempila dal
+            <a href="#/admin/crm/mail/lead-finder">Lead Finder</a>.
+          </p>
+          <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-genera>Chiudi</button>
+          </div>`
+        : `
+        <form id="mm-genera-form">
+          ${generaLead ? `
+            <table class="admin-kv">
+              <tr><th>Attività</th><td><strong>${esc(generaLead.nome)}</strong></td></tr>
+              <tr><th>Indirizzo email</th><td>${generaLead.email
+                ? esc(generaLead.email)
+                : `<span style="color:var(--rosso,#c0392b)">non ce l'ha</span>`}</td></tr>
+              ${generaLead.citta ? `<tr><th>Dove</th><td>${esc(generaLead.citta)}</td></tr>` : ""}
+              ${generaLead.sito ? `<tr><th>Sito</th><td>${esc(generaLead.sito.replace(/^https?:\/\//, ""))}</td></tr>` : ""}
+            </table>`
+          : `
+          <label class="field"><span>Quale lista</span>
+            <select id="g-lista" required>
+              <option value="">— scegli la lista —</option>
+              ${ll.map(l => `<option value="${esc(l.id)}" ${formGenera.lista_id === l.id ? "selected" : ""}>${
+                esc(l.nome)}${l.quanti != null ? ` · ${l.quanti} aziende` : ""}</option>`).join("")}
+            </select></label>`}
+
+          <label class="field" style="margin-top:.6rem"><span>Scopo del messaggio</span>
+            <select id="g-scopo">
+              <option value="presentazione" ${formGenera.scopo === "presentazione" ? "selected" : ""}>Presentare QuotaFacile</option>
+              <option value="preventivo" ${formGenera.scopo === "preventivo" ? "selected" : ""}>Proporre un preventivo gratuito</option>
+              <option value="sollecito" ${formGenera.scopo === "sollecito" ? "selected" : ""}>Richiamare chi non ha risposto</option>
+              <option value="informativa" ${formGenera.scopo === "informativa" ? "selected" : ""}>Segnalare una novità normativa</option>
+            </select></label>
+
+          <label class="field" style="margin-top:.6rem"><span>Tono</span>
+            <select id="g-tono">
+              <option value="cordiale" ${formGenera.tono === "cordiale" ? "selected" : ""}>Cordiale ma professionale</option>
+              <option value="diretto" ${formGenera.tono === "diretto" ? "selected" : ""}>Diretto e asciutto</option>
+              <option value="formale" ${formGenera.tono === "formale" ? "selected" : ""}>Formale</option>
+            </select></label>
+
+          ${mittenti.length ? `
+            <label class="field" style="margin-top:.6rem"><span>Chi firma</span>
+              <select id="g-mittente">
+                <option value="">— QuotaFacile —</option>
+                ${mittenti.map(m => `<option value="${esc(m.id)}">${esc(m.from_nome || m.etichetta)}</option>`).join("")}
+              </select></label>` : ""}
+
+          <label class="field" style="margin-top:.6rem"><span>Indicazioni aggiuntive (facoltative)</span>
+            <textarea id="g-istruzioni" rows="3" placeholder="Es. nomina che siamo di Monza, e che lavoriamo con intermediari della zona">${
+              esc(formGenera.istruzioni)}</textarea></label>
+
+          <label class="field mm-interruttore" style="margin-top:.6rem">
+            <input type="checkbox" id="g-sovrascrivi" ${formGenera.sovrascrivi ? "checked" : ""}>
+            <span>${generaLead ? "Rifai anche se ha già una bozza" : "Rifai anche chi ha già una bozza"}
+              <em>${generaLead
+                ? "Senza la spunta, se ha già una bozza non spedita non se ne scrive una seconda."
+                : "Senza la spunta, le aziende con una bozza non spedita vengono saltate invece di ritrovarsi due messaggi identici."}</em></span>
+          </label>
+
+          <p class="privacy-hint">
+            ${generaLead ? `
+              Una chiamata a pagamento, qualche secondo. La bozza finisce in
+              <a href="#/admin/crm/mail/pronte">Email Ready</a>, in stato «bozza»: da lì si rilegge,
+              si ritocca e si approva. Non parte niente da sola.`
+            : `
+              Si scrivono <strong>dodici aziende per volta</strong>, e alla fine ti dico quante ne
+              restano: ogni email è una chiamata a pagamento di qualche secondo, e duecento in una
+              richiesta sola non ci starebbero.
+              ${quante != null && quante > 12
+                ? `Questa lista ne ha ${quante}, quindi serviranno più passaggi.`
+                : ""}`}
+            <br>Al modello vanno solo <strong>nome, settore, città, sito e valutazione pubblica</strong>
+            dell'azienda — gli stessi cinque campi dichiarati nell'informativa.
+            <strong>L'indirizzo email non parte</strong>, e non parte niente del contenuto del sito.
+            ${generaLead ? "" : `
+              <br>Chi si è opposto, chi è in blacklist e chi è già stato contattato viene saltato, e te
+              lo dico contato per motivo.`}
+          </p>
+
+          <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
+            <button type="button" class="btn btn-ghost btn-sm" data-chiudi-genera>Annulla</button>
+            <button type="submit" class="btn btn-primary btn-sm" ${inGenerazione ? "disabled" : ""}>
+              ${inGenerazione ? "Scrivo…" : generaLead ? "✨ Scrivi la bozza" : "✨ Scrivi le bozze"}</button>
+          </div>
+        </form>`}
+      </div>
+    </div>`;
+  }
+
   function invioView() {
     const caselle = smtpDelMittente().filter(s => s.stato === "attivo");
     const adesso = invioAperto === "adesso";
+    const coda = invioBersaglio === "coda";
+    const tutte = invioBersaglio !== "scelti";
+
+    /* Il titolo dice il numero e dice su cosa. «Programma 37
+       messaggi» e «Programma tutte le 37 pronte» non sono la
+       stessa frase, e la differenza conta proprio nel momento in
+       cui si sta per premere. */
+    const quanti = invioBersaglio === "scelti" ? scelte.size
+      : coda ? quantiInCoda() : quantiPronte();
+    const titolo = coda
+      ? `Sposta la data delle ${quanti} in coda`
+      : tutte
+        ? (adesso ? `Invia tutte le ${quanti} pronte` : `Programma tutte le ${quanti} pronte`)
+        : (adesso ? `Invia ${plurale(quanti, "messaggio", "messaggi")}` : `Programma ${plurale(quanti, "messaggio", "messaggi")}`);
+
     return `
     <div class="mm-velo" data-chiudi-invio>
       <div class="card mm-dialogo" role="dialog" aria-modal="true">
         <div class="mm-testata">
-          <h3>${adesso ? `Invia ${plurale(scelte.size, "messaggio", "messaggi")}` : `Programma ${plurale(scelte.size, "messaggio", "messaggi")}`}</h3>
+          <h3>${titolo}</h3>
           <button class="btn btn-ghost btn-sm" data-chiudi-invio>Chiudi</button>
         </div>
+        ${tutte ? `
+          <div class="mm-avviso">
+            ${coda
+              ? `Riguarda <strong>tutti i ${quanti} messaggi in coda</strong>, non quelli che vedi
+                 adesso: i filtri qui dietro non contano. Nessuno parte ora — cambia solo la data e
+                 la casella, e restano in coda.`
+              : `Riguarda <strong>tutte le ${quanti} approvate</strong>, non quelle che vedi adesso:
+                 i filtri qui dietro non contano. Se hai filtrato su una campagna, partono comunque
+                 anche le altre.`}
+          </div>` : ""}
         <form id="mm-invio-form">
           <label class="field"><span>Da quale casella</span>
             <select id="i-smtp" required>
@@ -997,18 +1463,22 @@
               Quanti ne restano te lo dico alla fine.
             </p>`
           : `
-            <label class="field" style="margin-top:.6rem"><span>Quando</span>
+            <label class="field" style="margin-top:.6rem"><span>${coda ? "Nuova data e ora" : "Quando"}</span>
               <input id="i-quando" type="datetime-local" required value="${esc(quandoInvio)}"></label>
             <p class="privacy-hint">
-              I messaggi restano in coda con questa data e partono da soli: la coda viene
-              guardata ogni minuto e ne manda pochi per volta, per non farsi scambiare per
-              un invio massivo. Se stanno partendo o no si vede in
+              ${coda
+                ? `Restano in coda e partono da soli alla nuova ora. Se cambi anche la casella,
+                   partiranno da quella. Niente esce adesso.`
+                : `I messaggi restano in coda con questa data e partono da soli: la coda viene
+                   guardata ogni minuto e ne manda pochi per volta, per non farsi scambiare per
+                   un invio massivo.`}
+              Se stanno partendo o no si vede in
               <a href="#/admin/crm/mail/registro">Send Log</a>.
             </p>`}
           <div class="mm-azioni" style="justify-content:flex-end;margin-top:.8rem">
             <button type="button" class="btn btn-ghost btn-sm" data-chiudi-invio>Annulla</button>
             <button type="submit" class="btn btn-primary btn-sm" ${inInvio ? "disabled" : ""}>
-              ${inInvio ? "Invio…" : adesso ? "Invia ora" : "Metti in coda"}</button>
+              ${inInvio ? "Invio…" : adesso ? "Invia ora" : coda ? "Sposta la data" : "Metti in coda"}</button>
           </div>
         </form>
       </div>
@@ -2920,6 +3390,24 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
       await carica();
     });
 
+    /* Scrivi la bozza per un lead solo, dalla sua riga.
+       Apre la stessa finestra della generazione da lista: cambia
+       il bersaglio, non il modulo. I gestori della finestra
+       vivono in bindPosta, quindi qui si legano quelli che
+       servono - aprire, chiudere, inviare. */
+    document.querySelectorAll("[data-scrivi-lead]").forEach(b =>
+      b.addEventListener("click", () => {
+        const x = (contenuto?.lead || []).find(l => l.id === b.dataset.scriviLead);
+        if (!x) return;
+        generaLead = x;
+        formGenera = { ...formGenera, lista_id: "", istruzioni: "" };
+        ultimaGenerazione = null;
+        generaAperto = true;
+        QF().render();
+      }));
+
+    if (generaAperto) legaGenerazione($);
+
     document.querySelectorAll("[data-togli]").forEach(b =>
       b.addEventListener("click", async () => {
         const e = await chiama("lista-togli", { lista_id: listaAperta, lead_id: b.dataset.togli });
@@ -3199,6 +3687,114 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
         await caricaPosta2();
       }));
 
+    /* ---------------- ANTEPRIMA ---------------- */
+
+    document.querySelectorAll("[data-anteprima]").forEach(b =>
+      b.addEventListener("click", () => {
+        postaAnteprima = postaDati.posta.find(m => m.id === b.dataset.anteprima) || null;
+        QF().render();
+      }));
+
+    document.querySelectorAll("[data-chiudi-ant-posta]").forEach(el =>
+      el.addEventListener("click", e => {
+        if (el.classList.contains("mm-velo") && e.target !== el) return;
+        postaAnteprima = null; QF().render();
+      }));
+    if (postaAnteprima) chiudiConEsc(() => { postaAnteprima = null; });
+
+    $("#mm-ant-modifica")?.addEventListener("click", () => {
+      postaAperta = postaAnteprima;
+      postaAnteprima = null;
+      QF().render();
+    });
+
+    /* Salvare il testo come modello, invece di duplicare la riga.
+       Su Lovable c'era «Duplica», che copia un messaggio per
+       riscriverlo a un altro destinatario. Qui i modelli esistono
+       già e fanno la stessa cosa meglio: un testo che ti piace lo
+       ritrovi in Templates e lo riusi su una lista intera, invece
+       di averne una copia sepolta fra le bozze.
+
+       E non costa nulla di nuovo: qf-mail sa salvare un modello
+       da sempre. */
+    $("#mm-ant-modello")?.addEventListener("click", async () => {
+      const m = postaAnteprima;
+      const nome = prompt("Con che nome lo ritrovi fra i modelli?",
+        (m.oggetto || "Modello").slice(0, 60));
+      if (nome === null) return;
+      if (!nome.trim()) { QF().toast("Serve un nome."); return; }
+      inModello = true; QF().render();
+      /* I segnaposto si rimettono: un modello con il nome di
+         un'azienda dentro serve a quella sola. Si sostituisce
+         solo quello che si sa con certezza, cioè il destinatario
+         di questo messaggio, e il resto resta come l'ha scritto
+         il modello. */
+      const e = await chiamaMail("salva-modello", {
+        nome: nome.trim(), oggetto: m.oggetto, corpo: m.corpo, scopo: "contatto"
+      });
+      inModello = false;
+      if (!e.ok) { QF().toast(e.errore || "Modello non salvato."); QF().render(); return; }
+      QF().toast("Salvato fra i modelli.");
+      QF().render();
+    });
+
+    /* ---------------- SCRITTURA ASSISTITA ---------------- */
+
+    $("#mm-genera-ai")?.addEventListener("click", () => {
+      /* generaLead a null: senza questo, dopo aver scritto a un
+         lead singolo da Lead Lists, questa finestra si aprirebbe
+         ancora intestata a quel lead. */
+      generaLead = null;
+      generaAperto = true;
+      ultimaGenerazione = null;
+      QF().render();
+    });
+
+    legaGenerazione($);
+
+    /* Riscrivere i selezionati. Uno alla volta e non in parallelo:
+       sono già tre chiamate in parallelo dentro il server, e
+       moltiplicarle qui vorrebbe dire prendersi un 429 da
+       Anthropic a metà del gruppo. */
+    $("#mm-rigenera-massa")?.addEventListener("click", async () => {
+      const ids = [...scelte];
+      if (!ids.length) return;
+      if (!confirm(`Riscrivere ${plurale(ids.length, "messaggio", "messaggi")}? Il testo di adesso viene sostituito e non si recupera.`)) return;
+      inGenerazione = true;
+      QF().render();
+      let fatti = 0, falliti = 0, costo = 0, primoErrore = "";
+      for (const id of ids) {
+        const e = await chiamaAi("rigenera", { id, ritocco: "naturale" });
+        if (e.ok) { fatti++; costo += e.costo || 0; }
+        else { falliti++; if (!primoErrore) primoErrore = e.errore || ""; }
+      }
+      inGenerazione = false;
+      scelte = new Set();
+      QF().toast(`${plurale(fatti, "messaggio riscritto", "messaggi riscritti")}${
+        falliti ? `, ${falliti} non riuscit${falliti === 1 ? "o" : "i"}${primoErrore ? `: ${primoErrore}` : ""}` : ""
+      }${costo ? ` · ${costo.toFixed(4)} $` : ""}.`);
+      await caricaPosta2();
+    });
+
+    /* I cinque ritocchi dentro il messaggio aperto. Il testo
+       riscritto torna nella casella senza essere salvato: si
+       guarda, e si approva col bottone di sempre. */
+    document.querySelectorAll("[data-ritocco]").forEach(b =>
+      b.addEventListener("click", async () => {
+        if (!postaAperta || inRitocco) return;
+        inRitocco = b.dataset.ritocco;
+        QF().render();
+        const e = await chiamaAi("rigenera", { id: postaAperta.id, ritocco: inRitocco });
+        inRitocco = "";
+        if (!e.ok) { QF().toast(e.errore || "Non riscritto."); QF().render(); return; }
+        postaAperta = { ...postaAperta, oggetto: e.oggetto, corpo: e.corpo, modificata: true,
+          ...(e.uscitaDallaCoda ? { stato: "pronta", programmata_per: null } : {}) };
+        QF().toast(`Riscritta${e.costo ? ` · ${e.costo.toFixed(5)} $` : ""}${
+          e.uscitaDallaCoda ? " · uscita dalla coda, riprogrammala quando ti va bene" : ""}.`);
+        QF().render();
+        await caricaPosta2();
+      }));
+
     $("#mm-posta-elimina")?.addEventListener("click", async () => {
       if (!confirm(`Eliminare ${plurale(scelte.size, "messaggio", "messaggi")}? Quelli già partiti restano.`)) return;
       const e = await chiama("posta-elimina", { ids: [...scelte] });
@@ -3208,35 +3804,77 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
       await caricaPosta2();
     });
 
-    $("#mm-invia-ora")?.addEventListener("click", () => { invioAperto = "adesso"; QF().render(); });
+    $("#mm-invia-ora")?.addEventListener("click", () => {
+      invioBersaglio = "scelti"; invioAperto = "adesso"; QF().render();
+    });
     $("#mm-programma")?.addEventListener("click", () => {
-      invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
+      invioBersaglio = "scelti"; invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
+    });
+
+    /* Le tre azioni che prendono tutto. Aprono la stessa finestra:
+       cambia solo su chi agisce, e la finestra lo dice. */
+    $("#mm-tutte-invia")?.addEventListener("click", () => {
+      invioBersaglio = "pronte"; invioAperto = "adesso"; QF().render();
+    });
+    $("#mm-tutte-programma")?.addEventListener("click", () => {
+      invioBersaglio = "pronte"; invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
+    });
+    $("#mm-tutte-coda")?.addEventListener("click", () => {
+      /* Riprogrammare non è inviare: qui il modo "adesso" non
+         esiste, e il bottone dice «Sposta la data». */
+      invioBersaglio = "coda"; invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
     });
 
     document.querySelectorAll("[data-chiudi-invio]").forEach(el =>
       el.addEventListener("click", e => {
         if (el.classList.contains("mm-velo") && e.target !== el) return;
-        invioAperto = null; QF().render();
+        /* Il bersaglio torna ai selezionati: lasciarlo su "pronte"
+           vorrebbe dire che il prossimo «Invia ora» della barra
+           prende tutto senza averlo chiesto. */
+        invioAperto = null; invioBersaglio = "scelti"; QF().render();
       }));
-    if (invioAperto) chiudiConEsc(() => { invioAperto = null; });
+    if (invioAperto) chiudiConEsc(() => { invioAperto = null; invioBersaglio = "scelti"; });
 
     $("#mm-invio-form")?.addEventListener("submit", async e => {
       e.preventDefault();
       const smtp = $("#i-smtp").value;
+
+      /* Gli identificativi si risolvono adesso, non quando il
+         bottone è stato premuto: fra l'apertura della finestra e
+         la conferma può essere passato un minuto, e nel frattempo
+         la coda può aver mandato qualcosa. */
+      const b = await bersaglioIds();
+      if (b.errore) { QF().toast(b.errore); return; }
+      if (!b.ids.length) {
+        QF().toast(invioBersaglio === "scelti"
+          ? "Nessun messaggio selezionato."
+          : "Non c'è più niente da fare: l'elenco è cambiato nel frattempo.");
+        invioAperto = null; invioBersaglio = "scelti"; QF().render(); await caricaPosta2();
+        return;
+      }
+      /* Il tetto è quello del server, non una scelta di qui: oltre
+         cinquecento id posta-invia e posta-programma non guardano.
+         Dirlo è meglio che lasciar credere di aver preso tutto. */
+      const avvisoTetto = b.troncato
+        ? ` I primi ${b.ids.length} di ${b.totale}: ripremi per i successivi.`
+        : "";
+
       if (invioAperto === "programma") {
         quandoInvio = $("#i-quando").value;
-        const esito = await chiama("posta-programma", { ids: [...scelte], smtp_id: smtp, quando: quandoInvio });
+        const esito = await chiama("posta-programma", { ids: b.ids, smtp_id: smtp, quando: quandoInvio });
         if (!esito.ok) { QF().toast(esito.errore || "Non riuscito."); return; }
-        invioAperto = null; scelte = new Set();
-        QF().toast(`${plurale(esito.programmati, "messaggio in coda", "messaggi in coda")} per il ${dataOra(esito.quando)}.`);
+        invioAperto = null; invioBersaglio = "scelti"; scelte = new Set();
+        QF().toast(`${plurale(esito.programmati, "messaggio in coda", "messaggi in coda")} per il ${dataOra(esito.quando)}.${avvisoTetto}`);
         await caricaPosta2();
         return;
       }
 
       const pausa = Number($("#i-pausa").value);
-      if (!confirm(`Mandare ${plurale(scelte.size, "messaggio", "messaggi")} adesso? Una volta partiti non si richiamano.`)) return;
+      if (!confirm(`Mandare ${plurale(b.ids.length, "messaggio", "messaggi")} adesso?${
+        invioBersaglio !== "scelti" ? " Sono tutte le approvate, non solo quelle che vedi." : ""
+      } Una volta partiti non si richiamano.`)) return;
       inInvio = true; QF().render();
-      const esito = await chiama("posta-invia", { ids: [...scelte], smtp_id: smtp, pausa_secondi: pausa }, 150000);
+      const esito = await chiama("posta-invia", { ids: b.ids, smtp_id: smtp, pausa_secondi: pausa }, 150000);
       inInvio = false;
       if (!esito.ok) { QF().toast(esito.errore || "Invio non riuscito."); QF().render(); return; }
 
@@ -3246,7 +3884,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
         esito.rimasti ? `${esito.rimasti} ancora da mandare: premi di nuovo` : null,
         esito.limite ? `limite giornaliero della casella: ne restavano ${esito.limite}` : null
       ].filter(Boolean);
-      invioAperto = null;
+      invioAperto = null; invioBersaglio = "scelti";
       if (!esito.rimasti) scelte = new Set();
       QF().toast(`${plurale(esito.partite, "messaggio partito", "messaggi partiti")}${note.length ? `; ${note.join("; ")}` : ""}.`);
       await carica();
