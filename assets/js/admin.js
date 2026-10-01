@@ -34,6 +34,9 @@
      che parla con Stripe: chiederla a qf-admin vorrebbe dire
      tenere gli identificativi dei prezzi in due posti. */
   const API_PRO = API.replace("qf-admin", "qf-pro");
+  /* Stessa ragione per Google: la diagnostica sta dove stanno le
+     chiamate, cioè in qf-lead. */
+  const API_LEAD = API.replace("qf-admin", "qf-lead");
   const SESSION_KEY = "qf_admin_chiave";
 
   const QF = () => window.QF;
@@ -52,6 +55,11 @@
   let pagamenti = null;
   let pagamentiFase = "vuoto";   // vuoto | caricamento | pronto | errore
   let pagamentiErrore = null;
+  /* Stessa cosa per Google: tre chiamate vere, fatte quando le
+     chiedi e non all'apertura della console. */
+  let google = null;
+  let googleFase = "vuoto";
+  let googleErrore = null;
 
   /* Panoramica caricata dal server. Nulla di tutto questo vive
      nel localStorage: alla chiusura della scheda sparisce. */
@@ -876,6 +884,120 @@ Usa **grassetto** per i numeri che contano."></textarea>
     QF().render();
   }
 
+  /* ---------------- TAB 9 · GOOGLE ----------------
+     «Mi dà un errore di billing» è vero e non basta: il geocoding
+     risponde quella frase per cause diverse — chiave di un altro
+     progetto Cloud, API non abilitata, fatturazione spenta,
+     restrizione per referrer che esclude un server. Senza
+     distinguerle si cambia una cosa a caso per volta.
+
+     Qui le tre chiamate si fanno davvero e si riporta quello che
+     Google risponde, parola per parola. La seconda — il geocoding
+     per sola provincia — non è di cortesia: da quando il comune è
+     facoltativo, una ricerca senza comune passa da lì. */
+
+  function esitoGeo(titolo, r, nota) {
+    if (!r) return "";
+    const ok = r.stato === "OK";
+    return `<tr><th>${esc(titolo)}</th><td>
+      ${ok ? `<strong style="color:#27ae60">OK</strong>` :
+        `<strong style="color:var(--rosso,#c0392b)">${esc(String(r.stato || r.errore || "?"))}</strong>`}
+      ${r.messaggio ? `<br><span class="muted" style="font-size:.85rem">${esc(r.messaggio)}</span>` : ""}
+      ${ok && r.trovato ? `<br><span class="muted" style="font-size:.85rem">risolto in: ${esc(r.trovato)}${
+        r.precisione ? ` (${esc(r.precisione)})` : ""}</span>` : ""}
+      ${nota ? `<br><span class="muted" style="font-size:.85rem">${nota}</span>` : ""}
+    </td></tr>`;
+  }
+
+  function googleView() {
+    const d = google;
+    const pl = d && d.places ? d.places : null;
+
+    return `
+    <div class="card">
+      <h3>🌍 Google — geocoding e Places</h3>
+      <p class="muted">Il lead finder usa <strong>due API distinte</strong>, che su Google Cloud sono
+      due voci separate e si abilitano una per una: <em>Geocoding API</em> per trasformare una zona in
+      coordinate, e <em>Places API (New)</em> per trovare le attività. Questa verifica le chiama
+      davvero, una alla volta, e riporta la risposta di Google così com'è.</p>
+
+      <div style="display:flex;gap:.5rem;margin:1rem 0;flex-wrap:wrap">
+        <button class="btn btn-primary" id="goo-verifica"
+          ${googleFase === "caricamento" ? "disabled" : ""}>
+          ${googleFase === "caricamento" ? "Sto chiamando Google…" : "Verifica ora"}
+        </button>
+      </div>
+
+      ${googleFase === "errore" ? `<div class="legal-warning">
+        <strong>La verifica non è arrivata a destinazione.</strong> ${esc(googleErrore || "")}
+      </div>` : ""}
+
+      ${d ? `
+        ${d.pronto === true ? `<div class="card" style="box-shadow:none;border-left:3px solid #27ae60">
+          <strong>Il lead finder è operativo.</strong> Entrambe le API rispondono, e la ricerca per
+          sola provincia risolve il centro.
+        </div>` : `<div class="legal-warning">
+          <strong>Google risponde così:</strong>
+          <ul style="margin:.5rem 0 0 1.1rem">
+            ${(d.manca || []).map(x => `<li>${esc(x)}</li>`).join("")}
+          </ul>
+        </div>`}
+
+        <table class="admin-kv" style="margin-top:1rem">
+          <tr><th>Chiave</th><td>${d.chiave === "presente"
+            ? "presente"
+            : `<strong style="color:var(--rosso,#c0392b)">manca</strong> — segreto <code>QF_GOOGLE_KEY</code>`}</td></tr>
+          ${esitoGeo("Geocoding, un comune", d.geocodingComune, 'ha chiesto «Monza»')}
+          ${esitoGeo("Geocoding, sola provincia", d.geocodingProvincia,
+            'ha chiesto «Monza e della Brianza» con filtro <code>administrative_area:MB</code> — è la strada che prende una ricerca senza comune')}
+          ${pl ? `<tr><th>Places API (New)</th><td>
+            ${pl.ok === true
+              ? `<strong style="color:#27ae60">OK</strong> <span class="muted" style="font-size:.85rem">— ${esc(String(pl.schedeTornate ?? 0))} scheda(e) di prova</span>`
+              : `<strong style="color:var(--rosso,#c0392b)">${esc(String(pl.stato || pl.http || "errore"))}</strong>
+                 ${pl.messaggio ? `<br><span class="muted" style="font-size:.85rem">${esc(pl.messaggio)}</span>` : ""}`}
+          </td></tr>` : ""}
+        </table>
+
+        ${d.pronto === true ? "" : `
+        <div class="card crm-inarrivo" style="margin-top:1rem;box-shadow:none">
+          <span class="pill">Dove guardare su Google Cloud</span>
+          <p class="muted" style="font-size:.88rem">Il messaggio di Google qui sopra dice già quale
+          delle quattro cose è, e sono quattro cose diverse che danno errori simili:</p>
+          <ul class="muted" style="font-size:.88rem;margin-left:1.1rem">
+            <li><strong>La chiave appartiene a un altro progetto</strong> rispetto a quello dove hai
+            abilitato le API e la fatturazione. È il caso più frequente e il più difficile da vedere,
+            perché entrambi i progetti «sembrano a posto» guardandoli separatamente.</li>
+            <li><strong>Una delle due API non è abilitata.</strong> Sono due voci: <em>Geocoding
+            API</em> e <em>Places API (New)</em> — quest'ultima è distinta dalla vecchia «Places
+            API», e abilitare quella sbagliata non serve.</li>
+            <li><strong>La fatturazione non è attiva</strong> sul progetto della chiave.</li>
+            <li><strong>La chiave ha una restrizione per referrer HTTP.</strong> Qui chiama un
+            server, non un browser: senza un'intestazione <code>Referer</code> una restrizione di
+            quel tipo blocca tutto. Per una chiave usata dal server va lasciata senza restrizioni di
+            applicazione, oppure limitata per indirizzo IP.</li>
+          </ul>
+        </div>`}
+      ` : googleFase === "vuoto"
+        ? `<p class="muted">Premi «Verifica ora»: tre chiamate, e si sa quale delle due API non va.</p>`
+        : ""}
+    </div>`;
+  }
+
+  async function verificaGoogle() {
+    googleFase = "caricamento";
+    googleErrore = null;
+    QF().render();
+    const e = await chiamaA(API_LEAD, "diagnostica");
+    if (e.ok && e.diagnostica) {
+      google = e.diagnostica;
+      googleFase = "pronto";
+    } else {
+      googleFase = "errore";
+      googleErrore = e.errore || "Risposta non leggibile.";
+    }
+    QF().render();
+  }
+
   const TABS = {
     kpi: ["📊 KPI", kpiView],
     richieste: ["📥 Richieste", richiesteView],
@@ -884,6 +1006,7 @@ Usa **grassetto** per i numeri che contano."></textarea>
     keyword: ["🎯 Keyword → Guida", keywordView],
     segnalazioni: ["🚩 Segnalazioni", segnalazioniView],
     pagamenti: ["💳 Pagamenti", pagamentiView],
+    google: ["🌍 Google", googleView],
     chiave: ["🔑 Chiave", chiaveView]
   };
 
@@ -1100,6 +1223,7 @@ Usa **grassetto** per i numeri che contano."></textarea>
        console butta fuori il titolare un secondo dopo avergli
        fatto cambiare la chiave. */
     $("#pag-verifica")?.addEventListener("click", verificaPagamenti);
+    $("#goo-verifica")?.addEventListener("click", verificaGoogle);
 
     $("#chiave-genera")?.addEventListener("click", () => {
       const g = chiaveGenerata();

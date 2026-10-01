@@ -655,8 +655,143 @@ async function elimina(d: Record<string, unknown>) {
   return { eliminato: true };
 }
 
+// ---------------- Diagnostica di Google ----------------
+//
+// PERCHE' ESISTE
+//
+// "Non funziona, mi dà un errore di billing" e' vero e non basta:
+// il geocoding risponde con lo stesso messaggio per problemi
+// diversi — chiave di un altro progetto, API non abilitata,
+// fatturazione spenta, restrizione per referrer che esclude un
+// server. Senza distinguerli si cambia a caso una cosa alla volta.
+//
+// Qui le chiamate si fanno davvero, una per una, e si riporta
+// quello che Google risponde parola per parola. Tre domande
+// separate, perche' separano tre cause:
+//
+//   1. geocoding semplice        — la chiave vale, l'API e' accesa?
+//   2. geocoding per provincia   — il filtro per sigla funziona?
+//   3. Places API (New)          — e' abilitata, che e' un'altra
+//                                  voce di console, spesso dimenticata
+//
+// La seconda non e' un controllo di cortesia: da quando il comune
+// e' facoltativo, una ricerca senza comune passa per quella strada.
+// Se la sigla non viene accettata come administrative_area, quella
+// ricerca torna vuota senza che nessuno capisca perche'.
+//
+// COSA NON DICE
+//
+// La chiave, in nessuna forma, e nessun indirizzo chiamato: la
+// chiave viaggia dentro la query del geocoding, quindi l'URL non
+// si riporta e non si registra.
+
+async function geocodeGrezzo(indirizzo: string, componenti: string) {
+  const u = new URL("https://maps.googleapis.com/maps/api/geocode/json");
+  u.searchParams.set("address", indirizzo);
+  u.searchParams.set("key", chiaveGoogle());
+  u.searchParams.set("language", "it");
+  u.searchParams.set("components", componenti);
+  const r = await fetch(u);
+  const d = await r.json().catch(() => null);
+  const primo = d?.results?.[0];
+  return {
+    chiesto: indirizzo,
+    filtro: componenti,
+    stato: d?.status ?? "(risposta illeggibile)",
+    messaggio: d?.error_message ?? null,
+    trovato: primo?.formatted_address ?? null,
+    precisione: primo?.geometry?.location_type ?? null,
+  };
+}
+
+async function diagnostica() {
+  const esito: Record<string, unknown> = {};
+
+  if (!Deno.env.get("QF_GOOGLE_KEY")) {
+    return {
+      diagnostica: {
+        chiave: "MANCANTE",
+        pronto: false,
+        manca: ["il segreto QF_GOOGLE_KEY fra le impostazioni del progetto Supabase"],
+      },
+    };
+  }
+  esito.chiave = "presente";
+
+  // 1 e 2: il geocoding, nei due modi in cui il sito lo usa.
+  try {
+    esito.geocodingComune = await geocodeGrezzo("Monza", "country:IT");
+  } catch (e) {
+    esito.geocodingComune = { errore: e instanceof Error ? e.message : "errore sconosciuto" };
+  }
+  try {
+    esito.geocodingProvincia = await geocodeGrezzo(
+      "Monza e della Brianza", "country:IT|administrative_area:MB");
+  } catch (e) {
+    esito.geocodingProvincia = { errore: e instanceof Error ? e.message : "errore sconosciuto" };
+  }
+
+  // 3: Places API (New). Centro fisso su Monza con raggio piccolo
+  // e una sola scheda: serve sapere se l'API risponde, non avere
+  // risultati da usare.
+  try {
+    const r = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": chiaveGoogle(),
+        "X-Goog-FieldMask": "places.id,places.displayName",
+      },
+      body: JSON.stringify({
+        textQuery: "bar",
+        languageCode: "it",
+        regionCode: "IT",
+        pageSize: 1,
+        locationRestriction: {
+          circle: { center: { latitude: 45.5845, longitude: 9.2744 }, radius: 1000 },
+        },
+      }),
+    });
+    const d = await r.json().catch(() => null);
+    esito.places = r.ok
+      ? { ok: true, schedeTornate: Array.isArray(d?.places) ? d.places.length : 0 }
+      : {
+        ok: false,
+        http: r.status,
+        stato: d?.error?.status ?? null,
+        messaggio: d?.error?.message ?? null,
+      };
+  } catch (e) {
+    esito.places = { ok: false, messaggio: e instanceof Error ? e.message : "errore sconosciuto" };
+  }
+
+  const manca: string[] = [];
+  const g1 = esito.geocodingComune as Record<string, unknown>;
+  const g2 = esito.geocodingProvincia as Record<string, unknown>;
+  const pl = esito.places as Record<string, unknown>;
+
+  if (g1?.stato !== "OK") {
+    manca.push("il geocoding non risponde OK (" +
+      String(g1?.stato ?? g1?.errore ?? "?") + ")");
+  }
+  if (g2?.stato !== "OK") {
+    manca.push("la ricerca per sola provincia non risolve il centro (" +
+      String(g2?.stato ?? g2?.errore ?? "?") +
+      "): senza comune la ricerca partirebbe dal posto sbagliato");
+  }
+  if (pl?.ok !== true) {
+    manca.push("Places API (New) non risponde (" +
+      String(pl?.stato ?? pl?.messaggio ?? pl?.http ?? "?") + ")");
+  }
+
+  esito.pronto = manca.length === 0;
+  if (manca.length) esito.manca = manca;
+  return { diagnostica: esito };
+}
+
 const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
   cerca, salva, elenco: () => elenco(), aggiorna, elimina,
+  diagnostica: () => diagnostica(),
   "etichetta-crea": etichettaCrea,
   "etichetta-elimina": etichettaElimina,
   "etichetta-applica": etichettaApplica,

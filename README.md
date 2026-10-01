@@ -454,6 +454,36 @@ restituire un elenco vuoto, che sembrerebbe «nessun risultato».
 La chiave sta **solo sul server**. Una chiave Places in un file JavaScript è pubblica per
 definizione, e la si ritrova consumata da altri sul conto di chi l'ha esposta.
 
+### Come si controlla che Google risponda
+
+Console admin → scheda **🌍 Google** → «Verifica ora». Fa **tre chiamate vere** e riporta la
+risposta di Google parola per parola:
+
+| Prova | A cosa serve |
+|---|---|
+| Geocoding di «Monza», filtro `country:IT` | la chiave vale e Geocoding API è accesa |
+| Geocoding di «Monza e della Brianza», filtro `administrative_area:MB` | la ricerca **senza comune** risolve il centro provinciale — da quando il comune è facoltativo, passa da qui |
+| `places:searchText` con raggio 1 km e una sola scheda | Places API **(New)** è abilitata, che è un'altra voce di console |
+
+Serve perché *«mi dà un errore di billing»* è vero e non basta: il geocoding risponde quel messaggio
+per **quattro cause diverse**, e senza distinguerle si cambia una cosa a caso per volta.
+
+1. **La chiave appartiene a un altro progetto Cloud** rispetto a quello con le API e la fatturazione.
+   È il caso più frequente e il più difficile da vedere: guardati separatamente, entrambi i progetti
+   sembrano a posto.
+2. **Una delle due API non è abilitata.** Sono due voci distinte, e *Places API (New)* non è la
+   vecchia *Places API*: abilitare quella sbagliata non serve.
+3. **La fatturazione non è attiva** sul progetto della chiave.
+4. **La chiave ha una restrizione per referrer HTTP.** Qui chiama un server, non un browser: senza
+   intestazione `Referer` quella restrizione blocca tutto. Per una chiave usata dal server va
+   lasciata senza restrizioni di applicazione, oppure limitata per indirizzo IP.
+
+La diagnostica non riporta la chiave in nessuna forma, e non riporta né registra l'URL chiamato: nel
+geocoding la chiave viaggia dentro la query.
+
+**Gemini (l'assistente del CRM) non ha una scheda** e non ne ha bisogno: se la chiave `QF_GEMINI_KEY`
+manca o viene rifiutata, l'assistente lo scrive in chiaro nella conversazione al primo messaggio.
+
 ## 💳 Abbonamenti degli intermediari — Stripe
 
 Tutto passa dalla Edge Function **`qf-pro`**: registrazione dell'intermediario, apertura del
