@@ -62,11 +62,12 @@
     hostingNota: "Fornitore aderente al EU-U.S. Data Privacy Framework",
 
     /* Cambia quando cambia il testo, non quando cambia il codice.
-       La 1.3 è il passaggio del fornitore della scrittura assistita
-       da Anthropic a Google: un responsabile del trattamento
-       diverso è una modifica sostanziale, non una limatura. */
-    ultimoAggiornamento: "1 ottobre 2026",
-    versione: "1.3"
+       La 1.3 era il passaggio del fornitore della scrittura
+       assistita da Anthropic a Google. La 1.4 è la lettura della
+       pagina iniziale del sito dell'azienda destinataria: una
+       categoria di dati in più, quindi modifica sostanziale. */
+    ultimoAggiornamento: "2 ottobre 2026",
+    versione: "1.4"
   };
 
   /* Locale, per non dipendere da un binding globale definito altrove:
@@ -293,7 +294,10 @@
       commerciali.</strong> Quando prepariamo una email verso un'azienda con l'aiuto di un modello
       linguistico, i dati dell'<em>azienda destinataria</em> (denominazione, settore, città, sito,
       valutazione pubblica su Google) sono inviati a <strong>Google</strong> (servizio Gemini,
-      Stati Uniti), nominata responsabile del trattamento. Il testo prodotto è una bozza che una
+      Stati Uniti), nominata responsabile del trattamento. Insieme a quelli può essere inviato il
+      <strong>testo della pagina iniziale del sito di quell'azienda</strong>, che leggiamo una volta
+      sola per scrivere un'apertura pertinente: non lo conserviamo, e se su quella pagina c'è il nome
+      di una persona quel nome non entra nel nostro archivio. Il testo prodotto è una bozza che una
       persona legge e approva prima dell'invio. <strong>In questo trattamento non entra nessun dato
       di chi usa il sito:</strong> ciò che scrivi nei moduli non viene inviato per scrivere quelle
       bozze. I dettagli sono
@@ -644,6 +648,17 @@
     <p>Solo <strong>dati dell'attività</strong>: denominazione, indirizzo della sede, telefono, email,
     sito, categoria, città e provincia, e la valutazione pubblica su Google. Nessun dato personale
     che vada oltre il ruolo professionale, nessuna categoria particolare dell'art. 9 GDPR.</p>
+    <p><strong>E, se prepariamo il messaggio con la scrittura assistita, leggiamo una volta la pagina
+    iniziale del tuo sito</strong> — quella e nessun'altra, senza seguire collegamenti. Serve a
+    scrivere un'apertura che riguardi davvero quello che fai invece di una formula uguale per tutti.
+    Il nostro programma si presenta nei registri del tuo server come
+    <code>QuotaFacileBot</code>, con il collegamento a questa pagina, così puoi riconoscerlo.</p>
+    <p>Di quella pagina <strong>non conserviamo niente</strong>: il testo serve nel momento in cui la
+    bozza viene scritta e non viene salvato. Se sulla pagina compare il <strong>nome di una
+    persona</strong> — il titolare, un referente — quel nome può finire nel testo dell'email che
+    ricevi, ma <strong>non entra nel nostro archivio</strong>: non diventa una riga, non viene
+    indicizzato e non viene riutilizzato per altri messaggi. In archivio restano solo i dati
+    dell'attività elencati sopra.</p>
     <p>Se sei un professionista o una ditta individuale, la denominazione può coincidere con il tuo
     nome: in quel caso questi sono dati personali a tutti gli effetti, ed è esattamente per questo
     che stai leggendo questa pagina.</p>
@@ -669,7 +684,9 @@
       <li><strong>A un fornitore di intelligenza artificiale, ma solo se usiamo la scrittura
       assistita.</strong> Quando prepariamo una bozza con l'aiuto di un modello linguistico
       (<strong>Google</strong>, servizio Gemini, Stati Uniti), gli inviamo i dati dell'attività destinataria:
-      denominazione, settore, città, sito e valutazione pubblica. <strong>Non gli inviamo il tuo
+      denominazione, settore, città, sito e valutazione pubblica, <strong>e il testo della pagina
+      iniziale del tuo sito</strong> di cui al punto 3 — compreso il nome di una persona, se è su
+      quella pagina. <strong>Non gli inviamo il tuo
       indirizzo email.</strong> Il fornitore è nominato responsabile del trattamento e il
       trasferimento è coperto dalle Clausole Contrattuali Standard (art. 46 GDPR).
       Il testo prodotto è una <strong>bozza che una persona legge e approva</strong> prima che

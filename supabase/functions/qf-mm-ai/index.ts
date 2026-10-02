@@ -34,6 +34,8 @@
 // nell'informativa alle imprese. L'indirizzo email del
 // destinatario NON parte: non serve a scrivere il testo, e
 // mandarlo sarebbe un trattamento in più non dichiarato.
+// E, se chi genera lo chiede, il testo della home del loro sito:
+// vedi la sezione «La home del sito» più sotto.
 // ============================================================
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -228,7 +230,147 @@ function schedaDi(l: Record<string, unknown>): string {
   ].filter(Boolean).join("\n");
 }
 
-function sistemaDi(firma: string): string {
+/* ---------------- La home del sito ----------------
+ *
+ * COSA FA, E PERCHÉ UNA PAGINA SOLA
+ *
+ * Una email che dice «ho visto che siete una carrozzeria dal
+ * 1987 a Opera» si legge; una che dice «gentile azienda» si
+ * cancella. La differenza sta in due righe che nel database non
+ * ci sono e sulla home del sito sì.
+ *
+ * Una pagina per lead, non tre. Su una lista da dodici aziende
+ * tre pagine ciascuna sono trentasei richieste prima ancora di
+ * parlare con il modello, e nella home italiana tipica c'è già
+ * quasi tutto: cosa fanno, da quando, dove.
+ *
+ * COSA ESCE DA QUI
+ *
+ * Il testo della pagina parte verso Google insieme alla scheda.
+ * È un trattamento in più rispetto ai cinque campi, ed è
+ * dichiarato nelle informative — quella agli utenti e quella
+ * alle imprese — nello stesso commit che ha scritto questa
+ * funzione. Senza quella dichiarazione questo codice non doveva
+ * esistere, e per due volte non è esistito.
+ *
+ * IL NOME DEL REFERENTE SI USA E NON SI SALVA
+ *
+ * Se sulla pagina c'è «Mario Rossi, titolare», il modello può
+ * aprire con il suo nome. Ma quel nome non viene scritto in
+ * crm_lead: resta nel testo della bozza, che una persona legge
+ * prima che parta, e in archivio non entra un dato personale in
+ * più. È la differenza fra usare un'informazione pubblica una
+ * volta e costituire uno schedario di persone fisiche.
+ *
+ * QUELLO CHE NON FA
+ *
+ * Non segue link, non scarica immagini, non manda cookie, non
+ * esegue JavaScript. Una GET con otto secondi di pazienza e un
+ * User-Agent che dice chi siamo e dove leggere perché: chi
+ * guarda i log del proprio server deve poter capire chi è
+ * passato. Se la pagina non risponde, non è HTML o è vuota, la
+ * generazione continua senza: un sito irraggiungibile non deve
+ * far fallire la bozza.
+ */
+
+const SITO_TIMEOUT = 8000;
+const SITO_MAX_BYTE = 600_000;   // oltre, la pagina è un'applicazione, non un testo
+const SITO_MAX_TESTO = 3500;     // quello che arriva al modello
+
+const AGENTE_SITO =
+  "QuotaFacileBot/1.0 (+https://www.quotafacile.net/#/privacy-imprese)";
+
+function indirizzoSito(grezzo: string): string | null {
+  const s = grezzo.trim();
+  if (!s) return null;
+  try {
+    const u = new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`);
+    /* Solo http(s) e solo nomi di dominio veri: un "sito" che
+       punta a 127.0.0.1 o a un indirizzo interno farebbe fare al
+       server una richiesta dentro la propria rete, e il campo
+       arriva da una ricerca su Google o da un file importato. */
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    const h = u.hostname.toLowerCase();
+    if (!h.includes(".") || h.endsWith(".local")) return null;
+    if (/^(localhost|0\.0\.0\.0|\[?::1\]?)$/.test(h)) return null;
+    if (/^(10|127)\./.test(h)) return null;
+    if (/^192\.168\./.test(h)) return null;
+    if (/^169\.254\./.test(h)) return null;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return null;
+    /* Niente percorsi, niente query: la home e basta. */
+    return `${u.protocol}//${u.host}/`;
+  } catch {
+    return null;
+  }
+}
+
+/* Da HTML a testo leggibile, senza librerie: via script, stile e
+   tag, poi le entità più comuni, poi gli spazi di troppo. Non è
+   un parser e non deve esserlo - serve una paginata di prosa, non
+   una struttura. */
+function testoDaHtml(html: string): string {
+  return html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(script|style|noscript|svg|head)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&(?:#39|apos|lsquo|rsquo);/gi, "'")
+    .replace(/&(?:quot|ldquo|rdquo);/gi, '"')
+    .replace(/&(?:ndash|mdash);/gi, "–")
+    .replace(/&egrave;/gi, "è").replace(/&eacute;/gi, "é")
+    .replace(/&agrave;/gi, "à").replace(/&ograve;/gi, "ò")
+    .replace(/&ugrave;/gi, "ù").replace(/&igrave;/gi, "ì")
+    .replace(/&#(\d+);/g, (_, n) => {
+      const c = Number(n);
+      return c > 31 && c < 0x10000 ? String.fromCharCode(c) : " ";
+    })
+    /* &amp; per ultima, come in qf-lead: prima vorrebbe dire
+       trasformare &amp;lt; in un tag che nella pagina non c'era. */
+    .replace(/&amp;/gi, "&")
+    .replace(/[ \t ]+/g, " ")
+    .replace(/\n\s*\n\s*\n+/g, "\n\n")
+    .trim();
+}
+
+async function leggiSito(grezzo: unknown): Promise<string | null> {
+  const url = indirizzoSito(String(grezzo ?? ""));
+  if (!url) return null;
+
+  let r: Response;
+  try {
+    r = await fetch(url, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(SITO_TIMEOUT),
+      headers: { "User-Agent": AGENTE_SITO, "Accept": "text/html" },
+    });
+  } catch {
+    return null;   // non risponde, o ci mette troppo: si scrive senza
+  }
+  if (!r.ok) return null;
+
+  const tipo = r.headers.get("content-type") ?? "";
+  if (!/text\/html|application\/xhtml/i.test(tipo)) return null;
+
+  let html: string;
+  try {
+    const buf = await r.arrayBuffer();
+    if (buf.byteLength > SITO_MAX_BYTE) return null;
+    html = new TextDecoder("utf-8", { fatal: false }).decode(buf);
+  } catch {
+    return null;
+  }
+
+  const testo = testoDaHtml(html);
+  /* Sotto le duecento battute non è una home, è un reindirizzamento
+     o un avviso sui cookie: mandarla al modello non aggiunge nulla
+     e gli dà materiale per inventare. */
+  if (testo.length < 200) return null;
+  return testo.slice(0, SITO_MAX_TESTO);
+}
+
+function sistemaDi(firma: string, conSito: boolean): string {
   return `Scrivi email commerciali in italiano per ${firma}, che mette in contatto aziende con intermediari ` +
     `assicurativi iscritti al RUI.\n\n` +
     `Regole non negoziabili:\n` +
@@ -241,8 +383,24 @@ function sistemaDi(firma: string): string {
     `- Niente oggetto sensazionalistico e niente punti esclamativi nell'oggetto.\n` +
     `- Non scrivere una formula di disiscrizione: la aggiunge il sistema, sempre, in fondo a ogni messaggio.\n` +
     `- Se ti servono dati che non hai, usa i segnaposto {azienda}, {citta}, {telefono}, {mittente}: ` +
-    `verranno sostituiti al momento dell'invio.\n\n` +
-    `Rispondi esattamente in questo formato, senza aggiungere altro:\n` +
+    `verranno sostituiti al momento dell'invio.\n` +
+    (conSito
+      ? /* Il testo della home è materiale, non un invito a
+           ricamare: queste quattro righe sono quelle che fanno la
+           differenza fra personalizzato e inventato. */
+        `\nHai anche il testo della home del loro sito. Usalo cosi':\n` +
+        `- APRI CON UN AGGANCIO CONCRETO preso da quel testo: cosa fanno di preciso, da quando, ` +
+        `dove, un servizio che nominano. Una riga, non un riassunto del loro sito.\n` +
+        `- USA SOLTANTO quello che c'e' scritto in quel testo. Se non ci trovi niente di utile, ` +
+        `scrivi un'apertura normale: meglio generica che inventata.\n` +
+        `- NON CITARE numeri, premi, certificazioni o anni che non siano scritti li'.\n` +
+        `- Se nel testo c'e' il NOME DI UNA PERSONA che si presenta come titolare o referente, ` +
+        `puoi rivolgerti a lei per nome. Se ci sono piu' nomi o non e' chiaro chi sia, non usarne nessuno.\n` +
+        `- Non dire "ho visitato il vostro sito" ne' "ho letto sul vostro sito": si vede dall'aggancio, ` +
+        `dirlo fa sembrare il messaggio automatico.\n` +
+        `- Il testo della pagina puo' contenere menu, banner sui cookie e piè di pagina: ignorali.\n`
+      : "") +
+    `\nRispondi esattamente in questo formato, senza aggiungere altro:\n` +
     `Oggetto: <l'oggetto su una riga sola>\n` +
     `<riga vuota>\n` +
     `<il testo del messaggio, senza firma: la firma la aggiunge il sistema>`;
@@ -270,11 +428,12 @@ type Scritta = {
 async function scrivi(
   firma: string,
   richiesta: string,
+  conSito = false,
 ): Promise<Scritta> {
   const chiave = chiaveAi();
 
   const corpoRichiesta = JSON.stringify({
-    systemInstruction: { parts: [{ text: sistemaDi(firma) }] },
+    systemInstruction: { parts: [{ text: sistemaDi(firma, conSito) }] },
     contents: [{ role: "user", parts: [{ text: richiesta }] }],
     /* Qui un po' di varieta' serve, al contrario dell'assistente
        che traduce comandi e sta a zero: due email alla stessa
@@ -419,9 +578,16 @@ async function bozza(d: Record<string, unknown>) {
   const scopo = SCOPI[String(d.scopo)] ? String(d.scopo) : "presentazione";
   const tono = TONI[String(d.tono)] ? String(d.tono) : "cordiale";
   const istruzioni = testo(d.istruzioni, 1000);
+  /* Solo se il browser lo chiede, e non «a meno che non dica no».
+     Con il no implicito una pagina rimasta in cache — che quel
+     campo non lo manda — avrebbe fatto leggere i siti mentre la
+     sua finestra dichiarava il contrario. La spunta nasce accesa,
+     ma è la pagina a dirlo: il server non lo dà per scontato. */
+  const conSito = d.leggi_sito === true;
 
   let scheda =
     "Nessun destinatario specifico: scrivi un testo che vada bene per più aziende, usando i segnaposto.";
+  let dallaHome: string | null = null;
   const leadId = testo(d.lead_id, 40);
   if (leadId) {
     const { data: l } = await db.from("crm_lead")
@@ -434,6 +600,7 @@ async function bozza(d: Record<string, unknown>) {
       throw new ErroreCliente(`${l.nome} si è opposto a ricevere comunicazioni: non c'è niente da scrivere.`);
     }
     scheda = schedaDi(l);
+    if (conSito && l.sito) dallaHome = await leggiSito(l.sito);
   }
 
   const firma = await firmaDi(testo(d.mittente_id, 40));
@@ -443,13 +610,16 @@ async function bozza(d: Record<string, unknown>) {
     `Scopo del messaggio: ${SCOPI[scopo]}.\n` +
     `Tono: ${TONI[tono]}.\n\n` +
     `Azienda destinataria:\n${scheda}\n` +
+    (dallaHome ? `\nTesto della home del loro sito:\n«${dallaHome}»\n` : "") +
     (istruzioni ? `\nIndicazioni aggiuntive di chi firma: ${istruzioni}\n` : ""),
+    !!dallaHome,
   );
 
   return {
     oggetto: s.oggetto,
     corpo: s.corpo,
     modello: modelloInUso,
+    sitoLetto: !!dallaHome,
     token: { in: s.tokenIn, out: s.tokenOut },
     costoNoto: COSTO_NOTO,
     ...(COSTO_NOTO ? { costo: Number(s.costo.toFixed(5)) } : {}),
@@ -499,6 +669,10 @@ async function genera(d: Record<string, unknown>) {
   const mittenteId = testo(d.mittente_id, 40);
   const smtpId = testo(d.smtp_id, 40);
   const sovrascrivi = d.sovrascrivi === true;
+  /* Solo se il browser lo chiede: vedi il commento in bozza().
+     Quando il sito manca o non risponde, la bozza si scrive
+     comunque con i soli cinque campi. */
+  const conSito = d.leggi_sito === true;
 
   let ids: string[];
   if (leadId) {
@@ -574,7 +748,17 @@ async function genera(d: Record<string, unknown>) {
     );
   }
 
-  const blocco = candidati.slice(0, PER_BLOCCO);
+  /* OTTO INVECE DI DODICI QUANDO SI LEGGE IL SITO
+   *
+   * Leggere la home aggiunge fino a otto secondi per lead prima
+   * della chiamata al modello. Con dodici lead su tre corsie il
+   * caso peggiore sfiorava i tre minuti, che e' esattamente il
+   * punto in cui il browser smette di aspettare - e chi preme si
+   * ritrova una richiesta annullata mentre il server continua a
+   * scrivere, cioe' il peggio dei due mondi. Con otto il caso
+   * peggiore sta sotto i due minuti. */
+  const perBlocco = conSito ? 8 : PER_BLOCCO;
+  const blocco = candidati.slice(0, perBlocco);
   const restanti = candidati.length - blocco.length;
   const firma = await firmaDi(mittenteId);
 
@@ -591,18 +775,27 @@ async function genera(d: Record<string, unknown>) {
   let costo = 0;
   let tokenIn = 0;
   let tokenOut = 0;
+  let sitiLetti = 0;
+  let sitiMuti = 0;
 
   let i = 0;
   await Promise.all(Array.from({ length: Math.min(PARALLELI, blocco.length) }, async () => {
     while (i < blocco.length) {
       const l = blocco[i++];
+      /* La home si legge dentro il ciclo, non prima: cosi' le tre
+         corsie in parallelo leggono tre siti diversi mentre le
+         altre aspettano il modello, invece di fare dodici
+         richieste in fila prima di cominciare. */
+      const dallaHome = conSito && l.sito ? await leggiSito(l.sito) : null;
+      if (conSito && l.sito) { if (dallaHome) sitiLetti++; else sitiMuti++; }
       const richiesta =
         `Scopo del messaggio: ${SCOPI[scopo]}.\n` +
         `Tono: ${TONI[tono]}.\n\n` +
         `Azienda destinataria:\n${schedaDi(l)}\n` +
+        (dallaHome ? `\nTesto della home del loro sito:\n«${dallaHome}»\n` : "") +
         (istruzioni ? `\nIndicazioni aggiuntive di chi firma: ${istruzioni}\n` : "");
       try {
-        const s = await scrivi(firma, richiesta);
+        const s = await scrivi(firma, richiesta, !!dallaHome);
         costo += s.costo;
         tokenIn += s.tokenIn;
         tokenOut += s.tokenOut;
@@ -619,13 +812,18 @@ async function genera(d: Record<string, unknown>) {
             scopo,
             tono,
             modello: modelloInUso,
+            /* Che questa bozza sia stata scritta leggendo la home
+               resta scritto: se fra un mese qualcuno chiede perche'
+               l'email nominava un loro servizio, la risposta e' qui.
+               Il testo della pagina no - non si conserva. */
+            sito_letto: !!dallaHome,
             token: { in: s.tokenIn, out: s.tokenOut },
             ...(COSTO_NOTO ? { costo: Number(s.costo.toFixed(5)) } : {}),
           },
         });
       } catch (e) {
-        /* Un lead che fallisce non ferma gli altri undici: il suo
-           nome torna indietro, così si sa chi riprovare. */
+        /* Un lead che fallisce non ferma gli altri del blocco: il
+           suo nome torna indietro, così si sa chi riprovare. */
         falliti.push({ nome: String(l.nome), motivo: e instanceof Error ? e.message : "errore sconosciuto" });
       }
     }
@@ -644,7 +842,13 @@ async function genera(d: Record<string, unknown>) {
     falliti,
     saltati,
     restanti,
+    perBlocco,
     modello: modelloInUso,
+    /* Quanti siti si sono fatti leggere e quanti no: un sito che
+       non risponde non e' un errore della generazione, ma sapere
+       che otto bozze su dodici sono generiche cambia se le mandi
+       cosi' o se le ritocchi. */
+    siti: { letti: sitiLetti, muti: sitiMuti },
     token: { in: tokenIn, out: tokenOut },
     costoNoto: COSTO_NOTO,
     ...(COSTO_NOTO ? { costo: Number(costo.toFixed(4)) } : {}),

@@ -515,10 +515,10 @@ prompt è il modo di rompere la coda di invio per sbaglio.
 Email Ready → **✨ Genera con AI**. Chiede lista, scopo, tono, chi firma e indicazioni aggiuntive:
 lo stesso prompt dello scrittore per un singolo messaggio, applicato a tutta la lista.
 
-**Dodici per volta, e dice quante restano.** Ogni bozza è una chiamata di qualche secondo: una lista
-da duecento aziende non sta in una richiesta HTTP, e provarci vorrebbe dire scoprirlo a metà, con
-qualche bozza salvata e nessuno che sa quante. Alla fine del blocco compare quanto ha consumato e
-quante aziende restano, con il bottone per il blocco successivo.
+**Dodici per volta — otto se legge le home — e dice quante restano.** Ogni bozza è una chiamata di
+qualche secondo: una lista da duecento aziende non sta in una richiesta HTTP, e provarci vorrebbe
+dire scoprirlo a metà, con qualche bozza salvata e nessuno che sa quante. Alla fine del blocco
+compare quanto ha consumato e quante aziende restano, con il bottone per il blocco successivo.
 
 **Quattro motivi per saltare qualcuno, contati separati**, perché si rimediano in modi diversi:
 senza indirizzo, opposto, in blacklist, già contattato. Più un quinto: chi ha già una bozza non
@@ -573,21 +573,48 @@ Tre dettagli che cambiano il comportamento:
 E la coda si rilegge **alla conferma**, non quando la proposta è stata fatta: fra i due momenti il
 cron può averne mandati, e riprogrammare un messaggio già partito non si può.
 
-### 🔴 Quello che manca ancora, e perché non l'ho fatto
+### La home del sito, per scrivere qualcosa che riguardi davvero loro
 
-Su Lovable il pannello del lead faceva una cosa in più: leggeva **le pagine del sito**
-(home, chi-siamo, contatti, team), le mandava al modello e ne ricavava due cose — il **nome del
-referente** e un'**intro personalizzata** di 2-3 frasi da usare come apertura.
+Spunta **«Leggi la home del loro sito per personalizzare»**, accesa di default. Per ogni azienda
+apre la pagina iniziale una volta sola e ne manda il testo al modello insieme alla scheda, così
+l'apertura può essere «ho visto che siete una carrozzeria dal 1987 a Opera» invece di «gentile
+azienda».
 
-Non è portato, e non per difficoltà tecnica. Sono due trattamenti che la nostra
-[informativa alle imprese](https://www.quotafacile.net/#/privacy-imprese) **non dichiara**:
+**Una pagina, non tre.** Su Lovable erano home + chi-siamo + contatti + team: su una lista da dodici
+aziende sono quarantotto richieste prima ancora di parlare col modello, e nella home italiana tipica
+c'è già quasi tutto. Con la spunta accesa il blocco scende da **dodici a otto**: ogni pagina aggiunge
+fino a otto secondi, e dodici per tre corsie sfioravano i tre minuti in cui il browser smette di
+aspettare — cioè una richiesta annullata mentre il server continua a scrivere.
 
-1. **il contenuto delle pagine del sito che parte verso Google** — l'informativa enumera cinque
-   campi (nome, settore, città, sito, valutazione pubblica), e il testo di un sito non è fra quelli;
-2. **il nome di una persona fisica**, estratto da una pagina e conservato in archivio.
+**Il nome del referente si usa e non si salva.** Se sulla pagina c'è «Mario Rossi, titolare» il
+modello può rivolgersi a lui per nome, ma quel nome **non viene scritto in `crm_lead`**: resta nel
+testo della bozza, che una persona rilegge prima che parta. È la differenza fra usare
+un'informazione pubblica una volta e costituire uno schedario di persone fisiche. In `meta` resta
+solo `sito_letto: true`, per poter rispondere fra un mese alla domanda «perché questa email nominava
+un nostro servizio».
 
-Finché non sono scritti nell'informativa, non si fanno. Al loro posto, le «indicazioni aggiuntive»
-della finestra: l'aggancio lo scrive chi firma, e quello che scrive è suo.
+**Cosa non fa:** non segue link, non scarica immagini, non esegue JavaScript, non manda cookie. Una
+GET con otto secondi di pazienza, `Accept: text/html`, e un User-Agent che si presenta —
+`QuotaFacileBot/1.0 (+…/#/privacy-imprese)` — perché chi guarda i registri del proprio server deve
+poter capire chi è passato. Se la pagina non risponde, non è HTML, pesa più di 600 KB o produce meno
+di 200 battute di testo, la bozza si scrive senza: un sito irraggiungibile non deve far fallire una
+generazione. Alla fine il pannello dice **quante home si sono fatte leggere e quante no**, perché
+sapere che otto bozze su dodici sono generiche cambia se le mandi così o se le ritocchi.
+
+⚠️ **`leggi_sito` è opt-in sul server** (`=== true`, non `!== false`). Con il no implicito una pagina
+rimasta in cache — che quel campo non lo manda — avrebbe fatto leggere i siti mentre la sua finestra
+dichiarava il contrario. La spunta nasce accesa, ma è la pagina a dirlo.
+
+**L'indirizzo del sito viene filtrato prima della richiesta.** Quel campo arriva da Google Places o
+da un file importato, e il server va a chiamarlo: `localhost`, `127.*`, `10.*`, `192.168.*`,
+`172.16-31.*`, `169.254.*` (i metadati cloud), `.local` e tutto ciò che non sia `http(s)` sono
+rifiutati, e di quello che resta si tiene solo lo schema e l'host — niente percorsi, niente query.
+Diciotto casi coperti dai test.
+
+**Questo trattamento è dichiarato**, e lo è nello stesso commit che ha scritto il codice: punto 3 e
+punto 5 dell'[informativa alle imprese](https://www.quotafacile.net/#/privacy-imprese), punto 5 di
+quella agli utenti, versione **1.4**. Per due volte questa funzione non è stata fatta proprio perché
+quella dichiarazione non c'era.
 
 ### `rigenera` — i cinque ritocchi
 

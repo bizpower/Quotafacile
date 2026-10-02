@@ -1278,7 +1278,19 @@ a.chip { display: inline-block; text-decoration: none; }
 /* Il dettaglio di un riquadro */
 .mm-velo { position: fixed; inset: 0; z-index: 90; background: rgba(11, 46, 29, .45);
   display: flex; align-items: center; justify-content: center; padding: 1.2rem; }
-.mm-dialogo { max-width: 34rem; width: 100%; margin: 0; }
+/* È LA FINESTRA CHE SCORRE, NON IL VELO.
+   Senza max-height una finestra più alta dello schermo veniva
+   tagliata sopra E sotto, col bottone di conferma fuori e nessun
+   modo di raggiungerlo: su un telefono valeva già per le finestre
+   lunghe, e la spunta sul sito l'ha reso sistematico.
+   Far scorrere il velo non funziona: con margin:auto su un figlio
+   flex più alto del contenitore una parte resta fuori dall'area
+   scorrevole — misurato, il velo arrivava in fondo e il bottone
+   era ancora 142px sotto il bordo. Questa è la stessa soluzione
+   di .mm-dialogo-largo, che nel progetto funziona da sempre. */
+.mm-dialogo { max-width: 34rem; width: 100%; margin: 0;
+  max-height: calc(100vh - 2.4rem); overflow-y: auto;
+  -webkit-overflow-scrolling: touch; }
 
 @media (max-width: 860px) {
   .mm-shell, .mm-shell.senza-menu { grid-template-columns: 1fr; }
@@ -2212,8 +2224,20 @@ a.chip { display: inline-block; text-decoration: none; }
    Chi ha chiesto meno animazioni al sistema operativo non la
    vede: prefers-reduced-motion non è una preferenza estetica,
    per qualcuno è quello che evita la nausea. */
+/* «backwards» e non «both», e la differenza non è estetica.
+   Con «both» l'ultimo fotogramma resta applicato per sempre, e
+   «transform: none» animato computa come matrice identità: un
+   transform che non si vede ma che crea un containing block per
+   i discendenti position:fixed. Risultato, solo su telefono:
+   ogni finestra modale dell'area riservata veniva posizionata
+   sulla sezione invece che sullo schermo — misurata a top 65 e
+   alta 861 su uno schermo da 700 — e il bottone di conferma
+   finiva sotto il bordo. «backwards» applica il primo fotogramma
+   prima che l'animazione parta (che è ciò che serve, per non
+   vedere il lampo iniziale) e non trattiene l'ultimo: a
+   animazione finita il transform torna a non esserci. */
 @media (max-width: 760px) {
-  .app-main > * { animation: entra .22s var(--ease) both; }
+  .app-main > * { animation: entra .22s var(--ease) backwards; }
 }
 @keyframes entra {
   from { opacity: 0; transform: translateY(8px); }
