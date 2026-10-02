@@ -837,7 +837,8 @@
      La finestra è la stessa — una lista di uno non merita un
      secondo modulo da tenere allineato. */
   let generaLead = null;
-  let formGenera = { lista_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "", sovrascrivi: false };
+  let formGenera = { lista_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "",
+                     sovrascrivi: false, leggi_sito: true };
   let inGenerazione = false;
   let ultimaGenerazione = null;   // l'esito dell'ultimo blocco, da mostrare
 
@@ -917,6 +918,7 @@
         tono: $("#g-tono").value,
         istruzioni: $("#g-istruzioni").value.trim(),
         sovrascrivi: $("#g-sovrascrivi").checked,
+        leggi_sito: $("#g-sito")?.checked !== false,
         mittente_id: $("#g-mittente")?.value || null
       };
       if (!formGenera.lead_id && !formGenera.lista_id) { QF().toast("Scegli la lista."); return; }
@@ -1123,6 +1125,11 @@
           <div>
             <strong>${plurale(g.creati, "bozza scritta", "bozze scritte")}</strong>
             ${consumo(g) ? ` · il blocco ha consumato ${consumo(g)}` : ""}
+            ${g.siti?.letti ? `<br><span class="muted" style="font-size:.85rem">${
+              plurale(g.siti.letti, "home letta", "home lette")} per personalizzare l'aggancio${
+              g.siti.muti ? `, ${g.siti.muti} ${g.siti.muti === 1 ? "sito non ha risposto" : "siti non hanno risposto"}: quelle bozze sono generiche` : ""}.</span>` : ""}
+            ${!g.siti?.letti && g.siti?.muti ? `<br><span class="muted" style="font-size:.85rem">Nessun sito si è fatto leggere (${
+              g.siti.muti} ${g.siti.muti === 1 ? "tentativo" : "tentativi"}): le bozze sono generiche.</span>` : ""}
             ${motivi ? `<br><span class="muted" style="font-size:.85rem">Saltati: ${esc(motivi)}.</span>` : ""}
             ${(g.falliti || []).length ? `<br><span class="muted" style="font-size:.85rem">Non riuscite: ${
               esc((g.falliti || []).map(f => f.nome).join(", "))}.</span>` : ""}
@@ -1392,6 +1399,16 @@
               esc(formGenera.istruzioni)}</textarea></label>
 
           <label class="field mm-interruttore" style="margin-top:.6rem">
+            <input type="checkbox" id="g-sito" ${formGenera.leggi_sito ? "checked" : ""}>
+            <span>Leggi la home del loro sito per personalizzare
+              <em>${generaLead
+                ? (generaLead.sito
+                    ? "Apre la home una volta sola e la usa per l'aggancio iniziale. Il testo della pagina viene inviato al modello insieme alla scheda: è dichiarato nell'informativa."
+                    : "Questa azienda non ha un sito in archivio: la bozza si scrive con i soli cinque campi.")
+                : "Per ogni azienda apre la home una volta sola e la usa per l'aggancio iniziale. Il testo della pagina viene inviato al modello insieme alla scheda: è dichiarato nell'informativa. Chi non ha un sito, o ha un sito che non risponde, ottiene una bozza generica."}</em></span>
+          </label>
+
+          <label class="field mm-interruttore" style="margin-top:.6rem">
             <input type="checkbox" id="g-sovrascrivi" ${formGenera.sovrascrivi ? "checked" : ""}>
             <span>${generaLead ? "Rifai anche se ha già una bozza" : "Rifai anche chi ha già una bozza"}
               <em>${generaLead
@@ -1405,15 +1422,19 @@
               <a href="#/admin/crm/mail/pronte">Email Ready</a>, in stato «bozza»: da lì si rilegge,
               si ritocca e si approva. Non parte niente da sola.`
             : `
-              Si scrivono <strong>dodici aziende per volta</strong>, e alla fine ti dico quante ne
-              restano: ogni email è una chiamata a pagamento di qualche secondo, e duecento in una
-              richiesta sola non ci starebbero.
+              Si scrivono <strong>dodici aziende per volta</strong> — <strong>otto</strong> se leggo
+              anche le loro home, perché ogni pagina aggiunge qualche secondo — e alla fine ti dico
+              quante ne restano: duecento in una richiesta sola non ci starebbero.
               ${quante != null && quante > 12
                 ? `Questa lista ne ha ${quante}, quindi serviranno più passaggi.`
                 : ""}`}
-            <br>Al modello vanno solo <strong>nome, settore, città, sito e valutazione pubblica</strong>
-            dell'azienda — gli stessi cinque campi dichiarati nell'informativa.
-            <strong>L'indirizzo email non parte</strong>, e non parte niente del contenuto del sito.
+            <br>Al modello vanno <strong>nome, settore, città, sito e valutazione pubblica</strong>
+            dell'azienda, e <strong>con la spunta qui sopra anche il testo della home del loro
+            sito</strong>. <strong>L'indirizzo email non parte mai.</strong>
+            Se sulla pagina c'è il nome del titolare il modello può rivolgersi a lui per nome, ma
+            <strong>quel nome non viene salvato in archivio</strong>: resta nel testo della bozza, che
+            rileggi prima che parta. Tutto questo è scritto
+            nell'<a href="#/privacy-imprese">informativa per le aziende contattate</a>.
             ${generaLead ? "" : `
               <br>Chi si è opposto, chi è in blacklist e chi è già stato contattato viene saltato, e te
               lo dico contato per motivo.`}
@@ -1512,7 +1533,7 @@
   let modelloAperto = null;  // modello in modifica, o "nuovo"
   let anteprima = null;      // { oggetto, corpo, avvisi }
   let bozza = null;          // quello che ha scritto il modello
-  const scrittura = { lead_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "" };
+  const scrittura = { lead_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "", leggi_sito: true };
   let scrivendo = false;
 
   const SCOPI = {
@@ -1688,6 +1709,12 @@
           </label>
           <label class="field mm-campo-largo"><span>Indicazioni aggiuntive</span>
             <textarea id="a-istruzioni" rows="3" placeholder="Es. cita che siamo di zona, niente riferimenti al prezzo">${esc(scrittura.istruzioni)}</textarea></label>
+          <label class="field mm-campo-largo mm-interruttore">
+            <input type="checkbox" id="a-sito" ${scrittura.leggi_sito ? "checked" : ""}>
+            <span>Leggi la home del loro sito per personalizzare
+              <em>Vale solo se hai scelto un'azienda qui sopra e se quell'azienda ha un sito in
+              archivio. Il testo della pagina viene inviato al modello insieme alla scheda.</em></span>
+          </label>
         </div>
         <div class="mm-azioni" style="margin-top:.8rem">
           <button type="submit" class="btn btn-primary btn-sm" ${scrivendo ? "disabled" : ""}>
@@ -1702,7 +1729,8 @@
         <div class="mm-testata">
           <h3>Bozza</h3>
           <span class="muted" style="font-size:.75rem">
-            ${esc(bozza.modello || "")}${consumo(bozza) ? ` · ${consumo(bozza)}` : ""}
+            ${esc(bozza.modello || "")}${consumo(bozza) ? ` · ${consumo(bozza)}` : ""}${
+              bozza.sitoLetto ? " · home del sito letta" : ""}
           </span>
         </div>
         ${!bozza.oggetto ? `
@@ -3999,6 +4027,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
       scrittura.tono = $("#a-tono").value;
       scrittura.lead_id = $("#a-lead").value;
       scrittura.istruzioni = $("#a-istruzioni").value;
+      scrittura.leggi_sito = $("#a-sito")?.checked !== false;
       scrivendo = true; QF().render();
       /* Questa bozza la scrive qf-mm-ai come tutte le altre: una
          chiave sola, un fornitore solo, una riga sola
