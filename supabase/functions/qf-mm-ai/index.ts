@@ -34,6 +34,8 @@
 // nell'informativa alle imprese. L'indirizzo email del
 // destinatario NON parte: non serve a scrivere il testo, e
 // mandarlo sarebbe un trattamento in più non dichiarato.
+// E, se chi genera lo chiede, il testo della home del loro sito:
+// vedi la sezione «La home del sito» più sotto.
 // ============================================================
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -820,8 +822,8 @@ async function genera(d: Record<string, unknown>) {
           },
         });
       } catch (e) {
-        /* Un lead che fallisce non ferma gli altri undici: il suo
-           nome torna indietro, così si sa chi riprovare. */
+        /* Un lead che fallisce non ferma gli altri del blocco: il
+           suo nome torna indietro, così si sa chi riprovare. */
         falliti.push({ nome: String(l.nome), motivo: e instanceof Error ? e.message : "errore sconosciuto" });
       }
     }
