@@ -1756,8 +1756,8 @@
   let rapido = { destinatari: "", oggetto: "", corpo: "" };
 
   const vuota = () => ({
-    id: "", nome: "", fornitore: "aruba",
-    host: "smtps.aruba.it", porta: 465, tls: true,
+    id: "", nome: "", fornitore: "gmail",
+    host: "smtp.gmail.com", porta: 465, tls: true,
     utente: "", password: "",
     from_email: "", from_nome: "", rispondi_a: "",
     limite_giornaliero: 200, stato: "attivo",
@@ -1780,7 +1780,7 @@
         Vault di Supabase: questa pagina sa che c'è, non sa qual è, e non può mostrartela.
       </p>
       <div class="mm-azioni">
-        <button class="btn btn-outline btn-sm" id="mm-smtp-aruba">＋ Casella Aruba</button>
+        <button class="btn btn-outline btn-sm" id="mm-smtp-rapida">＋ Casella Gmail</button>
         <button class="btn btn-primary btn-sm" id="mm-smtp-nuova">＋ Nuova casella</button>
       </div>
     </div>
@@ -1824,7 +1824,12 @@
       </div>
 
       ${s.ultimo_test_errore ? `
-        <p class="mm-errore mm-errore-box">${esc(s.ultimo_test_errore)}</p>` : ""}
+        <p class="mm-errore mm-errore-box">${esc(s.ultimo_test_errore)}</p>
+        ${/535|password|autentic|login/i.test(s.ultimo_test_errore) && /gmail|google/i.test(String(s.host || "")) ? `
+          <p class="privacy-hint">Su Gmail questo errore vuol dire quasi sempre una cosa sola:
+            è stata inserita la password dell'account invece di una <strong>password per le
+            app</strong>. Si genera su <code>myaccount.google.com</code> → Sicurezza, e richiede la
+            verifica in due passaggi attiva.</p>` : ""}` : ""}
       ${s.ultimo_test_esito === "ok" ? `
         <p class="mm-ok-box">✓ Ultima prova riuscita il ${dataOra(s.ultimo_test_il)}</p>` : ""}
 
@@ -1919,7 +1924,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
               <input id="f-rispondi" type="email" value="${esc(f.rispondi_a || "")}" placeholder="lascia vuoto per usare il mittente"></label>
 
             <label class="field"><span>Server *</span>
-              <input id="f-host" required value="${esc(f.host)}" placeholder="smtps.aruba.it"></label>
+              <input id="f-host" required value="${esc(f.host)}" placeholder="${esc(FORNITORI[f.fornitore]?.[1] || "smtp.esempio.it")}"></label>
             <label class="field"><span>Porta *</span>
               <input id="f-porta" type="number" min="1" max="65535" required value="${f.porta}"></label>
 
@@ -1938,7 +1943,18 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
           </div>
 
           <p class="privacy-hint">
-            Su Aruba l'utente è l'indirizzo completo della casella, non solo la parte prima della chiocciola.
+            ${f.fornitore === "gmail" ? `
+              <strong>Su Gmail non va la password con cui entri nella casella:</strong> Google rifiuta
+              SMTP con quella, ed è l'errore <code>535</code>. Serve una <strong>password per le
+              app</strong> di 16 caratteri, che si genera su
+              <code>myaccount.google.com</code> → Sicurezza, e che esiste solo se la verifica in due
+              passaggi è attiva. L'utente è l'indirizzo completo.`
+            : f.fornitore === "aruba" ? `
+              Su Aruba l'utente è l'indirizzo completo della casella, non solo la parte prima della
+              chiocciola.`
+            : `
+              Di solito l'utente è l'indirizzo completo della casella, non solo la parte prima della
+              chiocciola.`}
             La password viene chiusa nel Vault: da lì non esce più verso questa pagina.
           </p>
 
@@ -4028,12 +4044,21 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     $("#mm-smtp-nuova")?.addEventListener("click", () => {
       modulo = vuota(); QF().render();
     });
-    $("#mm-smtp-aruba")?.addEventListener("click", () => {
+    $("#mm-smtp-rapida")?.addEventListener("click", () => {
       /* Il "setup rapido" del progetto su Lovable, con i valori di
-         questo dominio invece che di quello di allora. */
+         questo dominio invece che di quello di allora.
+
+         Era Aruba, e adesso e' Gmail perche' il dominio dice cosi':
+         l'MX di quotafacile.net e' smtp.google.com, cioe' la posta
+         sta su Google Workspace. Aruba resta a un clic di distanza
+         nella tendina dei fornitori. */
       const m = mittente();
       modulo = {
         ...vuota(),
+        fornitore: "gmail",
+        host: "smtp.gmail.com",
+        porta: 465,
+        tls: true,
         nome: `Casella ${m?.etichetta || "principale"}`,
         from_email: m?.from_email || "",
         from_nome: m?.from_nome || m?.etichetta || "",

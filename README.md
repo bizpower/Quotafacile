@@ -541,6 +541,52 @@ geocoding la chiave viaggia dentro la query.
 **Gemini (l'assistente del CRM) non ha una scheda** e non ne ha bisogno: se la chiave `QF_GEMINI_KEY`
 manca o viene rifiutata, l'assistente lo scrive in chiaro nella conversazione al primo messaggio.
 
+## 📤 Le caselle di invio del mail marketing
+
+CRM → Mail Marketing → **Caselle di invio**. Non usano i segreti del progetto come `qf-mail`: una
+casella è una riga di `mm_smtp`, e la password **non sta nella riga**. Va nel Vault di Supabase, e
+la tabella conserva solo l'identificativo del segreto — chi legge le righe vede il numero della
+cassetta, non cosa c'è dentro. Le tre funzioni che la aprono sono eseguibili solo da
+`service_role`. La schermata sa *che* una password c'è, non *qual è*, e non può mostrarla.
+
+### Google Workspace, che è dove sta la posta di questo dominio
+
+L'MX di `quotafacile.net` è `smtp.google.com`: la posta è su Workspace, non su Aruba. Quindi la
+scorciatoia in cima alla sezione è **＋ Casella Gmail** e precompila host `smtp.gmail.com`, porta
+`465`, TLS acceso, utente e mittente dall'indirizzo del mittente attivo. Aruba e gli altri sette
+fornitori restano nella tendina.
+
+⚠️ **La password con cui si entra in Gmail non funziona.** Google rifiuta SMTP con quella, ed è
+l'errore `535`. Serve una **password per le app** di 16 caratteri, che si genera su
+`myaccount.google.com` → Sicurezza e che esiste solo con la verifica in due passaggi attiva. È
+scritto nel modulo accanto al campo, e se la prova fallisce con un errore di autenticazione la
+scheda lo ripete: è l'unico punto in cui ci si blocca, e un messaggio generico lì costa mezz'ora.
+
+**Limite giornaliero: 200 di default.** Workspace ne regge 2.000 e un account gratuito 500, ma
+duecento al giorno da un dominio appena collegato è un ritmo che non insospettisce nessuno. Il
+contatore non si azzera con un cron: si azzera la prima volta che lo si guarda in un giorno nuovo.
+
+### Prima di spedire davvero: i tre record del dominio
+
+**Verifica DNS** sulla scheda della casella legge SPF, DKIM e DMARC e dà un punteggio — SPF e DKIM
+valgono 40 ciascuno perché sono quelli che i grandi provider guardano davvero, DMARC 20 perché
+senza gli altri due non serve a niente.
+
+Al 4 ottobre 2026 su `quotafacile.net` **nessuno dei tre esiste**: l'unico TXT sul dominio è il
+`google-site-verification`, e `_dmarc` e `google._domainkey` rispondono NXDOMAIN. Il DNS è su
+Aruba (`dns4.arubadns.cz`), quindi i record si aggiungono da lì:
+
+| Nome | Tipo | Valore |
+|---|---|---|
+| `@` | TXT | `v=spf1 include:_spf.google.com ~all` |
+| `_dmarc` | TXT | `v=DMARC1; p=none; rua=mailto:r.difalco@quotafacile.net` |
+| `google._domainkey` | TXT | lo genera Google Admin → Gmail → Autentica email |
+
+Senza SPF la posta parte comunque e finisce nello spam: è la differenza fra «l'ho mandata» e
+«l'hanno letta», e con trenta aziende contattate e zero risposte non si saprebbe nemmeno perché.
+Il DMARC parte da `p=none`, in sola osservazione: metterlo subito a `quarantine` prima di aver
+verificato che SPF e DKIM passino vuol dire far sparire silenziosamente la posta buona.
+
 ## ✨ Scrittura assistita del mail marketing — `qf-mm-ai`
 
 Tre azioni sole — `bozza`, `genera`, `rigenera` — in una funzione **separata da `qf-mm`**. Tutte e
