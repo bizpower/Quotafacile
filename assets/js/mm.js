@@ -3209,8 +3209,9 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
      così il link a una lista si può mandare a qualcuno e il tasto
      indietro torna dove promette. */
   function listaDallUrl() {
-    const q = (location.hash || "").split("?")[1];
-    return q ? new URLSearchParams(q).get("l") : null;
+    /* QF().query() e' gia' un oggetto: la query sta nel percorso,
+       non nel frammento, e la legge il router una volta sola. */
+    return QF().query().l || null;
   }
 
   async function apriLista(id) {
@@ -3596,8 +3597,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     if (rottaCorrente !== "pronte") return;
 
     /* La campagna da guardare la dice l'indirizzo. */
-    const q = (location.hash || "").split("?")[1];
-    const voluta = q ? new URLSearchParams(q).get("c") || "" : "";
+    const voluta = QF().query().c || "";
     if (voluta !== filtroPosta.campagna_id) {
       filtroPosta = { ...filtroPosta, campagna_id: voluta };
       postaDati = null; scelte = new Set();

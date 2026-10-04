@@ -115,7 +115,7 @@
        Finder» resta nella conversazione invece di essere
        scavalcata dal cambio di schermata. Il pannello non si
        chiude: si continua a parlare da lì. */
-    if (e.ok && e.vai && location.hash !== e.vai) location.hash = e.vai;
+    if (e.ok && e.vai) window.QF.vaiA(e.vai);
   }
 
   async function conferma() {
@@ -147,7 +147,7 @@
        sotto c'è il CRM lo si fa rileggere in silenzio: senza,
        resterebbe a mostrare i dati di un minuto fa. */
     window.QF_CRM?.ricarica?.();
-    if (e.vai && location.hash !== e.vai) location.hash = e.vai;
+    if (e.vai) window.QF.vaiA(e.vai);
   }
 
   /* ---------------- IL MICROFONO ---------------- */
@@ -298,7 +298,7 @@
      il bottone non deve comparire sul sito pubblico, e nemmeno
      davanti alla richiesta della chiave. */
   const visibile = () =>
-    (location.hash || "").startsWith("#/admin") && !!chiave();
+    (window.QF.rotta() || "").startsWith("admin") && !!chiave();
 
   function disegna() {
     const r = radice();

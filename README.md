@@ -102,19 +102,46 @@ d'ambiente da impostare: la consegna dei contatti passa da Supabase in ogni caso
 - Livelli: Novizio → Consulente (50) → Esperto (150) → **Top Advisor (300)**
 - I Top Advisor finiscono in evidenza in home → incentivo a produrre contenuto → contenuto = pagine indicizzabili
 
-## SEO: il limite che resta
+## Gli indirizzi: percorsi veri, niente cancelletto
 
-Questa è una SPA con routing `#/`. Gli URL con il cancelletto **non vengono indicizzati come
-pagine separate**: per Google esiste una sola pagina, e tutto il lavoro sulle guide vale meno di
-quanto potrebbe. È il collo di bottiglia più serio rimasto sul fronte organico.
+Era una SPA con routing `#/`, e quello era il collo di bottiglia più serio sul fronte organico:
+per Google gli URL col cancelletto non sono pagine separate, quindi venti guide erano una pagina
+sola. Adesso non è più così, e la cosa sta su due gambe.
 
-Le due strade, in ordine di sforzo:
+**Il pre-render** (`tools/prerender.mjs`, gira nel deploy) apre ogni rotta pubblica in un browser
+vero e la salva come file HTML a un indirizzo reale — `/guide/polizza-vita-pignorabile/` — con il
+proprio canonical, link interni veri e gli asset riscritti in assoluto. Trentotto pagine, trentasei
+nella sitemap. Chi non esegue JavaScript — e i crawler dei motori generativi in larghissima parte
+non lo fanno — trova il contenuto dentro l'HTML invece di un guscio vuoto.
 
-1. **Prerender** — uno script che genera un file HTML statico per ogni guida (`/guide/assicurazione-monopattino-elettrico-obbligatoria/`). Il markup e i dati strutturati esistono già: serve solo scriverli su disco.
-2. **Migrazione ad Astro o Next.js** con backend, quando i contenuti diventano reali e condivisi.
+**La navigazione** usa la History API: cliccando si va a `/magazine/`, non a `/#/magazine`. Prima
+le pagine stavano già a un indirizzo vero, ma appena una persona cliccava il gestore dei link
+rimetteva il cancelletto — quindi l'indirizzo che si copiava dalla barra, e che finiva nei
+messaggi e nei segnalibri, era quello sbagliato.
 
-Fino ad allora le guide restano ottime per chi arriva sul sito e per i motori generativi (che
-leggono la pagina renderizzata), ma partono handicappate sulla ricerca tradizionale.
+Due cose non sono cambiate, di proposito:
+
+- **i vecchi `/#/magazine` funzionano ancora.** Sono in segnalibri, in email già partite e magari
+  in qualche risultato di ricerca: arrivano, e un `replaceState` li normalizza al percorso pulito
+  senza aggiungere una voce di cronologia;
+- **i 142 `href="#/..."` nei file restano come sono.** Il clic viene intercettato e tradotto in
+  percorso, e per le diciotto assegnazioni `location.hash = "#/x"` sparse in sei file c'è il
+  normalizzatore su `hashchange`. Riscriverli tutti a mano sarebbe stato il modo di sbagliarne uno.
+
+La barra finale resta: **`/magazine/` e non `/magazine`**. È la forma che GitHub Pages serve
+davvero e quella già dentro i canonical e la sitemap; `/magazine` fa un redirect verso
+`/magazine/`. Cambiarla butterebbe l'indicizzazione fatta finora.
+
+**Le rotte private non hanno un indirizzo pubblico**, e non devono averlo: per quelle il percorso
+è la rotta stessa (`/admin/crm/mail/liste`). Su un ricaricamento diretto Pages serve `404.html`,
+che il pre-render scrive con `noindex` e fuori dalla sitemap — e che dichiara la radice del sito in
+un `<meta name="qf-base">`. Senza quel meta l'applicazione, servita a un percorso che non è il
+suo, avrebbe ricavato come radice `/admin/crm/mail/`: da lì in poi ogni indirizzo costruito
+sarebbe nato appeso a una cartella che non esiste.
+
+Chi deve sapere «dove sono» non legge più `location.hash` — col percorso è vuoto — ma
+`QF.rotta()` e `QF.query()`. Erano quattro moduli a leggerlo, incluso quello che decide se
+mostrare il bottone dell'assistente nell'area riservata.
 
 ## 📬 Contatti e consegna — Supabase
 
