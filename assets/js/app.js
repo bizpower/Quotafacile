@@ -545,12 +545,18 @@ const dentroCornice = (() => {
 let riservataInCorso = null;
 
 function caricaRiservata() {
-  if (window.QF_ADMIN && window.QF_CRM && window.QF_MM && window.QF_MAGAZINE && window.QF_ASSISTENTE) return Promise.resolve();
+  if (window.QF_ADMIN && window.QF_CRM && window.QF_MM && window.QF_MAGAZINE
+      && window.QF_ASSISTENTE && window.QF_RICERCA) return Promise.resolve();
   if (riservataInCorso) return riservataInCorso;
   /* L'assistente sta in questo gruppo e non fra gli script della
      pagina perché serve solo qui dentro: sul sito pubblico non
-     deve nemmeno essere scaricato. */
-  riservataInCorso = Promise.all(["admin", "crm", "mm", "magazine", "assistente"].map(nome => new Promise((risolvi, rifiuta) => {
+     deve nemmeno essere scaricato.
+
+     lead-ricerca.js è il modulo di ricerca dei lead, usato sia dal
+     CRM sia dal mail marketing. Sta qui per la stessa ragione
+     degli altri e arriva in parallelo: nessuno dei sei cerca gli
+     altri al caricamento, solo quando servono. */
+  riservataInCorso = Promise.all(["admin", "crm", "mm", "magazine", "assistente", "lead-ricerca"].map(nome => new Promise((risolvi, rifiuta) => {
     const s = document.createElement("script");
     s.src = BASE_SITO + "assets/js/" + nome + ".js";
     s.onload = risolvi;

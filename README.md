@@ -283,7 +283,7 @@ lo sono mai: tenerli distinti rende difficile sbagliarsi.
 |---|---|
 | **👥 Collaboratori** | ✅ anagrafica, ruoli, attivazione e **creazione degli accessi personali** |
 | **📁 Documenti** | ✅ archivio della squadra: chi ha caricato cosa, categorie, scadenze in evidenza |
-| **🔎 Lead locali** | ✅ ricerca per zona, categorie e raggio; salvataggio, assegnazione e stato di lavorazione |
+| **🔎 Lead locali** | ✅ ricerca per zona, provincia, categorie e raggio, con filtro «solo con email»; salvataggio, assegnazione e stato di lavorazione. Stesso modulo del Lead Finder del mail marketing |
 | **📇 Pipeline** | ✅ viste per fase, etichette, storia delle attività su ogni lead |
 | **✉️ Mail** | ✅ modelli, invio dalla casella Aruba, registro, opposizione al contatto |
 | **🏆 Produzione** | ✅ classifica calcolata dai fatti registrati, con i pesi dichiarati |
@@ -427,11 +427,41 @@ un numero che si può digitare a mano non misura niente.
 
 ### 🔎 Lead locali
 
-Ricerca **rapida** (una zona) o **precisa** (via, CAP, città, provincia), raggio da 500 m a
-10 km, fino a 4 categorie per volta fra venti, filtro qualità (valutazione ≥ 3,5 e almeno 5
-recensioni). Fino a 50 risultati per ricerca, senza duplicati fra categorie, con l'indicazione
-di chi è **già in archivio** — così non si riprende come nuovo un contatto che qualcuno sta già
-lavorando.
+Ricerca **rapida** (una zona) o **precisa** (regione → provincia → comune dall'anagrafe ISTAT,
+più via e CAP), raggio da 500 m a 10 km, fino a 4 categorie per volta fra venti, filtro qualità
+(valutazione ≥ 3,5 e almeno 5 recensioni) e filtro **solo con email pubblica**. Fino a 50
+risultati per ricerca, senza duplicati fra categorie, con l'indicazione di chi è **già in
+archivio** — così non si riprende come nuovo un contatto che qualcuno sta già lavorando.
+
+#### Un modulo, due schermate — `assets/js/lead-ricerca.js`
+
+Questa ricerca si usa da due posti: **Lead locali** nel CRM e **Lead Finder** nel mail
+marketing. Erano due moduli scritti separatamente, ed erano divergiti esattamente come diverge
+sempre il codice copiato:
+
+| | CRM | Mail marketing (prima) |
+|---|---|---|
+| provincia e comune | tendine dall'anagrafe | due caselle di testo libero |
+| comune vuoto | cerca dal centro della provincia | **rifiutava la ricerca** e non chiamava il server |
+| «solo con email» | c'era | non c'era |
+
+La seconda riga è il difetto che si vedeva: la correzione del comune facoltativo era stata fatta
+una volta sola, nel CRM, e l'altra copia è rimasta indietro per settimane. La terza è il
+paradosso: quel filtro è stato scritto *proprio* per il mail marketing — lo dice il commento sul
+server, «serve a chi sta preparando una lista per il mail marketing» — ed era esposto solo
+altrove.
+
+Il rimedio è alla causa: **il lato dell'ingresso vive in un file solo**. Form, lettura dei campi,
+validazione, tendine a cascata, attesa: tutto in `lead-ricerca.js`, che si registra su
+`window.QF_RICERCA` e arriva in parallelo agli altri cinque file dell'area riservata. Il lato
+dell'uscita resta separato di proposito, perché è diverso davvero: nel CRM si salva in archivio,
+nel mail marketing in una lista.
+
+L'unica differenza che resta è un valore iniziale, e è voluta: **`soloConEmail` nasce acceso nel
+mail marketing** — lì le liste servono a mandare email, e un'attività senza indirizzo è una riga
+che il generatore salterebbe contandola fra gli scartati — e **spento nel CRM**, dove si esplora
+una zona per capire chi c'è e aprire il sito di ogni risultato costerebbe secondi a chi non li ha
+chiesti.
 
 Dai risultati si salva quello che interessa; in archivio ogni lead ha uno stato (nuovo,
 contattato, in trattativa, cliente, scartato) e si assegna a un collaboratore.

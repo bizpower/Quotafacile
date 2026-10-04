@@ -375,28 +375,33 @@
 
   const API_LEAD = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-lead";
 
-  const CATEGORIE = {
-    ristorazione: "Ristoranti e pizzerie", bar: "Bar e caffetterie",
-    hotel: "Hotel e B&B", cantine: "Cantine e aziende vinicole",
-    enoteche: "Enoteche", agriturismi: "Agriturismi",
-    officine: "Officine e autoriparazioni", concessionarie: "Concessionarie auto",
-    edilizia: "Imprese edili", impiantisti: "Impiantisti",
-    studi: "Commercialisti e consulenti", avvocati: "Studi legali",
-    medici: "Studi medici e dentisti", palestre: "Palestre e centri fitness",
-    parrucchieri: "Parrucchieri ed estetica", negozi: "Negozi al dettaglio",
-    supermercati: "Supermercati e alimentari", trasporti: "Trasporti e logistica",
-    agenzie_immobiliari: "Agenzie immobiliari", assicurazioni: "Agenzie assicurative"
-  };
+  /* Le venti categorie e i raggi vivono in lead-ricerca.js,
+     insieme al modulo che li disegna. Qui serve solo l'etichetta
+     da mostrare accanto a un lead salvato, e si legge quando
+     serve: i file dell'area riservata arrivano in parallelo. */
+  const CATEGORIE = () => window.QF_RICERCA?.CATEGORIE || {};
 
   /* Lo stato della ricerca vive finché la scheda è aperta: dei
-     risultati non salvati non si fa un archivio. */
+     risultati non salvati non si fa un archivio.
+
+     La forma è quella che lead-ricerca.js si aspetta, identica a
+     quella del CRM. Cambia un valore iniziale, e non è una
+     svista: qui soloConEmail nasce ACCESO, perché queste liste
+     servono a mandare email e un'attività senza indirizzo è una
+     riga che non userai — il generatore la salterebbe contandola
+     fra gli scartati. Nel CRM nasce spento, perché lì si esplora
+     una zona per capire chi c'è. */
   const ricerca = {
-    zona: "", citta: "Milano", provincia: "MI",
-    categorie: ["ristorazione"], raggio: 2000, soloQualita: true
+    modalita: "rapida",
+    campi: { zona: "", via: "", citta: "Milano", provincia: "MI", cap: "", regione: "Lombardia" },
+    categorie: ["ristorazione"],
+    raggio: 2000,
+    soloQualita: true,
+    soloConEmail: true,
+    inCorso: false
   };
   let risultati = null;      // null = mai cercato
   let scelti = new Set();
-  let cercando = false;
   let avvisiRicerca = [];
   let salvaAperto = false;
   let listaScelta = "";
@@ -409,10 +414,6 @@
   let contenuto = null;      // { lead, altreListe }
   let listaModulo = null;    // lista in creazione/modifica
   let leadModulo = null;     // lead a mano
-
-  const RAGGI = [
-    [500, "500 m"], [1000, "1 km"], [2000, "2 km"], [5000, "5 km"], [10000, "10 km"]
-  ];
 
   async function chiamaLead(azione, d = {}, timeout = 90000) {
     const stop = new AbortController();
@@ -443,35 +444,7 @@
         nel CRM: un'attività trovata qui e lì resta una riga sola, con la ricerca che l'ha
         prodotta scritta accanto.
       </p>
-      <form id="mm-cerca-form">
-        <div class="lead-categorie">
-          ${Object.entries(CATEGORIE).map(([k, v]) => `
-            <button type="button" class="chip ${ricerca.categorie.includes(k) ? "active" : ""}" data-cat="${k}">${v}</button>`).join("")}
-        </div>
-        <div class="mm-campi" style="margin-top:.8rem">
-          <label class="field"><span>Città</span>
-            <input id="c-citta" value="${esc(ricerca.citta)}" placeholder="Milano"></label>
-          <label class="field"><span>Provincia</span>
-            <input id="c-prov" maxlength="2" value="${esc(ricerca.provincia)}" placeholder="MI"></label>
-          <label class="field mm-campo-largo"><span>Via o zona (per centrare meglio)</span>
-            <input id="c-zona" value="${esc(ricerca.zona)}" placeholder="Via Dante 10 — lascia vuoto per cercare in tutta la città"></label>
-          <label class="field"><span>Raggio</span>
-            <select id="c-raggio">
-              ${RAGGI.map(([v, et]) => `<option value="${v}" ${ricerca.raggio === v ? "selected" : ""}>${et}</option>`).join("")}
-            </select></label>
-          <label class="field mm-interruttore" style="align-self:end">
-            <input id="c-qualita" type="checkbox" ${ricerca.soloQualita ? "checked" : ""}>
-            <span>Solo attività con buone recensioni
-              <em>Almeno 3,5 stelle e 5 recensioni.</em></span>
-          </label>
-        </div>
-        <div class="mm-azioni" style="margin-top:.8rem">
-          <button type="submit" class="btn btn-primary btn-sm" ${cercando ? "disabled" : ""}>
-            ${cercando ? "Cerco…" : "🔎 Cerca"}</button>
-          <span class="muted" style="font-size:.78rem">
-            ${plurale(ricerca.categorie.length, "categoria scelta", "categorie scelte")} · massimo 4</span>
-        </div>
-      </form>
+      ${window.QF_RICERCA.moduloHtml(ricerca)}
     </div>
 
     ${avvisiRicerca.length ? `
@@ -650,7 +623,7 @@
                   ${x.no_contatto ? `<span class="pill pill-on" title="${esc(x.no_contatto_motivo || "")}">si è opposto</span>` : ""}
                   ${altre ? `<span class="pill">${altre === 1 ? "anche in un'altra lista" : `anche in ${altre} altre liste`}</span>` : ""}
                   <span class="muted" style="display:block;font-size:.74rem">
-                    ${esc([CATEGORIE[x.categoria] || x.categoria, x.citta].filter(Boolean).join(" · "))}</span>
+                    ${esc([CATEGORIE()[x.categoria] || x.categoria, x.citta].filter(Boolean).join(" · "))}</span>
                 </td>
                 <td class="mm-contatti">
                   ${x.email ? `<a href="mailto:${esc(x.email)}">${esc(x.email)}</a>` : `<span class="muted">senza email</span>`}
@@ -3268,49 +3241,28 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
   function bindFinder() {
     const $ = s => document.querySelector(s);
 
-    /* I campi si leggono prima di ogni ridisegno: toccare una
-       categoria dopo aver scritto la città non deve cancellarla. */
-    const leggiRicerca = () => {
-      if (!$("#c-citta")) return;
-      ricerca.citta = $("#c-citta").value;
-      ricerca.provincia = $("#c-prov").value;
-      ricerca.zona = $("#c-zona").value;
-      ricerca.raggio = Number($("#c-raggio").value);
-      ricerca.soloQualita = $("#c-qualita").checked;
-    };
+    /* Modalità, tendine a cascata, categorie e invio stanno in
+       lead-ricerca.js: sono gli stessi del CRM. Qui resta solo
+       cosa fare dei risultati, che è l'unica cosa diversa fra le
+       due schermate — là si salva in archivio, qui in una lista.
 
-    document.querySelectorAll("[data-cat]").forEach(b =>
-      b.addEventListener("click", () => {
-        leggiRicerca();
-        const k = b.dataset.cat;
-        if (ricerca.categorie.includes(k)) ricerca.categorie = ricerca.categorie.filter(x => x !== k);
-        else if (ricerca.categorie.length >= 4) { QF().toast("Massimo quattro categorie per ricerca."); return; }
-        else ricerca.categorie.push(k);
-        QF().render();
-      }));
-
-    $("#mm-cerca-form")?.addEventListener("submit", async e => {
-      e.preventDefault();
-      leggiRicerca();
-      if (!ricerca.categorie.length) { QF().toast("Scegli almeno una categoria."); return; }
-      if (!ricerca.citta.trim() && !ricerca.zona.trim()) { QF().toast("Indica almeno la città."); return; }
-      cercando = true; QF().render();
-      const esito = await chiamaLead("cerca", {
-        modalita: "precisa",
-        via: ricerca.zona, citta: ricerca.citta, provincia: ricerca.provincia,
-        categorie: ricerca.categorie, raggio: ricerca.raggio,
-        soloQualita: ricerca.soloQualita, massimo: 50
-      });
-      cercando = false;
-      if (!esito.ok) { risultati = null; avvisiRicerca = []; QF().toast(esito.errore || "Ricerca non riuscita."); QF().render(); return; }
+       Il tetto di cinquanta è di questa schermata: una lista si
+       prepara a blocchi, e cinquanta è anche il massimo che
+       Places restituisce in tre pagine. */
+    window.QF_RICERCA.lega(ricerca, async (dati) => {
+      const esito = await chiamaLead("cerca", dati);
+      if (!esito.ok) {
+        risultati = null; avvisiRicerca = [];
+        QF().toast(esito.errore || "Ricerca non riuscita.");
+        return;
+      }
       risultati = esito.risultati || [];
       avvisiRicerca = esito.avvisi || [];
       /* Preselezionate solo quelle nuove: chi è già in archivio
          sta magari lavorando qualcuno, e riproporlo come nuovo
          è il modo per scrivergli due volte. */
       scelti = new Set(risultati.filter(r => !r.gia).map(r => r.place_id));
-      QF().render();
-    });
+    }, { massimo: 50 });
 
     $("#mm-tutti")?.addEventListener("change", e => {
       const nuovi = risultati.filter(r => !r.gia);
@@ -3328,7 +3280,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
     $("#mm-csv-risultati")?.addEventListener("click", () => {
       const righe = risultati.filter(r => scelti.has(r.place_id));
       scaricaCsv(righe.map(r => ({
-        nome: r.nome, categoria: CATEGORIE[r.categoria] || r.categoria, citta: r.citta,
+        nome: r.nome, categoria: CATEGORIE()[r.categoria] || r.categoria, citta: r.citta,
         provincia: r.provincia, indirizzo: r.indirizzo, telefono: r.telefono,
         sito: r.sito, email: "", valutazione: r.valutazione, recensioni: r.recensioni
       })), "ricerca");
@@ -3516,7 +3468,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
       scaricaCsv((contenuto?.lead || []).map(x => ({
         nome: x.nome, email: x.email, telefono: x.telefono, sito: x.sito,
         citta: x.citta, provincia: x.provincia, indirizzo: x.indirizzo,
-        categoria: CATEGORIE[x.categoria] || x.categoria,
+        categoria: CATEGORIE()[x.categoria] || x.categoria,
         fonte: x.fonte, origine: x.query_origine,
         no_contatto: x.no_contatto ? "si" : ""
       })), l?.nome || "lista");
