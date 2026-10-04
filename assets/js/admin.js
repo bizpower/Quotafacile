@@ -1019,7 +1019,9 @@ Usa **grassetto** per i numeri che contano."></textarea>
   /* Rotta corrente dentro l'area riservata: [] la porta,
      ["piattaforma", tab] la console, ["crm", sezione] il CRM. */
   function rotta() {
-    const h = (location.hash || "").replace(/^#\/?/, "").split("?")[0].split("/").filter(Boolean);
+    /* La rotta la dice QF, non il frammento: da quando si naviga
+       col percorso, location.hash e' vuoto. */
+    const h = (window.QF.rotta() || "").split("/").filter(Boolean);
     return h[0] === "admin" ? h.slice(1) : [];
   }
 

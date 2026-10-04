@@ -319,10 +319,28 @@ const svuotaAnnuncio = html =>
   html.replace(/(<p id="annuncio-rotta"[^>]*>)[\s\S]*?(<\/p>)/i, "$1$2");
 
 function meta(html, rotta, percorso) {
+  /* qf-base e la radice del sito, e serve a 404.html.
+     Pages serve quel file per qualunque percorso che non esiste -
+     /admin/crm/mail/liste, per dirne uno - e l'applicazione
+     ricavava la radice togliendo dal percorso la parte che e la
+     rotta. Su una pagina servita a un percorso che non e il suo
+     quel calcolo da "/admin/crm/mail/": da li in poi ogni
+     indirizzo costruito dall'applicazione nascerebbe appeso a
+     una cartella che non esiste. Scriverla qui vuol dire che la
+     pagina la sa, invece di indovinarla. */
   const tag =
     `<meta name="qf-rotta" content="${rotta}">\n` +
-    `  <meta name="qf-percorso" content="${percorso}">`;
-  return html.replace(/<meta charset="UTF-8">/i, `<meta charset="UTF-8">\n  ${tag}`);
+    `  <meta name="qf-percorso" content="${percorso}">\n` +
+    `  <meta name="qf-base" content="${BASE}">`;
+  /* I meta di un giro precedente si tolgono prima di scriverne di
+     nuovi. La home viene salvata per prima dentro la cartella che
+     fa anche da sorgente, quindi le pagine successive partono da
+     un file che quei meta li ha gia': senza questa riga ogni
+     pagina ne portava due coppie, la seconda vuota, e il fatto
+     che l'applicazione leggesse quella giusta dipendeva
+     dall'ordine. */
+  const pulito = html.replace(/\s*<meta name="qf-(?:rotta|percorso|base)" content="[^"]*">/g, "");
+  return pulito.replace(/<meta charset="UTF-8">/i, `<meta charset="UTF-8">\n  ${tag}`);
 }
 
 /* ---------------- sitemap ---------------- */

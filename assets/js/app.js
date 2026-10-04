@@ -351,6 +351,17 @@ const PERCORSO_PAGINA = document.querySelector('meta[name="qf-percorso"]')?.cont
    stessa togliendo dal percorso la parte che è la rotta: quello
    che resta è la base, qualunque host stia pubblicando. */
 const BASE_SITO = (() => {
+  /* Se la pagina lo dichiara, comanda quello. Lo scrive il
+     pre-render, che la radice la conosce per certo.
+     Serve a 404.html: Pages lo serve per qualunque percorso che
+     non esiste - /admin/crm/mail/liste, per dirne uno - e il
+     calcolo qui sotto, fatto su un percorso che non e quello
+     della pagina, darebbe "/admin/crm/mail/". Da li in poi ogni
+     indirizzo costruito dall'applicazione nascerebbe appeso a una
+     cartella che non esiste. */
+  const dichiarata = document.querySelector('meta[name="qf-base"]')?.content;
+  if (dichiarata) return dichiarata.endsWith("/") ? dichiarata : dichiarata + "/";
+
   let p = location.pathname;
   if (!p.endsWith("/")) p = p.replace(/[^/]*$/, "");
   if (PERCORSO_PAGINA && p.endsWith("/" + PERCORSO_PAGINA)) {
@@ -2746,18 +2757,88 @@ const LEGAL_ROUTES = {
   "chi-siamo": () => window.QF_LEGAL.views.contatti()
 };
 
-function parseHash() {
-  const raw = location.hash.replace(/^#\/?/, "") || "";
-  /* Senza frammento comanda la pagina: i file pre-renderizzati
-     stanno a un indirizzo vero e dichiarano quale rotta sono.
-     Chi arriva da Google su /guide/polizza-vita-pignorabile/
-     deve vedere quella guida, non la homepage — e deve vederla
-     senza un salto di redirect, che il motore leggerebbe come
-     "questa pagina non è quella giusta". */
-  if (!raw && ROTTA_PAGINA) {
-    return { path: ROTTA_PAGINA.split("/").filter(Boolean), query: {} };
+/* ---------------- L'INDIRIZZO È IL PERCORSO ----------------
+
+   Il sito navigava col frammento: /#/magazine. Le pagine
+   pubbliche stavano già a un indirizzo vero — le scrive il
+   pre-render, con canonical e link interni puliti — ma appena
+   una persona cliccava, il gestore dei link rimetteva il
+   cancelletto. Chi copiava l'indirizzo dalla barra copiava
+   /#/magazine, e quello era anche l'indirizzo che finiva nei
+   messaggi e nei segnalibri.
+
+   Adesso si naviga con la History API e l'indirizzo è /magazine/.
+   Due cose non cambiano, di proposito:
+
+   - i vecchi /#/magazine continuano a funzionare. Sono in
+     segnalibri, in email già partite e magari in qualche
+     risultato di ricerca: arrivano, e vengono normalizzati al
+     percorso pulito senza aggiungere una voce di cronologia;
+   - i 142 href="#/..." sparsi nei file restano come sono. Il
+     clic viene intercettato qui e tradotto in percorso, e per le
+     assegnazioni programmatiche (location.hash = "#/x", diciotto
+     in sei file) c'è il normalizzatore su hashchange. Riscriverli
+     tutti a mano sarebbe stato il modo di sbagliarne uno.
+
+   La barra finale resta: /magazine/ e non /magazine. È la forma
+   che GitHub Pages serve davvero e quella già dentro i canonical
+   e la sitemap; /magazine fa un redirect verso /magazine/. */
+
+/* Dall'indirizzo del browser alla rotta interna, con la query
+   attaccata come l'aveva il frammento. */
+function rottaDallUrl() {
+  /* Un #/... ha la precedenza su tutto: è un indirizzo vecchio
+     che qualcuno ha in un segnalibro, e va onorato prima di
+     essere riscritto. */
+  const dalFrammento = location.hash.replace(/^#\/?/, "");
+  if (dalFrammento) return dalFrammento;
+
+  const q = location.search || "";
+  const dalPercorso = rottaDaPercorso(location.pathname);
+  if (dalPercorso !== null) return dalPercorso + q;
+
+  /* Una rotta privata non ha un indirizzo pubblico in INDIRIZZI,
+     e non deve averlo: per quelle il percorso È la rotta. È il
+     caso di /admin/... e di /area-pro, che su un ricaricamento
+     diretto arrivano dal 404.html servito da Pages. */
+  if (location.pathname.startsWith(BASE_SITO)) {
+    const rel = location.pathname.slice(BASE_SITO.length).replace(/\/+$/, "");
+    if (rel) return rel + q;
   }
-  const [pathPart, queryPart] = raw.split("?");
+
+  /* Ultima spiaggia: la rotta che il pre-render ha scritto nel
+     meta della pagina. Chi arriva da Google su una guida deve
+     vederla senza un salto di redirect, che il motore leggerebbe
+     come "questa pagina non è quella giusta". */
+  return ROTTA_PAGINA ? ROTTA_PAGINA + q : q;
+}
+
+/* La strada opposta: da una rotta all'indirizzo da mettere nella
+   barra. */
+function percorsoDiRotta(rotta) {
+  const [senzaQuery, query] = String(rotta || "").replace(/^#\/?/, "").split("?");
+  const parti = senzaQuery.split("/").filter(Boolean);
+  const pub = indirizzoPubblico(parti[0] || "", parti);
+  /* null o undefined vuol dire "non ha un indirizzo pubblico":
+     rotta privata, oppure uno slug che non esiste. In entrambi i
+     casi il percorso è la rotta stessa — l'applicazione sa cosa
+     farne, e il pre-render non l'ha pubblicata. */
+  const rel = (pub === null || pub === undefined) ? parti.join("/") : pub;
+  return BASE_SITO + rel + (query ? "?" + query : "");
+}
+
+/* L'unico modo di cambiare schermata. Niente location.hash: quello
+   lascerebbe il cancelletto nella barra. */
+function vaiA(rotta) {
+  const url = percorsoDiRotta(rotta);
+  if (location.pathname + location.search === url) { render(); return; }
+  history.pushState({}, "", url);
+  render();
+}
+
+function parseHash() {
+  const raw = rottaDallUrl();
+  const [pathPart, queryPart] = raw.replace(/^\?/, "?").split("?");
   const query = {};
   if (queryPart) queryPart.split("&").forEach(kv => { const [k, v] = kv.split("="); query[k] = decodeURIComponent(v || ""); });
   return { path: pathPart.split("/").filter(Boolean), query };
@@ -2843,8 +2924,12 @@ function render() {
      passaggio da "#/preventivo?to=b1" a "#/preventivo" è una nuova
      richiesta. I render successivi a hash invariato (invio, cambio
      step) non azzerano nulla. */
-  if (ultimoHash !== null && location.hash !== ultimoHash && quoteState.step === 4) resetQuote();
-  ultimoHash = location.hash;
+  /* Il confronto è sull'indirizzo intero — percorso più query —
+     e non sulla sola pagina, perché anche il passaggio da
+     /preventivo?to=b1 a /preventivo è una richiesta nuova. */
+  const indirizzoOra = location.pathname + location.search;
+  if (ultimoHash !== null && indirizzoOra !== ultimoHash && quoteState.step === 4) resetQuote();
+  ultimoHash = indirizzoOra;
 
   if (page === "" || page === "home") { html = views.home(); navKey = "home"; }
   else if (page === "professionisti") html = views.professionisti();
@@ -3110,7 +3195,7 @@ function apriEnterprise() {
 function bind() {
   /* card cliccabili */
   document.querySelectorAll("[data-goto]").forEach(el =>
-    el.addEventListener("click", e => { if (e.target.closest("a,button")) return; location.hash = el.dataset.goto; }));
+    el.addEventListener("click", e => { if (e.target.closest("a,button")) return; vaiA(el.dataset.goto); }));
 
   /* filtri */
   document.querySelectorAll("[data-filter]").forEach(b =>
@@ -3126,7 +3211,7 @@ function bind() {
       const piano = b.dataset.abbona;
       if (!window.QF_PRO?.autenticato()) {
         proModo = "registrati";
-        location.hash = "#/area-pro";
+        vaiA("area-pro");
         toast("Crea il tuo account: l'abbonamento si aggancia a quello.");
         return;
       }
@@ -3498,7 +3583,7 @@ function bind() {
     DB.proProfile.risposte = (DB.proProfile.risposte || 0) + 1;
     saveDB();
     toast("FAQ pubblicata in bacheca.");
-    location.hash = "#/bacheca";
+    vaiA("bacheca");
   });
 }
 
@@ -3517,6 +3602,13 @@ window.QF = {
      un "/assets/..." scritto a mano funzionerebbe solo in uno dei
      due posti. */
   base: BASE_SITO,
+  /* La rotta e la query di adesso, lette dall'indirizzo.
+     Esistono perché quattro moduli le leggevano da location.hash,
+     e col percorso quel frammento è vuoto: chi chiede "dove
+     sono?" deve avere una risposta sola, e questa. */
+  rotta: () => parseHash().path.join("/"),
+  query: () => parseHash().query,
+  vaiA,
   /* Serve a chi deve parlare con l'area riservata prima che il
      router ci arrivi: l'uscita dall'Area Pro di un collaboratore
      la rimanda lì, e senza aspettare il caricamento parlerebbe a
@@ -3524,7 +3616,26 @@ window.QF = {
   caricaRiservata
 };
 
-window.addEventListener("hashchange", render);
+/* Il normalizzatore.
+
+   Serve a due cose diverse che arrivano dalla stessa porta: i
+   vecchi indirizzi /#/x che qualcuno apre da un segnalibro, e le
+   diciotto assegnazioni location.hash = "#/x" sparse nei file
+   dell'area riservata. In entrambi i casi il frammento viene
+   tradotto in percorso con replaceState — che sostituisce la voce
+   di cronologia invece di aggiungerne una — e la barra mostra
+   l'indirizzo pulito. */
+window.addEventListener("hashchange", () => {
+  const raw = location.hash.replace(/^#\/?/, "");
+  if (!raw) { render(); return; }
+  history.replaceState({}, "", percorsoDiRotta(raw));
+  render();
+});
+
+/* Avanti e indietro del browser. Con il frammento ci pensava
+   hashchange; col percorso serve questo, altrimenti l'indirizzo
+   cambia e la pagina resta quella di prima. */
+window.addEventListener("popstate", render);
 
 /* I collegamenti dentro la stessa pagina.
 
@@ -3601,10 +3712,9 @@ document.addEventListener("click", e => {
 
   /* Cambiando schermata l'intestazione deve esserci: si arriva in
      cima alla pagina nuova, ed è il momento in cui serve di più. */
-  window.addEventListener("hashchange", () => {
-    barra.classList.remove("ritratta");
-    ultimo = 0;
-  });
+  const inCima = () => { barra.classList.remove("ritratta"); ultimo = 0; };
+  window.addEventListener("hashchange", inCima);
+  window.addEventListener("popstate", inCima);
 })();
 
 /* Il link "salta al contenuto" punta a #app, che per un browser
@@ -3648,19 +3758,32 @@ document.addEventListener("click", e => {
      i link interni riportavano alla pagina di partenza.
      Questi link li gestisce il router, come ha sempre fatto. */
   const href = a.getAttribute("href") || "";
+
+  /* href="#/magazine" è una rotta, href="#piani" è un'ancora
+     dentro la pagina. La prima la traduciamo in percorso, così il
+     cancelletto non arriva nemmeno nella barra; la seconda la
+     lascia passare chi gestisce lo scorrimento. */
+  if (href.startsWith("#/")) {
+    e.preventDefault();
+    vaiA(href.slice(1));
+    return;
+  }
   if (href.startsWith("#")) return;
 
   const rotta = rottaDaPercorso(a.pathname);
   if (rotta === null) return;
   e.preventDefault();
-  const nuovo = "#/" + rotta + (a.search || "");
-  /* Stesso indirizzo: cambiare l'hash non scatenerebbe niente,
-     quindi si ridisegna a mano. Capita tornando sulla home dalla
-     home, ed è il caso in cui azzerare il modulo del preventivo
-     serve davvero. */
-  if (location.hash === nuovo) { render(); return; }
-  location.hash = nuovo;
+  vaiA(rotta + (a.search || ""));
 });
+
+/* Un indirizzo col cancelletto aperto da un segnalibro si
+   normalizza prima del primo disegno, non dopo: così la barra non
+   mostra /#/magazine nemmeno per un istante, e la cronologia
+   nasce già pulita. */
+(() => {
+  const raw = location.hash.replace(/^#\/?/, "");
+  if (raw) history.replaceState({}, "", percorsoDiRotta(raw));
+})();
 
 render();
 
