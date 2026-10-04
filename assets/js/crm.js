@@ -285,59 +285,30 @@
      ricerca la fa il server. Una chiave Places in un file
      JavaScript è pubblica per definizione, e la si ritrova
      consumata da altri sul conto di chi l'ha esposta. */
-  const CATEGORIE_LEAD = {
-    ristorazione: "Ristoranti e pizzerie", bar: "Bar e caffetterie",
-    hotel: "Hotel e B&B", cantine: "Cantine e aziende vinicole",
-    enoteche: "Enoteche", agriturismi: "Agriturismi",
-    officine: "Officine e autoriparazioni", concessionarie: "Concessionarie auto",
-    edilizia: "Imprese edili", impiantisti: "Impiantisti",
-    studi: "Commercialisti e consulenti", avvocati: "Studi legali",
-    medici: "Studi medici e dentisti", palestre: "Palestre e centri fitness",
-    parrucchieri: "Parrucchieri ed estetica", negozi: "Negozi al dettaglio",
-    supermercati: "Supermercati e alimentari", trasporti: "Trasporti e logistica",
-    agenzie_immobiliari: "Agenzie immobiliari", assicurazioni: "Agenzie assicurative"
-  };
+  /* Le venti categorie vivono in lead-ricerca.js, insieme al
+     modulo che le disegna: averne due elenchi vorrebbe dire due
+     chiavi che con il tempo divergono, e una ricerca che torna
+     vuota senza spiegazione. Si legge quando serve, non al
+     caricamento: i file dell'area riservata arrivano in
+     parallelo. */
+  const CATEGORIE_LEAD = () => window.QF_RICERCA?.CATEGORIE || {};
 
   const STATI_LEAD = {
     nuovo: "🔵 Nuovo", contattato: "🟡 Contattato",
     in_trattativa: "🟠 In trattativa", cliente: "🟢 Cliente", scartato: "⚪ Scartato"
   };
 
-  /* ---- Regioni, province e comuni ----
-     L'elenco sta in assets/data/comuni.json (lo rigenera
-     tools/comuni.mjs dai dati ISTAT) ed è 190 KB: troppi per
-     farli scaricare a chi apre il CRM per guardare la
-     produzione. Si caricano quando servono davvero, cioè la
-     prima volta che si apre la ricerca precisa, e una volta
-     sola. Se non arrivano, i campi tornano a essere di testo
-     libero invece di lasciare tre tendine vuote. */
-  const geo = { dati: null, inCorso: false, fallita: false };
-
-  function caricaGeo() {
-    if (geo.dati || geo.inCorso || geo.fallita) return;
-    geo.inCorso = true;
-    fetch((QF().base || "/") + "assets/data/comuni.json")
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(String(r.status))))
-      .then(d => { geo.dati = d; })
-      .catch(() => { geo.fallita = true; })
-      .finally(() => { geo.inCorso = false; QF().render(); });
-  }
-
-  /* La provincia è la chiave di tutto: la sigla è quella che il
-     server riceve, ed è anche quella con cui si trovano i comuni.
-     La regione serve solo ad accorciare la tendina delle
-     province, quindi se manca non blocca niente. */
-  const provinceDi = regione => {
-    if (!geo.dati) return [];
-    if (regione && geo.dati.regioni[regione]) return geo.dati.regioni[regione];
-    return Object.keys(geo.dati.province)
-      .sort((a, b) => geo.dati.province[a].nome.localeCompare(geo.dati.province[b].nome, "it"));
-  };
-  const comuniDi = sigla => (geo.dati && geo.dati.comuni[sigla]) || [];
-
   /* Stato della ricerca. Vive solo finché la scheda è aperta: i
      risultati non salvati non sono un archivio, sono una lista
-     della spesa. */
+     della spesa.
+
+     La forma è quella che lead-ricerca.js si aspetta, ed è la
+     stessa nel mail marketing. Cambia un valore iniziale e non è
+     una svista: qui soloConEmail nasce spento, perché nel CRM si
+     esplora una zona per capire chi c'è e aprire il sito di ogni
+     risultato costerebbe secondi a chi non li ha chiesti. Nel
+     mail marketing nasce acceso, perché lì le liste servono a
+     mandare email. */
   const ricerca = {
     modalita: "rapida",
     campi: { zona: "", via: "", citta: "Milano", provincia: "MI", cap: "", regione: "Lombardia" },
@@ -351,101 +322,6 @@
     scelti: new Set(),
     filtroStato: "tutti"
   };
-
-  /* I tre menu a tendina della ricerca precisa.
-
-     Prima erano campi di testo, e il testo libero qui è una
-     trappola silenziosa: «Reggio Emilia» invece di «Reggio
-     nell'Emilia», o una sigla di provincia che non esiste,
-     centrano la ricerca da un'altra parte senza dire niente. Si
-     scopre dai risultati sbagliati, quando si è già consumata una
-     chiamata a Google.
-
-     Regione → Provincia → Comune: ogni tendina restringe la
-     successiva, così la terza ha al massimo trecento voci invece
-     di ottomila. La regione è facoltativa e serve solo a
-     accorciare l'elenco delle province. */
-  function zoneHtml(R) {
-    if (geo.fallita) {
-      return `
-        <div class="legal-warning" style="margin-bottom:.7rem">
-          L'elenco dei comuni non si è caricato: i campi qui sotto restano liberi.
-          Scrivi il nome del comune come lo scrive l'anagrafe.
-        </div>
-        <div class="grid-2" style="gap:.6rem">
-          <div class="field"><label for="ld-citta">Città *</label>
-            <input id="ld-citta" required value="${esc(R.campi.citta)}" placeholder="Milano"></div>
-          <div class="field"><label for="ld-prov">Provincia</label>
-            <input id="ld-prov" maxlength="2" value="${esc(R.campi.provincia)}" placeholder="MI"
-                   style="text-transform:uppercase"></div>
-        </div>
-        <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
-          <div class="field"><label for="ld-via">Via e civico</label>
-            <input id="ld-via" value="${esc(R.campi.via)}" placeholder="Corso Lodi 10"></div>
-          <div class="field"><label for="ld-cap">CAP</label>
-            <input id="ld-cap" value="${esc(R.campi.cap)}" placeholder="20139"></div>
-        </div>`;
-    }
-
-    if (!geo.dati) {
-      return `<p class="muted" style="margin:.4rem 0 .8rem">Carico l'elenco dei comuni…</p>`;
-    }
-
-    const prov = provinceDi(R.campi.regione);
-    /* Niente scelta di ripiego.
-       Prima, se la provincia non era fra quelle della regione, si
-       prendeva la prima in ordine alfabetico — e lo stesso per il
-       comune. Scegliendo «Lombardia» ti ritrovavi in provincia di
-       Bergamo, scegliendo «Monza e della Brianza» ti ritrovavi ad
-       Agrate Brianza: mai detto da nessuno, mai scritto da
-       nessuna parte, e la ricerca partiva centrata li'.
-       Una tendina che sceglie al posto tuo e non te lo dice e'
-       peggio di una vuota: la seconda si nota. */
-    const sigla = prov.includes(R.campi.provincia) ? R.campi.provincia : "";
-    const elenco = comuniDi(sigla);
-    const citta = elenco.some(c => c[0] === R.campi.citta) ? R.campi.citta : "";
-    /* Il CAP mostrato: quello scritto a mano se c'è, altrimenti
-       quello del comune selezionato quando ne ha uno solo. Si
-       calcola qui e non si scrive nello stato, perché questa
-       funzione disegna e basta. */
-    const capMostrato = R.campi.cap || (elenco.find(c => c[0] === citta) || [])[1] || "";
-
-    return `
-      <div class="grid-3" style="gap:.6rem">
-        <div class="field"><label for="ld-regione">Regione</label>
-          <select id="ld-regione">
-            <option value="">Tutte le regioni</option>
-            ${Object.keys(geo.dati.regioni).map(r =>
-              `<option value="${esc(r)}" ${R.campi.regione === r ? "selected" : ""}>${esc(r)}</option>`).join("")}
-          </select></div>
-        <div class="field"><label for="ld-prov">Provincia *</label>
-          <select id="ld-prov" required>
-            <option value="">— scegli la provincia —</option>
-            ${prov.map(s =>
-              `<option value="${esc(s)}" ${sigla === s ? "selected" : ""}>${esc(geo.dati.province[s].nome)} (${esc(s)})</option>`).join("")}
-          </select></div>
-        <div class="field"><label for="ld-citta">Comune</label>
-          <select id="ld-citta" ${sigla ? "" : "disabled"}>
-            <option value="">— nessuno —</option>
-            ${elenco.map(([n]) =>
-              `<option value="${esc(n)}" ${citta === n ? "selected" : ""}>${esc(n)}</option>`).join("")}
-          </select>
-          <p class="privacy-hint">${
-            !sigla ? "Scegli prima la provincia."
-            : citta ? `${elenco.length} comuni in questa provincia. Scrivi le prime lettere per arrivarci.`
-            : `Senza comune la ricerca parte dal centro della provincia, con lo stesso raggio: per coprirla tutta servono più ricerche. ${elenco.length} comuni fra cui scegliere.`
-          }</p>
-        </div>
-      </div>
-      <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
-        <div class="field"><label for="ld-via">Via e civico <span class="muted">(facoltativo)</span></label>
-          <input id="ld-via" value="${esc(R.campi.via)}" placeholder="Corso Lodi 10"></div>
-        <div class="field"><label for="ld-cap">CAP <span class="muted">(facoltativo)</span></label>
-          <input id="ld-cap" inputmode="numeric" maxlength="5" value="${esc(capMostrato)}" placeholder="20139">
-          <p class="privacy-hint">Si compila da solo per i comuni che ne hanno uno solo; per le città grandi scegli tu la zona.</p>
-        </div>
-      </div>`;
-  }
 
   function leadView() {
     const salvati = D().lead || [];
@@ -461,49 +337,7 @@
       <div class="card">
         <h3>🔎 Cerca attività</h3>
         <p class="muted" style="font-size:.85rem">Anagrafica d'impresa dalle API ufficiali di Google, non da pagine raschiate. L'email fa eccezione — Google non la fornisce — e quando la chiedi viene letta sul sito che l'attività pubblica da sé: è una delle fonti già dichiarate nell'informativa alle imprese. Di ogni contatto salvato resta scritto da dove viene, email compresa: è la risposta a «dove avete preso il mio recapito», ed è ciò che tiene la raccolta dentro il legittimo interesse.</p>
-
-        <div class="filterbar" style="margin:.9rem 0 .6rem">
-          <button class="chip ${!precisa ? "active" : ""}" data-lead-modalita="rapida">Ricerca rapida</button>
-          <button class="chip ${precisa ? "active" : ""}" data-lead-modalita="precisa">Ricerca precisa</button>
-        </div>
-
-        <form id="lead-form">
-          ${precisa ? zoneHtml(R) : `
-            <div class="field"><label for="ld-zona">Zona *</label>
-              <input id="ld-zona" required value="${esc(R.campi.zona)}" placeholder="Opera, Milano — oppure un CAP, un quartiere, una via">
-              <p class="privacy-hint">Più è precisa la zona, più i risultati sono nel posto giusto: «Milano» centra il cerchio in Duomo.</p>
-            </div>`}
-
-          <div class="field" style="margin-top:.8rem">
-            <label>Categorie <span class="muted">(fino a 4)</span></label>
-            <div class="lead-categorie">
-              ${Object.entries(CATEGORIE_LEAD).map(([k, v]) => `
-                <button type="button" class="chip ${R.categorie.includes(k) ? "active" : ""}" data-lead-cat="${k}">${v}</button>`).join("")}
-            </div>
-          </div>
-
-          <div class="grid-2" style="gap:.6rem;margin-top:.8rem">
-            <div class="field"><label for="ld-raggio">Raggio</label>
-              <select id="ld-raggio">
-                ${[[500, "500 m"], [1000, "1 km"], [2000, "2 km"], [5000, "5 km"], [10000, "10 km"]].map(([v, t]) =>
-                  `<option value="${v}" ${R.raggio === v ? "selected" : ""}>${t}</option>`).join("")}
-              </select></div>
-            <div class="field" style="justify-content:flex-end">
-              <label class="checkline" style="margin-top:1.6rem">
-                <input type="checkbox" id="ld-qualita" ${R.soloQualita ? "checked" : ""}>
-                <span>Solo attività con valutazione ≥ 3,5 e almeno 5 recensioni</span>
-              </label>
-              <label class="checkline" style="margin-top:.5rem">
-                <input type="checkbox" id="ld-email" ${R.soloConEmail ? "checked" : ""}>
-                <span>Solo con email pubblica <em class="muted" style="font-style:normal">— pronti per il mail marketing</em></span>
-              </label>
-            </div>
-          </div>
-
-          <button class="btn btn-primary" style="margin-top:.9rem" type="submit" ${R.inCorso ? "disabled" : ""}>
-            ${R.inCorso ? "Ricerca in corso…" : "Cerca"}
-          </button>
-        </form>
+        ${window.QF_RICERCA.moduloHtml(R)}
       </div>`;
 
     const risultati = () => {
@@ -574,7 +408,7 @@
                   ${l.telefono ? `<a href="tel:${esc(String(l.telefono).replace(/\s/g, ""))}">📞 ${esc(l.telefono)}</a>` : `<span class="muted">senza telefono</span>`}
                   ${l.sito ? ` · <a href="${esc(l.sito)}" target="_blank" rel="noopener">🌐 sito</a>` : ""}
                   ${l.valutazione ? ` · ⭐ ${l.valutazione}` : ""}
-                  · <span class="muted">${esc(CATEGORIE_LEAD[l.categoria] || l.categoria || "—")}</span>
+                  · <span class="muted">${esc(CATEGORIE_LEAD()[l.categoria] || l.categoria || "—")}</span>
                 </span>
                 <span class="lead-meta muted">Trovato il ${dataBreve(l.raccolto_il)} cercando «${esc(l.query_origine || "—")}» su Google Places</span>
                 ${l.no_contatto ? `
@@ -979,125 +813,18 @@
     /* ---- lead locali ---- */
     const R = ricerca;
 
-    document.querySelectorAll("[data-lead-modalita]").forEach(b =>
-      b.addEventListener("click", () => {
-        leggiCampiRicerca();
-        R.modalita = b.dataset.leadModalita;
-        if (R.modalita === "precisa") caricaGeo();
-        QF().render();
-      }));
-
-    /* La ricerca precisa può essere già aperta quando la sezione
-       viene ridisegnata per un altro motivo: l'elenco va chiesto
-       anche qui, e caricaGeo() sa già di non ripetersi. */
-    if (R.modalita === "precisa") caricaGeo();
-
-    /* Le tre tendine sono a cascata: cambiare regione svuota la
-       provincia scelta se non le appartiene piu', e cambiare
-       provincia svuota il comune. Il valore vecchio non si
-       "ripulisce": si lascia che zoneHtml ricada sul primo
-       elemento valido, cosi' il modulo non resta mai in uno stato
-       che il server rifiuterebbe.
-
-       Si agganciano solo quando le tendine ci sono davvero: se
-       l'elenco dei comuni non si e' caricato gli stessi
-       identificativi appartengono a campi di testo, e un gestore
-       che azzera il comune a ogni uscita dal campo cancellerebbe
-       quello che si sta scrivendo. */
-    if (geo.dati && R.modalita === "precisa") {
-      $("#ld-regione")?.addEventListener("change", e => {
-        leggiCampiRicerca();
-        R.campi.regione = e.target.value;
-        const prov = provinceDi(R.campi.regione);
-        if (!prov.includes(R.campi.provincia)) {
-          R.campi.provincia = prov[0] || "";
-          R.campi.citta = "";
-          R.campi.cap = "";
-        }
-        QF().render();
-      });
-
-      $("#ld-prov")?.addEventListener("change", e => {
-        leggiCampiRicerca();
-        R.campi.provincia = e.target.value;
-        R.campi.citta = "";
-        R.campi.cap = "";
-        QF().render();
-      });
-
-      /* Scegliendo il comune si compila il CAP, ma solo se quel
-         comune ne ha uno solo: Milano ne ha decine e sceglierne
-         uno a caso vorrebbe dire centrare la ricerca su un
-         quartiere qualunque senza che nessuno se ne accorga. */
-      $("#ld-citta")?.addEventListener("change", e => {
-        leggiCampiRicerca();
-        R.campi.citta = e.target.value;
-        const trovato = comuniDi(R.campi.provincia).find(c => c[0] === R.campi.citta);
-        R.campi.cap = trovato && trovato[1] ? trovato[1] : "";
-        QF().render();
-      });
-    }
-
-    document.querySelectorAll("[data-lead-cat]").forEach(b =>
-      b.addEventListener("click", () => {
-        leggiCampiRicerca();
-        const k = b.dataset.leadCat;
-        if (R.categorie.includes(k)) R.categorie = R.categorie.filter(x => x !== k);
-        else if (R.categorie.length >= 4) { QF().toast("Massimo 4 categorie per ricerca."); return; }
-        else R.categorie.push(k);
-        QF().render();
-      }));
-
-    /* I campi si rileggono prima di ogni ridisegno: il render
-       ricostruisce il modulo da capo, e quello che l'utente ha
-       già scritto non deve sparire perché ha toccato una
-       categoria. */
-    function leggiCampiRicerca() {
-      const g = id => document.querySelector(id)?.value;
-      if (R.modalita === "precisa") {
-        R.campi.via = g("#ld-via") ?? R.campi.via;
-        R.campi.cap = g("#ld-cap") ?? R.campi.cap;
-        R.campi.citta = g("#ld-citta") ?? R.campi.citta;
-        R.campi.provincia = (g("#ld-prov") ?? R.campi.provincia).toUpperCase();
-        R.campi.regione = g("#ld-regione") ?? R.campi.regione;
-      } else {
-        R.campi.zona = g("#ld-zona") ?? R.campi.zona;
-      }
-      const raggio = g("#ld-raggio");
-      if (raggio) R.raggio = Number(raggio);
-      const q = document.querySelector("#ld-qualita");
-      if (q) R.soloQualita = q.checked;
-      const em = document.querySelector("#ld-email");
-      if (em) R.soloConEmail = em.checked;
-    }
-
-    $("#lead-form")?.addEventListener("submit", async e => {
-      e.preventDefault();
-      leggiCampiRicerca();
-      if (!R.categorie.length) { QF().toast("Scegli almeno una categoria."); return; }
-      R.inCorso = true; R.errore = null; R.scelti = new Set();
-      QF().render();
-      /* Senza comune il server comporrebbe «(MB), Italia», che non
-         è il centro di niente: Google ci restituirebbe un punto a
-         caso o un errore. Al suo posto si manda il nome della
-         provincia, che è esattamente quello che l'etichetta
-         promette — «la ricerca parte dal centro della provincia». */
-      const nomeProvincia = geo.dati?.province?.[R.campi.provincia]?.nome || "";
-      const citta = R.modalita === "precisa" && !R.campi.citta
-        ? nomeProvincia
-        : R.campi.citta;
-
-      const esito = await chiamaLead("cerca", {
-        modalita: R.modalita,
-        zona: R.campi.zona, via: R.campi.via, citta,
-        provincia: R.campi.provincia, cap: R.campi.cap,
-        categorie: R.categorie, raggio: R.raggio, soloQualita: R.soloQualita,
-        soloConEmail: R.soloConEmail
-      });
-      R.inCorso = false;
+    /* Modalità, tendine a cascata, categorie e invio stanno in
+       lead-ricerca.js: sono gli stessi del mail marketing, e la
+       volta che ne ho corretta una sola — il comune facoltativo —
+       l'altra è rimasta indietro per settimane. Qui resta solo
+       cosa fare dei risultati, che è l'unica cosa diversa fra le
+       due schermate. */
+    window.QF_RICERCA.lega(R, async (dati) => {
+      R.scelti = new Set();
+      R.errore = null;
+      const esito = await chiamaLead("cerca", dati);
       if (esito.ok) { R.esito = esito; R.errore = null; }
       else { R.esito = null; R.errore = esito.errore || "Ricerca non riuscita."; }
-      QF().render();
     });
 
     document.querySelectorAll("[data-lead-scegli]").forEach(b =>
