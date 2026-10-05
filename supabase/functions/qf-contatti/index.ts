@@ -92,8 +92,18 @@ async function avvisaEmail(a: string[], oggetto: string, campi: Record<string, u
   return r.ok && !!esito.id;
 }
 
+/* Il ripiego è una casella di QuotaFacile, non di un'altra
+   azienda.
+   Prima era r.difalco@lori-crm.it: se QF_DESTINATARIO non è
+   impostato — ed è facile che non lo sia, perché il sito funziona
+   comunque — i recapiti di chi chiede un preventivo su
+   QuotaFacile finiscono su un dominio che non è quello del
+   Titolare dichiarato nell'informativa. Non è un guasto, è un
+   destinatario sbagliato, che è peggio: nessuno se ne accorge.
+   Ora il ripiego è la casella del dominio di QuotaFacile; il
+   segreto QF_DESTINATARIO continua a vincere su di esso. */
 async function notifica(oggetto: string, campi: Record<string, unknown>, extra?: string | null) {
-  const piattaforma = Deno.env.get("QF_DESTINATARIO") || "r.difalco@lori-crm.it";
+  const piattaforma = Deno.env.get("QF_DESTINATARIO") || "r.difalco@quotafacile.net";
   const a = [piattaforma];
   if (extra && emailValida(extra) && extra !== piattaforma) a.push(extra);
   const [email, telegram] = await Promise.all([
@@ -205,7 +215,7 @@ async function iscrizionePro(d: Record<string, unknown>) {
     "RUI dichiarato": riga.rui_numero, "Sezione": riga.rui_sezione,
     "Opera per conto di": riga.opera_per_conto,
     "Città": riga.citta, "Telefono": riga.telefono, "Email": email,
-    "Da fare": "verificare su servizi.ivass.it/RuirPubblica e approvare in #/admin",
+    "Da fare": "verificare su servizi.ivass.it/RuirPubblica e approvare in /admin",
   });
   return { id: data.id };
 }
