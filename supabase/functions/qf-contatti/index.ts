@@ -13,9 +13,14 @@
 // Le notifiche sono opzionali e si configurano con variabili
 // d'ambiente. Nessuna configurata = il sito funziona lo stesso,
 // i contatti si leggono dal database.
-//   QF_RESEND_KEY / QF_RESEND_FROM         avviso via email
+//   (nessuno)                              la casella del Mail
+//                                          Marketing, se c'è
 //   QF_TELEGRAM_TOKEN / QF_TELEGRAM_CHAT   avviso sul telefono
+//   QF_RESEND_KEY / QF_RESEND_FROM         avviso via email
 //   QF_DESTINATARIO                        casella della piattaforma
+//
+// Il canale normale non ha segreti da impostare: è la casella di
+// posta già configurata nel Mail Marketing. Vedi avvisaSmtp().
 // ============================================================
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
@@ -92,6 +97,143 @@ async function avvisaEmail(a: string[], oggetto: string, campi: Record<string, u
   return r.ok && !!esito.id;
 }
 
+/* ---------------- L'avviso parte dalla casella che già c'è ----------------
+ *
+ * PERCHE' NON UN SERVIZIO ESTERNO
+ *
+ * La Gmail del dominio è già configurata nel Mail Marketing: la
+ * password sta nel vault, il client SMTP è già quello, il limite
+ * giornaliero è già contato. Aprire un conto su un terzo servizio
+ * solo per avvisare noi stessi vorrebbe dire una dipendenza in
+ * più da ricordarsi, da pagare e da far scadere — per fare una
+ * cosa che il progetto sa già fare.
+ *
+ * TRE DIFFERENZE DAL MAIL MARKETING, VOLUTE
+ *
+ *  1. Niente piede di marketing. Questo è un avviso a noi
+ *     stessi su una richiesta ricevuta, non una comunicazione
+ *     commerciale a un'impresa: la formula di opposizione qui non
+ *     c'entra niente e farebbe solo rumore.
+ *
+ *  2. Il limite giornaliero della casella vale anche qui, e
+ *     l'invio si conta. Per Gmail questi messaggi sono come tutti
+ *     gli altri: se un modulo pubblico potesse spedire senza
+ *     limite, un diluvio di richieste finte brucerebbe la quota e
+ *     fermerebbe le campagne. Esaurita la quota, l'avviso non
+ *     parte e la richiesta resta in admin — che è il
+ *     comportamento giusto, non un guasto.
+ *
+ *  3. Non blocca niente. La riga è già scritta prima di arrivare
+ *     qui: se la posta non parte si segna l'errore e si va
+ *     avanti.
+ */
+
+const oggiISO = () => new Date().toISOString().slice(0, 10);
+
+/* Si prende la prima casella attiva che ha una password. Non si
+   chiede che il test sia andato a buon fine: una casella attiva
+   non ancora provata va tentata comunque, perché il tentativo è
+   di per sé l'unica cosa che dice se funziona. */
+async function casellaDiServizio() {
+  const { data } = await db.from("mm_smtp")
+    .select("id,nome,host,porta,utente,tls,from_email,from_nome,rispondi_a,stato," +
+            "limite_giornaliero,inviate_oggi,giorno_contatore,segreto_id")
+    .eq("stato", "attivo")
+    .not("segreto_id", "is", null)
+    .order("creato_il")
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+
+  const limite = Number(data.limite_giornaliero ?? 0);
+  const usate = data.giorno_contatore === oggiISO() ? Number(data.inviate_oggi ?? 0) : 0;
+  if (limite > 0 && usate >= limite) return { casella: data, usate, esaurita: true as const };
+
+  const { data: pass } = await db.rpc("mm_segreto_leggi", { p_id: data.segreto_id });
+  if (!pass) return null;
+  return { casella: data, usate, password: String(pass) };
+}
+
+async function avvisaSmtp(a: string[], oggetto: string, campi: Record<string, unknown>) {
+  const c = await casellaDiServizio();
+  if (!c) return null;                 // canale non configurato
+  if ("esaurita" in c) return false;   // configurato, ma la quota di oggi è finita
+
+  const corpo = Object.entries(campi)
+    .filter(([, v]) => v)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join("\n") + "\n\n—\nAvviso automatico dal sito QuotaFacile.";
+
+  const { SMTPClient } = await import("https://deno.land/x/denomailer@1.6.0/mod.ts");
+  const client = new SMTPClient({
+    connection: {
+      hostname: String(c.casella.host),
+      port: Number(c.casella.porta),
+      tls: !!c.casella.tls,
+      auth: { username: String(c.casella.utente), password: c.password },
+    },
+  });
+
+  let inviati = 0;
+  try {
+    for (const dest of a) {
+      await client.send({
+        from: c.casella.from_nome
+          ? `${c.casella.from_nome} <${c.casella.from_email}>`
+          : String(c.casella.from_email),
+        to: dest,
+        // rispondendo all'avviso si scrive direttamente a chi ha chiesto
+        replyTo: emailValida(String(campi["Email"] ?? "")) ? String(campi["Email"]) : undefined,
+        subject: oggetto,
+        content: corpo,
+      });
+      inviati++;
+    }
+  } catch (e) {
+    /* Nel registro, non solo nella colonna notifica_errore: qui
+       finisce il motivo vero del rifiuto del server di posta
+       (il 535 di Gmail quando la password per le app non è
+       quella, per dirne uno), e senza quello la diagnosi
+       sarebbe «tutti i canali hanno fallito», che non aiuta
+       nessuno. */
+    console.error("[qf-contatti] avviso SMTP non riuscito:",
+      e instanceof Error ? e.message : String(e));
+    throw e;
+  } finally {
+    /* close() non restituisce sempre una promise, e se la
+       connessione è già caduta solleva: in nessuno dei due casi
+       deve far fallire un avviso che è partito. */
+    try { await client.close(); } catch { /* connessione già chiusa */ }
+    if (inviati) {
+      await db.from("mm_smtp").update({
+        inviate_oggi: c.usate + inviati,
+        giorno_contatore: oggiISO(),
+        ultimo_uso: new Date().toISOString(),
+      }).eq("id", c.casella.id as string);
+    }
+  }
+  return inviati > 0;
+}
+
+/* L'indirizzo dell'intermediario arriva dal browser, e dal
+   browser può arrivare qualunque cosa.
+   Finché l'avviso usciva da un servizio esterno era un fastidio.
+   Adesso esce dalla casella del dominio, e un modulo pubblico che
+   spedisce all'indirizzo scelto da chi lo compila è un relay
+   aperto: basta riempire «note» per far partire testo arbitrario
+   da quotafacile.net verso chiunque, e il conto lo paga la
+   reputazione del dominio con cui si fa l'outreach.
+   Quindi la copia all'intermediario parte solo se quell'indirizzo
+   è davvero di un profilo in archivio. La riga della richiesta
+   continua a conservare quello che è arrivato: è un dato, e va
+   letto in admin; semplicemente non ci si spedisce sopra. */
+async function intermediarioVero(email: string | null): Promise<string | null> {
+  if (!emailValida(email)) return null;
+  const { data } = await db.from("pro_profili")
+    .select("email").eq("email", email).limit(1).maybeSingle();
+  return data ? email : null;
+}
+
 /* Il ripiego è una casella di QuotaFacile, non di un'altra
    azienda.
    Prima era r.difalco@lori-crm.it: se QF_DESTINATARIO non è
@@ -106,12 +248,13 @@ async function notifica(oggetto: string, campi: Record<string, unknown>, extra?:
   const piattaforma = Deno.env.get("QF_DESTINATARIO") || "r.difalco@quotafacile.net";
   const a = [piattaforma];
   if (extra && emailValida(extra) && extra !== piattaforma) a.push(extra);
-  const [email, telegram] = await Promise.all([
+  const [smtp, email, telegram] = await Promise.all([
+    avvisaSmtp(a, oggetto, campi).catch(() => false),
     avvisaEmail(a, oggetto, campi).catch(() => false),
     avvisaTelegram(oggetto, campi).catch(() => false),
   ]);
   // null = canale non configurato: non è un fallimento di consegna
-  const configurati = [email, telegram].filter((x) => x !== null);
+  const configurati = [smtp, email, telegram].filter((x) => x !== null);
   if (configurati.length === 0) {
     return { inviata: false, errore: "Nessun canale di notifica configurato: la richiesta è salvata e va letta dall'area admin" };
   }
@@ -171,7 +314,7 @@ async function richiesta(d: Record<string, unknown>) {
       "Email": riga.email, "Telefono": riga.telefono, "Note": riga.note,
       "Intermediario": riga.destinatario_nome ?? "da smistare per ramo",
     },
-    riga.destinatario_email,
+    await intermediarioVero(riga.destinatario_email),
   );
   await db.from("richieste")
     .update({ notifica_inviata: esito.inviata, notifica_errore: esito.errore })
