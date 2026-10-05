@@ -1916,7 +1916,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
               <input id="f-limite" type="number" min="1" value="${f.limite_giornaliero}"></label>
 
             <label class="field"><span>Indirizzo mittente *</span>
-              <input id="f-from" type="email" required value="${esc(f.from_email)}" placeholder="info@quotafacile.net"></label>
+              <input id="f-from" type="email" required value="${esc(f.from_email)}" placeholder="${esc(mittente()?.from_email || "nome@quotafacile.net")}"></label>
             <label class="field"><span>Nome mittente</span>
               <input id="f-fromnome" value="${esc(f.from_nome)}" placeholder="QuotaFacile"></label>
 
