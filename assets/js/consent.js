@@ -19,6 +19,11 @@
 "use strict";
 
 (function () {
+/* Le icone disegnate (assets/js/icone.js). Il ripiego a stringa
+     vuota tiene in piedi la pagina se un giorno gli <script>
+     cambiassero ordine: meglio senza icona che fermi a metà. */
+  const CC_ICO = (n, c) => window.QF_ICONE ? window.QF_ICONE.ico(n, c) : "";
+
   const KEY = "qf_consent_v1";
   const VERSION = 1;
   const SEI_MESI = 182 * 86400000;
@@ -94,8 +99,8 @@
   function bannerHTML() {
     return `
     <div class="cc-banner" role="dialog" aria-modal="false" aria-labelledby="cc-title" aria-describedby="cc-desc">
-      <button class="cc-x" data-cc="dismiss" aria-label="Chiudi senza accettare">✕</button>
-      <h2 id="cc-title">🍪 Cookie e preferenze</h2>
+      <button class="cc-x" data-cc="dismiss" aria-label="Chiudi senza accettare">${CC_ICO("chiudi")}</button>
+      <h2 id="cc-title">${CC_ICO("biscotto")} Cookie e preferenze</h2>
       <p id="cc-desc">
         Gli strumenti tecnici servono a far funzionare il sito. Con il tuo consenso ne useremmo
         altri per ricordare le preferenze e capire in forma aggregata quali contenuti sono utili.
@@ -118,7 +123,7 @@
       <div class="cc-modal" role="dialog" aria-modal="true" aria-labelledby="cc-m-title">
         <div class="cc-modal-head">
           <h2 id="cc-m-title">Preferenze sulla privacy</h2>
-          <button class="cc-x" data-cc="close" aria-label="Chiudi">✕</button>
+          <button class="cc-x" data-cc="close" aria-label="Chiudi">${CC_ICO("chiudi")}</button>
         </div>
         <div class="cc-modal-body">
           <p class="muted" style="font-size:.9rem">

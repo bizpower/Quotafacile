@@ -199,6 +199,36 @@ p { line-height: 1.6; }
 .qpass-tags { display: flex; gap: .35rem; flex-wrap: wrap; justify-content: flex-end; }
 .qpass-tags span { background: rgba(255,255,255,.12); padding: .18rem .55rem; border-radius: 999px; font-size: .64rem; font-weight: 600; }
 
+/* ---------- Icone ----------
+   Le icone disegnate di assets/js/icone.js. Il tracciato arriva
+   già con width/height a 1em e currentColor: qui serve solo
+   dirgli come appoggiarsi al testo.
+
+   -.14em perché un'icona allineata alla linea di base galleggia
+   sopra le lettere: il centro ottico di un quadrato sta più in
+   alto del centro ottico di una minuscola.
+
+   flex-shrink: 0 perché dentro un flex un'icona è la prima cosa
+   che il browser schiaccia quando lo spazio finisce, e un'icona
+   schiacciata non si capisce più. */
+.qf-ico { vertical-align: -.14em; flex: 0 0 auto; }
+
+/* Dentro i contenitori che fanno da pastiglia l'icona è il
+   contenuto, non un ornamento accanto al testo: lì l'allineamento
+   lo fa il grid del contenitore.
+
+   La misura NON si fissa qui: resta 1em e la prende dal
+   font-size della pastiglia. E' il motivo per cui lo stesso
+   .icon-dot funziona a 44px e, con il font-size portato a 2rem,
+   anche nel cerchione da 64px della schermata di conferma —
+   senza una seconda classe e senza che qualcuno debba ricordarsi
+   di aggiornarla. */
+.icon-dot .qf-ico, .lead-icon .qf-ico, .m-tabbar .qf-ico { vertical-align: 0; }
+
+/* L'unica eccezione: nella tab bar del mockup il testo è a
+   .62rem, e un'icona di quella misura non si legge più. */
+.m-tabbar .qf-ico { width: 1.05rem; height: 1.05rem; }
+
 /* ---------- Sections ---------- */
 .section { padding: 4.2rem 0; }
 .section-alt { background: #fff; border-block: 1px solid var(--line); }
@@ -1830,9 +1860,19 @@ a.chip { display: inline-block; text-decoration: none; }
 .piano-voci li {
   position: relative; padding-left: 1.4rem; font-size: .85rem; line-height: 1.45;
 }
+/* La spunta dell'elenco è la stessa di icone.js, non il carattere
+   ✓. Qui non può essere un <svg> — è uno pseudo-elemento, e un
+   pseudo-elemento non ha figli — quindi si disegna come maschera:
+   il colore lo mette background, la forma la ritaglia la mask.
+   Vale la pena perché così la spunta dei piani e quella dei badge
+   «Verificato RUI» sono lo stesso segno. */
 .piano-voci li::before {
-  content: "✓"; position: absolute; left: 0; top: 0;
-  color: var(--green-600); font-weight: 700;
+  content: ""; position: absolute; left: 0; top: .18em;
+  display: inline-block; width: 1em; height: 1em;
+  background: var(--green-600);
+  --spunta: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4.8 12.6 4.9 4.9L19.3 6.8'/%3E%3C/svg%3E");
+  -webkit-mask: var(--spunta) center / contain no-repeat;
+  mask: var(--spunta) center / contain no-repeat;
 }
 .piano-btn { margin-top: auto; width: 100%; text-align: center; justify-content: center; }
 
@@ -2009,7 +2049,14 @@ a.chip { display: inline-block; text-decoration: none; }
 .mag-card-cta {
   font-weight: 700; color: var(--green-800); white-space: nowrap;
 }
-.mag-card-cta::after { content: " →"; }
+/* Stessa freccia del set, stesso motivo della spunta qui sopra. */
+.mag-card-cta::after {
+  content: ""; display: inline-block; width: 1em; height: 1em;
+  margin-left: .35em; vertical-align: -.14em; background: currentColor;
+  --freccia: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12h14.6'/%3E%3Cpath d='m12.8 6.2 5.8 5.8-5.8 5.8'/%3E%3C/svg%3E");
+  -webkit-mask: var(--freccia) center / contain no-repeat;
+  mask: var(--freccia) center / contain no-repeat;
+}
 .mag-card:hover .mag-card-cta { text-decoration: underline; text-underline-offset: .2em; }
 .mag-card-pillar { border-left: 3px solid var(--gold-500); }
 

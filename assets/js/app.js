@@ -104,6 +104,13 @@ sincronizzaBrokers();
 const $ = (sel, el = document) => el.querySelector(sel);
 const app = $("#app");
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* Le icone disegnate di assets/js/icone.js.
+   Il ripiego a stringa vuota non è prudenza di maniera: icone.js
+   si carica prima di questo file, ma se un giorno qualcuno
+   invertisse i due <script> il sito resterebbe in piedi senza
+   icone invece di fermarsi su un TypeError a metà pagina. */
+const ICO = (nome, classe) => window.QF_ICONE ? window.QF_ICONE.ico(nome, classe) : "";
 const REDAZIONE = { id: "qf", nome: "Redazione QuotaFacile", ruolo: "Redazione", punti: 0, auto: true };
 const broker = id => id === "qf" ? REDAZIONE : (id === "me" && DB.proProfile) ? DB.proProfile : DB.brokers.find(b => b.id === id);
 const initials = n => n.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
@@ -911,8 +918,8 @@ function ruiLabel(b) {
    comunque l'azione principale senza offrire un link telefonico rotto. */
 function ctaChiama(b) {
   return (!b.tel || DA_COMPILARE(b.tel))
-    ? `<span class="btn btn-primary btn-sm btn-disabled" aria-disabled="true" title="Recapito telefonico non ancora disponibile">📞 CHIAMA</span>`
-    : `<a class="btn btn-primary btn-sm" href="tel:${esc(b.tel)}">📞 CHIAMA</a>`;
+    ? `<span class="btn btn-primary btn-sm btn-disabled" aria-disabled="true" title="Recapito telefonico non ancora disponibile">${ICO("telefono")} CHIAMA</span>`
+    : `<a class="btn btn-primary btn-sm" href="tel:${esc(b.tel)}">${ICO("telefono")} CHIAMA</a>`;
 }
 
 /* QuotaPass component */
@@ -927,8 +934,8 @@ function qpass(b, flat = false) {
            abbonamento. Il primo è un controllo, il secondo è una
            collocazione pagata: metterli con lo stesso peso
            farebbe sembrare una verifica quello che è un acquisto. -->
-      ${b.inEvidenza ? `<span class="qpass-evidenza" title="Profilo con abbonamento: compare più in alto negli elenchi">★ In evidenza</span>` : ""}
-      ${b.verificato ? `<span class="qpass-verified">✓ Verificato RUI</span>` : `<span class="qpass-verified" style="opacity:.55">In verifica</span>`}
+      ${b.inEvidenza ? `<span class="qpass-evidenza" title="Profilo con abbonamento: compare più in alto negli elenchi">${ICO("stella")} In evidenza</span>` : ""}
+      ${b.verificato ? `<span class="qpass-verified">${ICO("spunta")} Verificato RUI</span>` : `<span class="qpass-verified" style="opacity:.55">In verifica</span>`}
     </div>
     <div>
       <div class="qpass-chip" aria-hidden="true"></div>
@@ -1116,9 +1123,9 @@ views.home = () => {
         <h2>Trasparenza prima di tutto</h2>
       </div>
       <div class="grid-3">
-        <div class="card"><span class="icon-dot">💶</span><h3>Risparmia sulle polizze</h3><p class="muted">Più professionisti in concorrenza sulla tua richiesta significa condizioni migliori per te.</p></div>
-        <div class="card"><span class="icon-dot">🛡️</span><h3>Professionisti verificati</h3><p class="muted">Ogni profilo espone il numero di iscrizione al RUI, il registro IVASS degli intermediari.</p></div>
-        <div class="card"><span class="icon-dot">🔍</span><h3>Nessuna intermediazione occulta</h3><p class="muted">QuotaFacile non vende polizze: mette in contatto. Il rapporto è tuo, diretto, con l'intermediario.</p></div>
+        <div class="card"><span class="icon-dot">${ICO("euro")}</span><h3>Risparmia sulle polizze</h3><p class="muted">Più professionisti in concorrenza sulla tua richiesta significa condizioni migliori per te.</p></div>
+        <div class="card"><span class="icon-dot">${ICO("scudo")}</span><h3>Professionisti verificati</h3><p class="muted">Ogni profilo espone il numero di iscrizione al RUI, il registro IVASS degli intermediari.</p></div>
+        <div class="card"><span class="icon-dot">${ICO("lente")}</span><h3>Nessuna intermediazione occulta</h3><p class="muted">QuotaFacile non vende polizze: mette in contatto. Il rapporto è tuo, diretto, con l'intermediario.</p></div>
       </div>
     </div>
   </section>
@@ -1157,7 +1164,7 @@ views.home = () => {
             </div>
           </div>`).join("")}
       </div>
-      <p style="margin-top:1.6rem"><a href="#/intermediari" class="btn btn-ghost">Vedi tutti gli intermediari →</a></p>
+      <p style="margin-top:1.6rem"><a href="#/intermediari" class="btn btn-ghost">Vedi tutti gli intermediari ${ICO("freccia_destra")}</a></p>
     </div>
   </section>
 
@@ -1169,14 +1176,14 @@ views.home = () => {
         <p class="muted">Dubbi assicurativi reali, risposti da intermediari iscritti al RUI. Ogni risposta è pubblica e verificabile.</p>
       </div>
       ${topFaq.map(f => qaCard(f)).join("")}
-      <p style="margin-top:1rem"><a href="#/bacheca" class="btn btn-outline">Esplora tutta la bacheca →</a></p>
+      <p style="margin-top:1rem"><a href="#/bacheca" class="btn btn-outline">Esplora tutta la bacheca ${ICO("freccia_destra")}</a></p>
     </div>
   </section>
 
   <section class="section section-alt">
     <div class="container appsoon">
       <div class="rise">
-        <span class="eyebrow">📱 Coming soon</span>
+        <span class="eyebrow">${ICO("telefonino")} Coming soon</span>
         <h2>QuotaFacile arriva su iPhone</h2>
         <p class="muted" style="max-width:30rem">La domanda del giorno con notifica, preventivi in due tocchi e la tua QuotaPass sempre in tasca. Stiamo lavorando all'app: lascia la tua email e ti avvisiamo al lancio.</p>
         <div class="store-badges">
@@ -1203,16 +1210,16 @@ views.home = () => {
               <div class="m-hero-btn">Richiedi preventivo</div>
             </div>
             <div class="m-daily">
-              <div class="m-daily-tag">☀️ Domanda del giorno</div>
+              <div class="m-daily-tag">${ICO("sole")} Domanda del giorno</div>
               <div class="m-daily-q">Quanto costa l'assicurazione per un neopatentato?</div>
               <div class="m-daily-a"><span class="m-qf">QF</span> Redazione + 2 intermediari</div>
             </div>
             <div class="m-pass">
-              <div class="m-pass-top"><span>Quota<em>Pass</em></span><span class="m-pass-ver">✓ RUI</span></div>
+              <div class="m-pass-top"><span>Quota<em>Pass</em></span><span class="m-pass-ver">${ICO("spunta")} RUI</span></div>
               <div class="m-pass-id"><span class="m-pass-av">LB</span><span><b>Laura Bianchi</b><i>Broker · Milano</i></span></div>
             </div>
             <div class="m-tabbar">
-              <span class="on">⌂</span><span>💬</span><span class="m-tab-cta">€</span><span>👤</span><span>🪪</span>
+              <span class="on">${ICO("casa")}</span><span>${ICO("chat")}</span><span class="m-tab-cta">€</span><span>${ICO("persona")}</span><span>${ICO("tessera")}</span>
             </div>
           </div>
         </div>
@@ -1296,7 +1303,7 @@ const PIANI = [
     voci: [
       "Tutto quello che c'è nel piano gratuito",
       "Profilo in evidenza nella Lista Intermediari, sopra i profili gratuiti",
-      "Il contrassegno ★ In evidenza sulla tua QuotaPass"
+      "Il contrassegno In evidenza sulla tua QuotaPass"
     ],
     azione: { testo: "Prova 30 giorni gratis", piano: "base" }
   },
@@ -1543,8 +1550,8 @@ views.intermediari = () => {
            resta il riscontro sul registro pubblico. -->
       <p class="privacy-hint" style="margin:-.6rem 0 1rem">
         <strong>Come è ordinata questa lista.</strong> I profili contrassegnati
-        <em>★ In evidenza</em> hanno un abbonamento a pagamento e compaiono più in alto: è una
-        collocazione acquistata, non un giudizio sulla qualità. Il badge <em>✓ Verificato RUI</em>
+        <em>${ICO("stella")} In evidenza</em> hanno un abbonamento a pagamento e compaiono più in alto: è una
+        collocazione acquistata, non un giudizio sulla qualità. Il badge <em>${ICO("spunta")} Verificato RUI</em>
         non si acquista — dice solo che il numero è stato riscontrato sul
         <a href="https://servizi.ivass.it/RuirPubblica/" target="_blank" rel="noopener">registro pubblico IVASS</a>.
       </p>
@@ -1560,7 +1567,7 @@ views.intermediari = () => {
           ${DA_COMPILARE(b.bio) ? "" : `<p class="muted" style="font-size:.88rem;margin:.1rem 0">${esc(b.bio)}</p>`}
           <div class="pass-actions">
             ${ctaChiama(b)}
-            ${DA_COMPILARE(b.email) ? "" : `<a class="btn btn-outline btn-sm" href="mailto:${esc(b.email)}">✉️ Email</a>`}
+            ${DA_COMPILARE(b.email) ? "" : `<a class="btn btn-outline btn-sm" href="mailto:${esc(b.email)}">${ICO("busta")} Email</a>`}
             <a class="btn btn-outline btn-sm" href="#/preventivo?to=${b.id}">Consulenza</a>
           </div>
         </div>`).join("") || `<p class="muted">Nessun intermediario per questa categoria (per ora).</p>`}
@@ -1578,8 +1585,8 @@ function qaCard(f) {
   return `
   <article class="card qa-card ${f.daily ? "qa-daily" : ""}${f.staff ? " qa-staff" : ""}" data-goto="#/faq/${f.id}">
     <div class="qa-meta">
-      ${f.daily ? `<span class="badge-cat badge-daily">☀️ Domanda del giorno #${f.num}</span>` : ""}
-      ${f.staff ? `<span class="badge-cat badge-staff">📌 Guida QuotaFacile</span>` : ""}
+      ${f.daily ? `<span class="badge-cat badge-daily">${ICO("sole")} Domanda del giorno #${f.num}</span>` : ""}
+      ${f.staff ? `<span class="badge-cat badge-staff">${ICO("segnalibro")} Guida QuotaFacile</span>` : ""}
       <span class="badge-cat">${esc(f.cat)}</span>
       <span>${esc(f.data)}</span>
       <span>· ${f.risposte.length} rispost${f.risposte.length === 1 ? "a" : "e"}${f.daily && proCount ? ` (${proCount} da intermediari)` : ""}</span>
@@ -1597,7 +1604,7 @@ function qaCard(f) {
       ${a ? (a.auto
         ? `<span class="qa-author"><span class="mini-avatar mini-qf">QF</span>${esc(a.nome)} <span class="level-badge badge-auto">risposta automatica</span></span>`
         : `<span class="qa-author"><span class="mini-avatar">${esc(initials(a.nome))}</span>${esc(a.nome)} ${etichettaAutore(a)}</span>`) : `<span></span>`}
-      ${best ? `<span class="pts">▲ ${best.voti} utile</span>` : `<span class="pts">in attesa di risposta</span>`}
+      ${best ? `<span class="pts">${ICO("freccia_su")} ${best.voti} utile</span>` : `<span class="pts">in attesa di risposta</span>`}
     </div>
   </article>`;
 }
@@ -1654,12 +1661,12 @@ views.bacheca = () => {
       <div class="daily-counter card">
         ${dailyEsaurite() ? `
           <div>
-            <strong>☀️ ${nDaily} domande del giorno pubblicate</strong>
+            <strong>${ICO("sole")} ${nDaily} domande del giorno pubblicate</strong>
             <div class="muted" style="font-size:.8rem">Il ciclo è concluso: restano tutte qui sotto, consultabili. Le prossime arriveranno quando ci sarà altro da dire, non per riempire un contatore.</div>
           </div>`
         : `
           <div>
-            <strong>☀️ Domanda del giorno ${nDaily} di ${dailyTotale()}</strong>
+            <strong>${ICO("sole")} Domanda del giorno ${nDaily} di ${dailyTotale()}</strong>
             <div class="muted" style="font-size:.8rem">Prossima domanda tra ~${hoursToNextDaily()}h · una al giorno, con risposta della redazione</div>
           </div>
           <div class="progressbar" style="flex:1;max-width:260px"><i style="width:${Math.round(nDaily / dailyTotale() * 100)}%"></i></div>`}
@@ -1674,7 +1681,7 @@ views.bacheca = () => {
         </div>
         <aside>
           <div class="card leader-card">
-            <h3>🏆 Classifica esperti</h3>
+            <h3>${ICO("trofeo")} Classifica esperti</h3>
             <p class="muted" style="font-size:.8rem;margin-top:-.3rem">Chi risponde in bacheca, e quanto</p>
             ${leaders.length ? leaders.map((b, i) => `
               <div class="leader-row">
@@ -1731,7 +1738,7 @@ function guideCorrelate(f, quante = 4) {
     <h3>Continua a leggere</h3>
     ${ordinate.map(g => `
       <a href="#/faq/${g.id}" class="correlata">
-        <span class="correlata-cat">${g.staff ? "📌 Guida" : "💬 Bacheca"} · ${esc(g.cat)}</span>
+        <span class="correlata-cat">${g.staff ? ICO("segnalibro") + " Guida" : ICO("chat") + " Bacheca"} · ${esc(g.cat)}</span>
         <span class="correlata-titolo">${esc(g.titolo || g.domanda)}</span>
         ${estratto(g) ? `<span class="correlata-meta">${esc(estratto(g))}</span>` : ""}
       </a>`).join("")}
@@ -2219,7 +2226,7 @@ views.faqDetail = (id) => {
        la pagina com'è finché i dati non arrivano. */
     if (PERCORSO_PAGINA && ROTTA_PAGINA === "faq/" + id &&
         !window.QFBacheca?.stato.caricata) return null;
-    return `<section class="section"><div class="container"><h2>Domanda non trovata</h2><a href="#/bacheca" class="btn btn-outline">← Torna alla bacheca</a></div></section>`;
+    return `<section class="section"><div class="container"><h2>Domanda non trovata</h2><a href="#/bacheca" class="btn btn-outline">${ICO("freccia_sinistra")} Torna alla bacheca</a></div></section>`;
   }
   /* Una guida è scritta da noi, domanda compresa: FAQPage, più
      l'Article che dice chi l'ha scritta e quando. Una domanda
@@ -2246,10 +2253,10 @@ views.faqDetail = (id) => {
   return `
   <section class="section">
     <div class="container" style="max-width:820px">
-      <a href="#/bacheca" class="muted" style="font-size:.85rem">← Bacheca Q&amp;A</a>
+      <a href="#/bacheca" class="muted" style="font-size:.85rem">${ICO("freccia_sinistra")} Bacheca Q&amp;A</a>
       <div class="qa-meta" style="margin-top:1rem">
-        ${f.daily ? `<span class="badge-cat badge-daily">☀️ Domanda del giorno #${f.num}</span>` : ""}
-        ${f.staff ? `<span class="badge-cat badge-staff">📌 Guida QuotaFacile</span>` : ""}
+        ${f.daily ? `<span class="badge-cat badge-daily">${ICO("sole")} Domanda del giorno #${f.num}</span>` : ""}
+        ${f.staff ? `<span class="badge-cat badge-staff">${ICO("segnalibro")} Guida QuotaFacile</span>` : ""}
         <span class="badge-cat">${esc(f.cat)}</span><span>${esc(f.data)}</span>
       </div>
       <h1 style="font-size:clamp(1.5rem,4vw,2.2rem)">${esc(f.domanda)}</h1>
@@ -2270,9 +2277,9 @@ views.faqDetail = (id) => {
               ${r.auto
                 ? `<span class="mini-avatar mini-qf">QF</span>${esc(a.nome)} <span class="level-badge badge-auto">${r.staff ? "guida redazionale" : "risposta automatica"}</span>`
                 : `<span class="mini-avatar">${esc(initials(a.nome))}</span>${esc(a.nome)} ${etichettaAutore(a)}`}
-              ${r.accettata && !r.auto ? `<span class="badge-cat" style="background:var(--gold-100);color:#9A6B14">★ Migliore risposta</span>` : ""}
+              ${r.accettata && !r.auto ? `<span class="badge-cat" style="background:var(--gold-100);color:#9A6B14">${ICO("stella")} Migliore risposta</span>` : ""}
             </span>
-            <button class="vote-btn" data-vote="${f.id}:${i}" ${voted ? "disabled" : ""}>▲ Utile (${r.voti})</button>
+            <button class="vote-btn" data-vote="${f.id}:${i}" ${voted ? "disabled" : ""}>${ICO("freccia_su")} Utile (${r.voti})</button>
           </div>
           ${r.rich
             ? `<div class="answer-rich">${r.rich}</div>`
@@ -2287,7 +2294,7 @@ views.faqDetail = (id) => {
                  risposta quando esiste: la posizione nell'elenco cambia
                  appena arriva una risposta nuova, e chi modera si
                  troverebbe davanti un contenuto diverso da quello segnalato. -->
-            <button class="report-btn" data-report="${r.remota && r.id ? "risposta:" + r.id : f.id + ":" + i}" title="Segnala questo contenuto">🚩 Segnala</button>
+            <button class="report-btn" data-report="${r.remota && r.id ? "risposta:" + r.id : f.id + ":" + i}" title="Segnala questo contenuto">${ICO("bandiera")} Segnala</button>
           </div>
         </div>`;
       }).join("") : `<p class="muted" style="font-style:italic">Ancora nessuna risposta.</p>`}
@@ -2302,7 +2309,7 @@ views.faqDetail = (id) => {
           <button class="btn btn-primary" style="margin-top:.8rem" type="submit">Pubblica risposta</button>
         </form>` : `
         <p class="muted" style="font-size:.9rem">Crea prima il tuo profilo nell'Area Pro: le risposte sono firmate con la tua QuotaPass.</p>
-        <a href="#/area-pro" class="btn btn-outline">Vai all'Area Pro →</a>`}
+        <a href="#/area-pro" class="btn btn-outline">Vai all'Area Pro ${ICO("freccia_destra")}</a>`}
       </div>
     </div>
   </section>`;
@@ -2334,9 +2341,9 @@ views.preventivo = (query) => {
         ${s === 1 ? `
         <h3>1 · Di cosa hai bisogno?</h3>
         <div class="choice-grid">
-          <button class="choice ${quoteState.tipo === "preventivo" ? "selected" : ""}" data-tipo="preventivo"><span class="icon-dot">📄</span>Preventivo polizza</button>
-          <button class="choice ${quoteState.tipo === "consulenza" ? "selected" : ""}" data-tipo="consulenza"><span class="icon-dot">💬</span>Consulenza gratuita</button>
-          <button class="choice ${quoteState.tipo === "revisione" ? "selected" : ""}" data-tipo="revisione"><span class="icon-dot">🔍</span>Revisione polizza attuale</button>
+          <button class="choice ${quoteState.tipo === "preventivo" ? "selected" : ""}" data-tipo="preventivo"><span class="icon-dot">${ICO("documento")}</span>Preventivo polizza</button>
+          <button class="choice ${quoteState.tipo === "consulenza" ? "selected" : ""}" data-tipo="consulenza"><span class="icon-dot">${ICO("chat")}</span>Consulenza gratuita</button>
+          <button class="choice ${quoteState.tipo === "revisione" ? "selected" : ""}" data-tipo="revisione"><span class="icon-dot">${ICO("lente")}</span>Revisione polizza attuale</button>
         </div>
         <button class="btn btn-primary btn-block" style="margin-top:1.4rem" data-step="2" ${quoteState.tipo ? "" : "disabled"}>Continua</button>` : ""}
 
@@ -2344,10 +2351,10 @@ views.preventivo = (query) => {
         <h3>2 · Per quale ramo?</h3>
         <div class="choice-grid">
           ${["Auto", "Casa", "Vita", "Salute", "Impresa", "Viaggi"].map(r => `
-          <button class="choice ${quoteState.ramo === r ? "selected" : ""}" data-ramo="${r}"><span class="icon-dot">${{ Auto: "🚗", Casa: "🏠", Vita: "❤️", Salute: "🩺", Impresa: "🏢", Viaggi: "✈️" }[r]}</span>${r}</button>`).join("")}
+          <button class="choice ${quoteState.ramo === r ? "selected" : ""}" data-ramo="${r}"><span class="icon-dot">${{ Auto: ICO("auto"), Casa: ICO("casa"), Vita: ICO("cuore"), Salute: ICO("salute"), Impresa: ICO("edificio"), Viaggi: ICO("aereo") }[r]}</span>${r}</button>`).join("")}
         </div>
         <div style="display:flex;gap:.6rem;margin-top:1.4rem">
-          <button class="btn btn-ghost" data-step="1">← Indietro</button>
+          <button class="btn btn-ghost" data-step="1">${ICO("freccia_sinistra")} Indietro</button>
           <button class="btn btn-primary" style="flex:1" data-step="3" ${quoteState.ramo ? "" : "disabled"}>Continua</button>
         </div>` : ""}
 
@@ -2365,14 +2372,14 @@ views.preventivo = (query) => {
             ${consentBox("q-consenso", `Ho letto l'<a href="#/privacy">informativa privacy</a> e acconsento alla trasmissione dei miei recapiti ${dest ? "a " + esc(dest.nome) : "agli intermediari specializzati nel ramo indicato"}, che li tratterà come autonomo titolare per ricontattarmi.`)}
           </div>
           <div class="field full" style="flex-direction:row;gap:.6rem">
-            <button class="btn btn-ghost" type="button" data-step="2">← Indietro</button>
+            <button class="btn btn-ghost" type="button" data-step="2">${ICO("freccia_sinistra")} Indietro</button>
             <button class="btn btn-gold" style="flex:1" type="submit">Invia la richiesta</button>
           </div>
         </form>` : ""}
 
         ${s === 4 ? (quoteState.esito && !quoteState.esito.salvato ? `
         <div style="text-align:center;padding:1.5rem 0">
-          <div class="icon-dot" style="margin:0 auto 1rem;width:64px;height:64px;font-size:2rem">✉️</div>
+          <div class="icon-dot" style="margin:0 auto 1rem;width:64px;height:64px;font-size:2rem">${ICO("busta")}</div>
           <h3>Ultimo passaggio: conferma l'invio</h3>
           <p class="muted">${quoteState.esito.fallback
             ? "Non siamo riusciti a registrare la richiesta: il servizio non risponde. Nessun dato è andato perso, apri l'email già compilata e premi invio."
@@ -2380,12 +2387,12 @@ views.preventivo = (query) => {
           <div style="display:flex;gap:.6rem;justify-content:center;margin-top:1rem;flex-wrap:wrap">
             ${quoteState.esito.fallback
               ? `<a href="${quoteState.esito.fallback}" class="btn btn-gold">Apri l'email e invia</a>`
-              : `<button class="btn btn-gold" data-step="3">← Correggi e riprova</button>`}
+              : `<button class="btn btn-gold" data-step="3">${ICO("freccia_sinistra")} Correggi e riprova</button>`}
             <a href="#/" class="btn btn-outline">Torna alla home</a>
           </div>
         </div>` : `
         <div style="text-align:center;padding:1.5rem 0">
-          <div class="icon-dot" style="margin:0 auto 1rem;width:64px;height:64px;font-size:2rem">✅</div>
+          <div class="icon-dot" style="margin:0 auto 1rem;width:64px;height:64px;font-size:2rem">${ICO("spunta_cerchio")}</div>
           <h3>Richiesta inviata!</h3>
           <p class="muted">${dest ? esc(dest.nome) + " riceverà" : "Gli intermediari specializzati in " + esc(quoteState.ramo || "polizze") + " riceveranno"} la tua richiesta di ${esc(quoteState.tipo || "preventivo")} e ti ricontatteranno a breve ai recapiti che ci hai lasciato.</p>
           <div style="display:flex;gap:.6rem;justify-content:center;margin-top:1rem;flex-wrap:wrap">
@@ -2408,7 +2415,7 @@ views.preventivo = (query) => {
 
 /* ----- AREA PRO ----- */
 let proTab = "dashboard";
-const LEAD_ICON = { chiamata: "📞", email: "✉️", consulenza: "💬" };
+const LEAD_ICON = { chiamata: ICO("telefono"), email: ICO("busta"), consulenza: ICO("chat") };
 const LEAD_LABEL = { chiamata: "Chiamata ricevuta", email: "Email ricevuta", consulenza: "Richiesta di consulenza" };
 
 function proFormHTML(p) {
@@ -2455,16 +2462,16 @@ function proDashboardHTML(p) {
   <div class="grid-2" style="align-items:start">
     <div>
       <div class="stats-row stats-row-4">
-        <div class="stat"><strong>${nCall}</strong><span>📞 chiamate</span></div>
-        <div class="stat"><strong>${nMail}</strong><span>✉️ email</span></div>
-        <div class="stat"><strong>${nCons}</strong><span>💬 consulenze</span></div>
-        <div class="stat"><strong>${p.viste ?? 0}</strong><span>👁 viste profilo</span></div>
+        <div class="stat"><strong>${nCall}</strong><span>${ICO("telefono")} chiamate</span></div>
+        <div class="stat"><strong>${nMail}</strong><span>${ICO("busta")} email</span></div>
+        <div class="stat"><strong>${nCons}</strong><span>${ICO("chat")} consulenze</span></div>
+        <div class="stat"><strong>${p.viste ?? 0}</strong><span>${ICO("occhio")} viste profilo</span></div>
       </div>
       <div class="card recapiti-card" style="margin-top:1rem">
-        <h3>📬 Dove ti arrivano i contatti</h3>
+        <h3>${ICO("posta")} Dove ti arrivano i contatti</h3>
         <p class="muted" style="font-size:.85rem">Non c'è nessuna casella interna da controllare: le richieste degli utenti arrivano direttamente qui.</p>
-        <div class="recapiti-row"><span>📞 Chiamate al</span><strong>${campo(p.tel)}</strong></div>
-        <div class="recapiti-row"><span>✉️ Richieste via email a</span><strong>${campo(p.email)}</strong></div>
+        <div class="recapiti-row"><span>${ICO("telefono")} Chiamate al</span><strong>${campo(p.tel)}</strong></div>
+        <div class="recapiti-row"><span>${ICO("busta")} Richieste via email a</span><strong>${campo(p.email)}</strong></div>
         <p class="privacy-hint">Sono gli stessi recapiti pubblicati sulla tua QuotaPass: il pulsante <strong>CHIAMA</strong> compone quel numero, il modulo di consulenza scrive a quell'indirizzo. Per cambiarli vai in <a href="#/area-pro">Profilo &amp; QuotaPass</a>.</p>
       </div>
 
@@ -2487,7 +2494,7 @@ function proDashboardHTML(p) {
         <p class="muted" style="font-size:.82rem">Preventivi e consulenze pubblicati dagli utenti, in linea con le tue specializzazioni.</p>
         ${market.length ? market.map(r => `
           <div class="lead-row">
-            <span class="lead-icon">📄</span>
+            <span class="lead-icon">${ICO("documento")}</span>
             <span class="leader-info">
               <strong>${esc(r.nome || "Utente")} · ${esc(r.tipo || "preventivo")}</strong>
               <span>Ramo ${esc(r.ramo || "-")}</span>
@@ -2496,7 +2503,7 @@ function proDashboardHTML(p) {
           </div>`).join("") : `<p class="muted" style="font-size:.9rem">Nessuna richiesta aperta al momento. Le nuove richieste degli utenti compariranno qui.</p>`}
       </div>
       <div class="card" style="margin-top:1rem">
-        <h3>📌 Pubblica una FAQ</h3>
+        <h3>${ICO("segnalibro")} Pubblica una FAQ</h3>
         <p class="muted" style="font-size:.82rem">Domanda frequente + tua risposta: il modo più veloce per farti trovare su Google.</p>
         <form id="pubfaq-form">
           <div class="field"><label for="pf-q">Domanda</label><input id="pf-q" required placeholder="Es. Quanto costa assicurare un monopattino?"></div>
@@ -2517,7 +2524,7 @@ function proBoardHTML() {
   const community = domandeCommunity().filter(f => !f.risposte.length);
   const row = f => `
     <div class="lead-row lead-row-link" data-goto="#/faq/${f.id}">
-      <span class="lead-icon">${f.staff ? "📌" : f.daily ? "☀️" : "🙋"}</span>
+      <span class="lead-icon">${f.staff ? ICO("segnalibro") : f.daily ? ICO("sole") : ICO("persone")}</span>
       <span class="leader-info">
         <strong><a href="#/faq/${f.id}">${esc(f.domanda)}</a></strong>
         <span>${f.staff ? "Guida su keyword strategica · massima visibilità organica"
@@ -2528,18 +2535,18 @@ function proBoardHTML() {
     </div>`;
   return `
   <div class="card" style="margin-bottom:1.2rem">
-    <h3>📌 Guide QuotaFacile — le pagine che portano traffico</h3>
+    <h3>${ICO("segnalibro")} Guide QuotaFacile — le pagine che portano traffico</h3>
     <p class="muted" style="font-size:.82rem">Sono le domande su cui stiamo puntando il posizionamento su Google: chi le integra per primo si mette la firma sotto la pagina più letta del portale.</p>
-    ${staff.length ? staff.map(row).join("") : `<p class="muted" style="font-size:.9rem">Hai integrato tutte le guide pubblicate. 🏆</p>`}
+    ${staff.length ? staff.map(row).join("") : `<p class="muted" style="font-size:.9rem">Hai integrato tutte le guide pubblicate.</p>`}
   </div>
   <div class="grid-2" style="align-items:start">
     <div class="card">
-      <h3>🙋 Domande della community</h3>
+      <h3>${ICO("persone")} Domande della community</h3>
       <p class="muted" style="font-size:.82rem">Utenti reali in attesa: chi risponde per primo si prende la visibilità.</p>
-      ${community.length ? community.map(row).join("") : `<p class="muted" style="font-size:.9rem">Hai risposto a tutte le domande della community. 👏</p>`}
+      ${community.length ? community.map(row).join("") : `<p class="muted" style="font-size:.9rem">Hai risposto a tutte le domande della community.</p>`}
     </div>
     <div class="card">
-      <h3>☀️ Domande del giorno da integrare</h3>
+      <h3>${ICO("sole")} Domande del giorno da integrare</h3>
       <p class="muted" style="font-size:.82rem">Escono con una risposta automatica generale: la tua esperienza pratica vale di più. Integra e firma.</p>
       ${daily.length ? daily.map(row).join("") : `<p class="muted" style="font-size:.9rem">Hai integrato tutte le domande pubblicate finora.</p>`}
     </div>
@@ -2707,7 +2714,7 @@ views.areaPro = () => {
            Meglio dire che il conteggio è sospeso che far salire
            un numero verso una porta che non si apre. -->
       <div class="gami-banner">
-        <span class="icon">🏅</span>
+        <span class="icon">${ICO("medaglia")}</span>
         <div style="flex:1">
           <strong>${punti} punti</strong>
           <div class="muted" style="font-size:.8rem">Il conteggio è sospeso: i punti non salgono finché non c'è qualcosa di concreto che vanno a sbloccare. Le risposte che pubblichi restano firmate e pubbliche come prima.</div>
@@ -2718,9 +2725,9 @@ views.areaPro = () => {
       ${abbonamentoHTML(p)}
 
       <div class="filterbar" role="tablist" aria-label="Sezioni area pro">
-        <button class="chip ${proTab === "dashboard" ? "active" : ""}" data-protab="dashboard" role="tab">📊 Dashboard</button>
-        <button class="chip ${proTab === "bacheca" ? "active" : ""}" data-protab="bacheca" role="tab">💬 Bacheca da rispondere</button>
-        <button class="chip ${proTab === "profilo" ? "active" : ""}" data-protab="profilo" role="tab">🪪 Profilo &amp; QuotaPass</button>
+        <button class="chip ${proTab === "dashboard" ? "active" : ""}" data-protab="dashboard" role="tab">${ICO("grafico")} Dashboard</button>
+        <button class="chip ${proTab === "bacheca" ? "active" : ""}" data-protab="bacheca" role="tab">${ICO("chat")} Bacheca da rispondere</button>
+        <button class="chip ${proTab === "profilo" ? "active" : ""}" data-protab="profilo" role="tab">${ICO("tessera")} Profilo &amp; QuotaPass</button>
       </div>
 
       ${proTab === "dashboard" ? proDashboardHTML(p) : ""}
@@ -3056,8 +3063,8 @@ function apriSegnalazione(target) {
   <div class="cc-overlay" data-close-report>
     <div class="cc-modal" role="dialog" aria-modal="true" aria-labelledby="rep-t">
       <div class="cc-modal-head">
-        <h2 id="rep-t">🚩 Segnala questo contenuto</h2>
-        <button class="cc-x" data-close-report aria-label="Chiudi">✕</button>
+        <h2 id="rep-t">${ICO("bandiera")} Segnala questo contenuto</h2>
+        <button class="cc-x" data-close-report aria-label="Chiudi">${ICO("chiudi")}</button>
       </div>
       <form id="report-form" class="cc-modal-body">
         <p class="muted" style="font-size:.88rem">
@@ -3126,7 +3133,7 @@ function apriEnterprise() {
     <div class="cc-modal" role="dialog" aria-modal="true" aria-labelledby="ent-t">
       <div class="cc-modal-head">
         <h2 id="ent-t">Raccontaci cosa ti serve</h2>
-        <button class="cc-x" data-close-ent aria-label="Chiudi">✕</button>
+        <button class="cc-x" data-close-ent aria-label="Chiudi">${ICO("chiudi")}</button>
       </div>
       <form id="ent-form" class="cc-modal-body">
         <p class="muted" style="font-size:.88rem">Scrivi che lavoro fai e qual è la cosa ripetitiva che
@@ -3410,7 +3417,7 @@ function bind() {
     DB.notifiche.push({ email, data: new Date().toISOString() });
     saveDB();
     $("#notify-email").value = "";
-    toast("Perfetto! Ti avvisiamo appena l'app è disponibile 📱");
+    toast("Perfetto! Ti avvisiamo appena l'app è disponibile.");
     window.QFMailer.invia("waitlist", { email, consenso: true });
   });
 

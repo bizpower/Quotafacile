@@ -15,6 +15,11 @@
 (function () {
 
   /* ---------------- 1. DATI DEL TITOLARE (DA COMPILARE) ---------------- */
+/* Le icone disegnate (assets/js/icone.js). Il ripiego a stringa
+     vuota tiene in piedi la pagina se un giorno gli <script>
+     cambiassero ordine: meglio senza icona che fermi a metà. */
+  const QF_ICO = (n, c) => window.QF_ICONE ? window.QF_ICONE.ico(n, c) : "";
+
   const LEGAL_CONFIG = {
     brand: "QuotaFacile",
     dominio: "www.quotafacile.net",
@@ -144,7 +149,7 @@
   function page(titolo, occhiello, corpo, { indice = true } = {}) {
     const warn = mancanti().length ? `
       <div class="legal-warning" role="alert">
-        <strong>⚠️ Documento non ancora pubblicabile.</strong>
+        <strong>${QF_ICO("avviso")} Documento non ancora pubblicabile.</strong>
         Dati identificativi del titolare mancanti o in formato non valido:
         <code>${mancanti().join("</code>, <code>")}</code>.
         Compilali in <code>assets/js/legal.js</code> → <code>LEGAL_CONFIG</code>:
@@ -468,7 +473,7 @@
 
     <h2>5. Come gestire il consenso</h2>
     <p>Puoi modificare o revocare le tue scelte in qualsiasi momento:</p>
-    <p><button class="btn btn-primary btn-sm" data-open-consent>⚙️ Gestisci le preferenze cookie</button></p>
+    <p><button class="btn btn-primary btn-sm" data-open-consent>${QF_ICO("cursori")} Gestisci le preferenze cookie</button></p>
     <p>Il pulsante è sempre raggiungibile dal footer di ogni pagina. In alternativa puoi agire dalle
     impostazioni del browser:
     <a href="https://support.google.com/chrome/answer/95647" target="_blank" rel="noopener">Chrome</a> ·
@@ -870,22 +875,22 @@
     <h2>Contatti</h2>
     <div class="grid-2" style="gap:1rem">
       <div class="card">
-        <h3>📩 Informazioni generali</h3>
+        <h3>${QF_ICO("busta")} Informazioni generali</h3>
         <p class="muted" style="font-size:.9rem">Domande sul servizio, collaborazioni, stampa.</p>
         <p><a class="btn btn-outline btn-sm" href="mailto:${C.emailInfo}">${C.emailInfo}</a></p>
       </div>
       <div class="card">
-        <h3>🔐 Privacy e dati personali</h3>
+        <h3>${QF_ICO("lucchetto")} Privacy e dati personali</h3>
         <p class="muted" style="font-size:.9rem">Esercizio dei diritti artt. 15-22 GDPR, cancellazioni.</p>
         <p><a class="btn btn-outline btn-sm" href="mailto:${C.emailPrivacy}">${C.emailPrivacy}</a></p>
       </div>
       <div class="card">
-        <h3>🚩 Segnalazioni di contenuti</h3>
+        <h3>${QF_ICO("bandiera")} Segnalazioni di contenuti</h3>
         <p class="muted" style="font-size:.9rem">Punto di contatto unico ai sensi del Digital Services Act.</p>
         <p><a class="btn btn-outline btn-sm" href="mailto:${C.emailSegnalazioni}">${C.emailSegnalazioni}</a></p>
       </div>
       <div class="card">
-        <h3>🪪 Sei un intermediario?</h3>
+        <h3>${QF_ICO("tessera")} Sei un intermediario?</h3>
         <p class="muted" style="font-size:.9rem">Crea la tua QuotaPass in tre minuti, gratis.</p>
         <p><a class="btn btn-primary btn-sm" href="#/area-pro">Vai all'Area Pro</a></p>
       </div>
