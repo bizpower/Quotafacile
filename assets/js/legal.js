@@ -50,7 +50,12 @@
 
     /* Contatti operativi (devono essere caselle realmente attive) */
     emailInfo: "info@quotafacile.net",
-    emailPrivacy: "privacy@quotafacile.net",
+    /* Era privacy@quotafacile.net, che non esiste: chi esercitava un
+       diritto scriveva nel vuoto, e l'informativa prometteva un
+       recapito che non rispondeva a nessuno. Vale per tutte le
+       undici volte che compare qui sotto, perché è una costante
+       sola — ed è il motivo per cui è una costante sola. */
+    emailPrivacy: "r.difalco@quotafacile.net",
     emailSegnalazioni: "segnalazioni@quotafacile.net",
 
     /* Responsabile Protezione Dati: null se non nominato (non obbligatorio

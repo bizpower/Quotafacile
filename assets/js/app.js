@@ -1024,7 +1024,7 @@ const DOMANDE_IDENTITA = [
     r: `Vengono trasmessi <strong>solo agli intermediari pertinenti</strong> alla richiesta e
         conservati 24 mesi dall'ultimo contatto. Non sono venduti né ceduti per finalità di
         marketing. Puoi chiederne accesso, rettifica o cancellazione in ogni momento scrivendo a
-        privacy@quotafacile.net.`
+        r.difalco@quotafacile.net.`
   }
 ];
 
@@ -2397,7 +2397,7 @@ views.preventivo = (query) => {
       <p class="muted" style="font-size:.75rem;margin-top:.8rem">
         I tuoi dati vengono condivisi solo con gli intermediari pertinenti alla richiesta e conservati
         24 mesi dall'ultimo contatto. Puoi revocare il consenso e chiederne la cancellazione in ogni
-        momento scrivendo a <a href="#/privacy">privacy@quotafacile.net</a>.
+        momento scrivendo a <a href="mailto:r.difalco@quotafacile.net">r.difalco@quotafacile.net</a>.
         Consulta <a href="#/termini">Termini e Condizioni</a>, <a href="#/privacy">Privacy Policy</a> e
         <a href="#/note-legali">Note legali</a>. QuotaFacile non è un intermediario assicurativo e non
         è iscritta al RUI: mette solo in contatto.
