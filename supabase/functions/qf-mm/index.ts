@@ -405,6 +405,16 @@ const intestazioneDa = (c: Record<string, unknown>) =>
 
 /* Il piede che ogni email commerciale deve portare.
  *
+ * L'indirizzo per opporsi era privacy@quotafacile.net, che non
+ * esiste: la via d'uscita obbligatoria dell'art. 21 portava a una
+ * casella che non rispondeva a nessuno, ed e' il modo peggiore di
+ * sbagliare — meglio nessuna promessa che una promessa che non
+ * si puo' mantenere. Ora e' la casella del Titolare, che esiste e
+ * si legge. Stessa ragione per l'indirizzo dell'informativa:
+ * dentro un'email il /#/ dipendeva dal normalizzatore della
+ * pagina, e un rimando all'informativa non deve dipendere dal
+ * fatto che il JavaScript parta.
+ *
  * Dice tre cose, e le deve dire sempre: da dove viene
  * l'indirizzo, come si fa a non ricevere più niente, e chi
  * scrive. L'art. 21 GDPR vuole che opporsi sia facile e non
@@ -421,8 +431,8 @@ const PIE_MARKETING =
   "\n\n—\n" +
   "Ricevi questa email perché il recapito della tua attività è pubblicato fra i suoi dati di contatto.\n" +
   "Se non vuoi più ricevere nostre comunicazioni rispondi con la sola parola NO, oppure scrivi a " +
-  "privacy@quotafacile.net: l'indirizzo viene bloccato e non ti scriveremo più. Non devi motivare nulla.\n" +
-  "Da dove abbiamo il tuo indirizzo e quali dati trattiamo: https://www.quotafacile.net/#/privacy-imprese\n" +
+  "r.difalco@quotafacile.net: l'indirizzo viene bloccato e non ti scriveremo più. Non devi motivare nulla.\n" +
+  "Da dove abbiamo il tuo indirizzo e quali dati trattiamo: https://www.quotafacile.net/privacy-imprese/\n" +
   "QuotaFacile — Riccardo Di Falco, Via Gramsci 16, 20073 Opera (MI) — P. IVA 11784600964";
 
 /* La firma della casella resta facoltativa e personale; il piede
@@ -546,9 +556,22 @@ async function smtpInvioRapido(d: Record<string, unknown>) {
     );
   }
 
-  const testoFinale = casella.firma_attiva && casella.firma
-    ? `${corpo}\n\n${casella.firma}`
-    : corpo;
+  /* Il piede vale anche qui.
+   *
+   * Prima no: l'invio rapido metteva solo la firma della casella,
+   * quando c'era. Ma questo invio controlla la blacklist, rispetta
+   * le opposizioni registrate sui lead, scala la quota giornaliera
+   * e finisce nel registro delle email: tutto dice che e' un invio
+   * commerciale, e un invio commerciale senza la via d'uscita e'
+   * la scorciatoia da cui esce il messaggio a cui non si puo'
+   * rispondere NO.
+   *
+   * Era anche l'unica strada per cui un messaggio poteva uscire
+   * senza dire da dove viene l'indirizzo: campagne e sequenze il
+   * piede ce l'hanno sempre avuto. Ora le tre strade si
+   * comportano allo stesso modo, che e' l'unico modo per non
+   * doverselo ricordare. */
+  const testoFinale = conPiede(corpo, casella);
 
   const client = await apriClient(casella, password);
   const riusciti: string[] = [];

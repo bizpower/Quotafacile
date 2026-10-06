@@ -198,6 +198,52 @@ const CAMPI = [
   "nextPageToken",
 ].join(",");
 
+// ---------------- Il raggio, tradotto in rettangolo ----------------
+//
+// Places (New) accetta un cerchio solo in locationBias, che e' una
+// preferenza: restituisce anche risultati fuori. In
+// locationRestriction, che e' il vincolo vero, accetta soltanto un
+// rettangolo, e un "circle" la' dentro fa rifiutare l'intera
+// richiesta ("Unknown name circle at location_restriction").
+//
+// Quindi si manda il rettangolo che circoscrive il cerchio, e gli
+// angoli che sporgono oltre il raggio li scarta distanza() piu'
+// sotto: chi sceglie "2 km" deve ricevere quello che sta entro 2 km,
+// non quello che sta nel quadrato di 4 km di lato.
+//
+// 111320 m e' la lunghezza di un grado di latitudine; per la
+// longitudine si accorcia col coseno della latitudine. Il coseno e'
+// tenuto lontano da zero perche' ai poli dividerebbe per niente —
+// in Italia non succede, ma la formula non deve dipendere da dove
+// la si usa.
+
+const METRI_PER_GRADO = 111_320;
+
+function rettangoloDa(centro: { lat: number; lng: number }, raggio: number) {
+  const dLat = raggio / METRI_PER_GRADO;
+  const coseno = Math.max(Math.cos((centro.lat * Math.PI) / 180), 0.01);
+  const dLng = raggio / (METRI_PER_GRADO * coseno);
+  return {
+    low: {
+      latitude: Math.max(centro.lat - dLat, -90),
+      longitude: Math.max(centro.lng - dLng, -180),
+    },
+    high: {
+      latitude: Math.min(centro.lat + dLat, 90),
+      longitude: Math.min(centro.lng + dLng, 180),
+    },
+  };
+}
+
+// Distanza in metri fra due punti vicini: a queste scale la
+// proiezione piana sbaglia di meno di un metro, e non serve altro.
+function distanza(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const coseno = Math.cos(((a.lat + b.lat) / 2 * Math.PI) / 180);
+  const x = (b.lat - a.lat) * METRI_PER_GRADO;
+  const y = (b.lng - a.lng) * METRI_PER_GRADO * coseno;
+  return Math.sqrt(x * x + y * y);
+}
+
 async function paginaPlaces(query: string, centro: { lat: number; lng: number },
                             raggio: number, pageToken?: string) {
   const r = await fetch("https://places.googleapis.com/v1/places:searchText", {
@@ -213,9 +259,7 @@ async function paginaPlaces(query: string, centro: { lat: number; lng: number },
       regionCode: "IT",
       pageSize: 20,
       ...(pageToken ? { pageToken } : {}),
-      locationRestriction: {
-        circle: { center: { latitude: centro.lat, longitude: centro.lng }, radius: raggio },
-      },
+      locationRestriction: { rectangle: rettangoloDa(centro, raggio) },
     }),
   });
   const d = await r.json();
@@ -438,6 +482,12 @@ async function cerca(d: Record<string, unknown>) {
         if (p.businessStatus && p.businessStatus !== "OPERATIONAL") continue;
         if (soloQualita && !((p.rating ?? 0) >= 3.5 && (p.userRatingCount ?? 0) >= 5)) continue;
         if (trovate.has(p.id)) continue;
+        /* Gli angoli del rettangolo sporgono oltre il raggio: li si
+           taglia qui. Se Places non manda le coordinate la scheda
+           resta — e' un dato che manca, non una prova di essere
+           lontano. */
+        const q = p.location;
+        if (q && distanza(centro, { lat: q.latitude, lng: q.longitude }) > raggio) continue;
         trovate.set(p.id, {
           place_id: p.id,
           nome: p.displayName?.text ?? "—",
@@ -781,8 +831,12 @@ async function diagnostica() {
         languageCode: "it",
         regionCode: "IT",
         pageSize: 1,
+        /* Stessa forma usata dalla ricerca vera: se la diagnostica
+           chiedesse in un modo diverso potrebbe dire "tutto bene"
+           mentre la ricerca viene rifiutata — ed e' esattamente
+           quello che e' successo col cerchio. */
         locationRestriction: {
-          circle: { center: { latitude: 45.5845, longitude: 9.2744 }, radius: 1000 },
+          rectangle: rettangoloDa({ lat: 45.5845, lng: 9.2744 }, 1000),
         },
       }),
     });

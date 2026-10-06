@@ -192,7 +192,7 @@
              chiave la verifica il server, e un indirizzo segreto
              non aggiunge sicurezza — aggiunge solo il fastidio di
              doverselo ricordare. -->
-        <a href="#/admin" class="footer-riservata" rel="nofollow">🔐 Area riservata</a>
+        <a href="#/admin" class="footer-riservata" rel="nofollow"><svg class="qf-ico" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="4.8" y="10.8" width="14.4" height="10" rx="2.2"/><path d="M8.4 10.8V7.9a3.6 3.6 0 0 1 7.2 0v2.9"/><path d="M12 14.6v2.4"/></svg> Area riservata</a>
       </div>
     </div>
     <div class="container footer-bottom">
@@ -243,6 +243,10 @@
        che ogni visitatore anonimo scaricava e interpretava per
        leggere una guida sulle polizze. Ora li carica app.js solo
        quando si entra davvero nell'area riservata. -->
+  <!-- Le icone prima di tutto il resto: sono gli script defer, che
+       girano nell'ordine in cui stanno qui, e app.js le chiede
+       mentre disegna la prima schermata. -->
+  <script defer src="assets/js/icone.js"></script>
   <script defer src="assets/js/mailer.js"></script>
   <script defer src="assets/js/bacheca.js"></script>
   <script defer src="assets/js/magazine-pubblico.js"></script>

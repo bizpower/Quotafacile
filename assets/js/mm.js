@@ -1861,7 +1861,7 @@
         <summary>Firma automatica ${s.firma_attiva ? "" : "<span class='pill pill-on'>spenta</span>"}</summary>
         <textarea data-firma="${esc(s.id)}" rows="4" placeholder="—
 Riccardo Di Falco
-QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
+QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s.firma || "")}</textarea>
         <div class="mm-firma-piede">
           <label><input type="checkbox" data-firma-attiva="${esc(s.id)}" ${s.firma_attiva ? "checked" : ""}> Aggiungila in fondo a ogni messaggio</label>
           <button class="btn btn-outline btn-sm" data-salva-firma="${esc(s.id)}">Salva firma</button>
@@ -1916,7 +1916,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
               <input id="f-limite" type="number" min="1" value="${f.limite_giornaliero}"></label>
 
             <label class="field"><span>Indirizzo mittente *</span>
-              <input id="f-from" type="email" required value="${esc(f.from_email)}" placeholder="info@quotafacile.net"></label>
+              <input id="f-from" type="email" required value="${esc(f.from_email)}" placeholder="${esc(mittente()?.from_email || "nome@quotafacile.net")}"></label>
             <label class="field"><span>Nome mittente</span>
               <input id="f-fromnome" value="${esc(f.from_nome)}" placeholder="QuotaFacile"></label>
 
@@ -1935,7 +1935,7 @@ QuotaFacile · info@quotafacile.net">${esc(s.firma || "")}</textarea>
             </label>
 
             <label class="field"><span>Utente *</span>
-              <input id="f-utente" required value="${esc(f.utente)}" placeholder="info@quotafacile.net"></label>
+              <input id="f-utente" required value="${esc(f.utente)}" placeholder="${esc(mittente()?.from_email || "nome@quotafacile.net")}"></label>
             <label class="field"><span>Password ${nuova ? "*" : ""}</span>
               <input id="f-password" type="password" autocomplete="new-password"
                      placeholder="${nuova ? "la password della casella" : f.ha_password ? "lasciala vuota per non cambiarla" : "nessuna password salvata"}">

@@ -29,6 +29,11 @@
 "use strict";
 
 (function () {
+/* Le icone disegnate (assets/js/icone.js). Il ripiego a stringa
+     vuota tiene in piedi la pagina se un giorno gli <script>
+     cambiassero ordine: meglio senza icona che fermi a metà. */
+  const QA_ICO = (n, c) => window.QF_ICONE ? window.QF_ICONE.ico(n, c) : "";
+
   const API_CHAT = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-chat";
 
   const QF = () => window.QF;
@@ -259,8 +264,8 @@
     <div class="qa-velo" data-qa-velo></div>
     <div class="qa-pannello" role="dialog" aria-modal="false" aria-labelledby="qa-titolo">
       <div class="qa-testa">
-        <h2 id="qa-titolo">✨ Assistente</h2>
-        <button class="qa-chiudi" data-qa-chiudi aria-label="Chiudi l'assistente">✕</button>
+        <h2 id="qa-titolo">${QA_ICO("scintilla")} Assistente</h2>
+        <button class="qa-chiudi" data-qa-chiudi aria-label="Chiudi l'assistente">${QA_ICO("chiudi")}</button>
       </div>
 
       <div class="qa-storia" id="qa-storia">
@@ -274,7 +279,7 @@
       </div>
 
       <div class="qa-barra">
-        ${VOCE ? `<button type="button" class="qa-mic" id="qa-mic" title="Detta" aria-label="Detta con la voce">🎤</button>` : ""}
+        ${VOCE ? `<button type="button" class="qa-mic" id="qa-mic" title="Detta" aria-label="Detta con la voce">${QA_ICO("microfono")}</button>` : ""}
         <input type="text" id="qa-testo" placeholder="Scrivi o detta…"
                value="${esc(bozza)}" autocomplete="off" ${inCorso ? "disabled" : ""}>
         <button class="btn btn-primary btn-sm" id="qa-invia" ${inCorso ? "disabled" : ""}>Invia</button>
@@ -307,7 +312,7 @@
     r.innerHTML = `
       <button class="qa-bottone ${aperto ? "qa-bottone-aperto" : ""}" data-qa-apri
               aria-label="${aperto ? "Chiudi l'assistente" : "Apri l'assistente"}"
-              aria-expanded="${aperto}">${aperto ? "✕" : "✨"}</button>
+              aria-expanded="${aperto}">${aperto ? QA_ICO("chiudi") : QA_ICO("scintilla")}</button>
       ${aperto ? pannelloHtml() : ""}`;
 
     if (!aperto) return;

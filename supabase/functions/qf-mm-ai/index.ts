@@ -277,8 +277,14 @@ const SITO_TIMEOUT = 8000;
 const SITO_MAX_BYTE = 600_000;   // oltre, la pagina è un'applicazione, non un testo
 const SITO_MAX_TESTO = 3500;     // quello che arriva al modello
 
+/* L'indirizzo nell'User-Agent è un percorso, non un frammento:
+   chi vede passare il bot nei propri log deve poter incollare
+   quella riga in una barra degli indirizzi e leggere
+   l'informativa. Con il /#/ davanti funzionava solo grazie al
+   normalizzatore della pagina — e un rimando all'informativa non
+   deve dipendere dal fatto che il JavaScript parta. */
 const AGENTE_SITO =
-  "QuotaFacileBot/1.0 (+https://www.quotafacile.net/#/privacy-imprese)";
+  "QuotaFacileBot/1.0 (+https://www.quotafacile.net/privacy-imprese/)";
 
 function indirizzoSito(grezzo: string): string | null {
   const s = grezzo.trim();
