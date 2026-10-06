@@ -48,15 +48,27 @@
       operaPerConto: "Colombo & Partners S.r.l., Cernusco sul Naviglio (MI)"
     },
 
-    /* Contatti operativi (devono essere caselle realmente attive) */
-    emailInfo: "info@quotafacile.net",
-    /* Era privacy@quotafacile.net, che non esiste: chi esercitava un
-       diritto scriveva nel vuoto, e l'informativa prometteva un
-       recapito che non rispondeva a nessuno. Vale per tutte le
-       undici volte che compare qui sotto, perché è una costante
-       sola — ed è il motivo per cui è una costante sola. */
+    /* Contatti operativi (devono essere caselle realmente attive)
+     *
+     * Erano tre indirizzi di servizio — info@, privacy@,
+     * segnalazioni@ — e nessuno dei tre esisteva. Non era un
+     * dettaglio: privacy@ era la via d'uscita che l'art. 21 GDPR
+     * pretende sia facile; segnalazioni@ era dichiarato come punto
+     * di contatto DSA; info@ finiva anche nello schema.org come
+     * email dell'organizzazione, cioè in un dato strutturato che
+     * dichiarava il falso. Tre recapiti che non rispondevano a
+     * nessuno, in tre documenti che promettevano che qualcuno
+     * rispondesse.
+     *
+     * Ora puntano tutti e tre alla casella del Titolare, che
+     * esiste e si legge. Restano tre voci distinte, non una, così
+     * il giorno in cui le caselle di servizio verranno create si
+     * cambia una riga per volta senza rimettere mano ai testi: è
+     * il motivo per cui erano costanti e non stringhe sparse.
+     */
+    emailInfo: "r.difalco@quotafacile.net",
     emailPrivacy: "r.difalco@quotafacile.net",
-    emailSegnalazioni: "segnalazioni@quotafacile.net",
+    emailSegnalazioni: "r.difalco@quotafacile.net",
 
     /* Responsabile Protezione Dati: null se non nominato (non obbligatorio
        per questa tipologia di trattamento, art. 37 GDPR) */
