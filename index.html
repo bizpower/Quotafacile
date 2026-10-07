@@ -47,7 +47,26 @@
     upgrade-insecure-requests">
   <link rel="canonical" href="https://www.quotafacile.net/">
   <meta name="theme-color" content="#145233">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='14'%20fill='%23145233'/%3E%3Ctext%20x='32'%20y='46'%20font-family='system-ui,sans-serif'%20font-size='40'%20font-weight='800'%20fill='%23ffffff'%20text-anchor='middle'%3EQ%3C/text%3E%3C/svg%3E">
+  <!-- La favicon è il marchio del sito, non una sua imitazione.
+       Prima era un SVG scritto a mano dentro un data: URI: quadrato
+       verde piatto, angoli più squadrati e la Q in system-ui. Il
+       marchio vero (.brand-mark) ha un gradiente, un raggio pari al
+       29,4% del lato e la Q in Bricolage Grotesque 800 — tre cose
+       che quel disegno non aveva, e la Q cambiava faccia su ogni
+       sistema operativo.
+
+       Questi PNG sono il marchio disegnato da un browser col font
+       vero, alle stesse proporzioni misurate sul CSS. Sono file e
+       non un data: URI perché Google Search indicizza la favicon
+       solo da un indirizzo stabile, e un data: URI non ne ha uno.
+
+       L'icona per iOS è a tutto campo, senza angoli arrotondati:
+       iOS applica la propria maschera, e arrotondare due volte
+       lascia un bordo verde intorno all'icona. -->
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/img/favicon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/img/favicon-180.png">
   <meta name="author" content="QuotaFacile">
 
   <!-- Open Graph -->

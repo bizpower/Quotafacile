@@ -271,9 +271,18 @@ async function articoliMagazine(page, porta) {
 
 /* Gli asset sono scritti relativi ("assets/css/style.css"): da
    una sottocartella si romperebbero. Diventano assoluti sulla
-   base reale del sito. */
+   base reale del sito.
+
+   favicon.ico sta nella radice e non sotto assets/, perche' le
+   richieste nude a /favicon.ico - quelle dei crawler che non
+   leggono i <link> - arrivano li' e da nessun'altra parte. Ma il
+   <link> che la dichiara e' relativo come gli altri, quindi su
+   /bacheca/una-guida/ cercherebbe la favicon dentro quella
+   cartella. Va assolutizzata anche lei. */
 const assolutizza = (html, base) =>
-  html.replace(/(src|href)="assets\//g, `$1="${base}assets/`);
+  html
+    .replace(/(src|href)="assets\//g, `$1="${base}assets/`)
+    .replace(/href="favicon\.ico"/g, `href="${base}favicon.ico"`);
 
 /* I link interni al frammento diventano link veri. È quello che
    dà a un motore di ricerca un filo da seguire fra le pagine:
