@@ -298,8 +298,25 @@ async function smtpSalva(d: Record<string, unknown>) {
   const host = testo(d.host, 200);
   const utente = testo(d.utente, 200);
   const fromEmail = (testo(d.from_email, 200) || "").toLowerCase() || null;
-  const password = testo(d.password, 400);
+  const grezza = testo(d.password, 400);
   const porta = Number(d.porta) || 465;
+
+  /* Gli spazi della password per le app di Google non esistono.
+   *
+   * Google la mostra a gruppi di quattro — «abcd efgh ijkl mnop»
+   * — e chiunque la incolla cosi' com'e'. Ma la password sono
+   * sedici lettere: gli spazi sono impaginazione, e un server che
+   * se li vede arrivare risponde 535 come se fosse sbagliata.
+   * E' la causa piu' frequente del «ma io l'ho copiata giusta»,
+   * e costa un giro di tentativi a chiunque la incontri.
+   *
+   * Si toglie solo per Google: altrove uno spazio dentro una
+   * password puo' essere davvero parte della password, e
+   * cancellarlo renderebbe impossibile configurare una casella
+   * che funziona. */
+  const password = grezza && /gmail|google/i.test(String(d.host ?? ""))
+    ? grezza.replace(/\s+/g, "")
+    : grezza;
 
   if (!nome) throw new ErroreCliente("Dai un nome alla casella: serve a riconoscerla nell'elenco.");
   if (!host) throw new ErroreCliente("Manca l'host del server di posta. Su Aruba è smtps.aruba.it.");
@@ -487,7 +504,20 @@ async function smtpProva(d: Record<string, unknown>) {
     await registraInvio(casella);
     return { esito: "ok", destinatario: casella.from_email };
   } catch (e) {
-    const messaggio = leggibile(e);
+    /* La risposta cruda del server, nel registro.
+     *
+     * Prima si teneva solo la frase tradotta, e la traduzione
+     * sceglie fra tre cause: quando nessuna delle tre era quella
+     * giusta, l'unica copia di cosa avesse davvero risposto il
+     * server non esisteva piu' in nessun posto. Qui finisce la
+     * riga originale, che e' l'unica cosa che permette di
+     * diagnosticare un rifiuto che non somiglia a niente di noto.
+     *
+     * Non contiene la password: i server di posta rispondono con
+     * un codice e una frase, non con quello che hanno ricevuto. */
+    console.error("[qf-mm] smtp-prova fallita su", String(casella.host),
+      "- risposta del server:", e instanceof Error ? e.message : String(e));
+    const messaggio = leggibile(e, String(casella.host));
     await db.from("mm_smtp").update({
       stato: "errore", ultimo_test_il: adesso, ultimo_test_esito: "errore", ultimo_test_errore: messaggio,
     }).eq("id", id);
@@ -496,19 +526,46 @@ async function smtpProva(d: Record<string, unknown>) {
 }
 
 /* Gli errori dei server di posta sono scritti per chi li ha
-   programmati. Le tre cause vere si riconoscono, e dirle in
-   italiano risparmia mezz'ora di tentativi. */
-function leggibile(e: unknown): string {
+   programmati. Le cause vere si riconoscono, e dirle in italiano
+   risparmia mezz'ora di tentativi.
+ *
+ * IL CONSIGLIO SEGUE IL FORNITORE, NON IL CASO PIU' FREQUENTE
+ *
+ * Prima no: a un 535 rispondeva sempre con la regola di Aruba
+ * («l'utente e' l'indirizzo completo»). Su una casella Google
+ * quel consiglio e' peggio di nessun consiglio, perche' manda a
+ * controllare una cosa che era gia' giusta mentre la causa vera
+ * — la password dell'account al posto di quella per le app — non
+ * viene nemmeno nominata. Chi legge ha un messaggio preciso e
+ * sbagliato, che e' il modo piu' efficace di far perdere tempo.
+ */
+function leggibile(e: unknown, host = ""): string {
   const g = e instanceof Error ? e.message : String(e);
   const b = g.toLowerCase();
-  if (b.includes("535") || b.includes("authentication") || b.includes("invalid login"))
-    return "Utente o password rifiutati dal server. Su Aruba l'utente è l'indirizzo completo della casella, non solo la parte prima della chiocciola.";
+  const h = String(host).toLowerCase();
+  const google = h.includes("gmail") || h.includes("google");
+
+  if (b.includes("535") || b.includes("authentication") ||
+      b.includes("invalid login") || b.includes("not accepted")) {
+    return google
+      ? "Google ha rifiutato le credenziali (535). Tre cause, in ordine di frequenza: " +
+        "1) stai usando la password con cui entri nella casella — su Google non vale per l'SMTP, " +
+        "serve una «password per le app» di 16 lettere da myaccount.google.com/apppasswords, " +
+        "incollata SENZA spazi (Google la mostra a gruppi di quattro, ma gli spazi non ne fanno parte); " +
+        "2) la verifica in due passaggi non è attiva, e senza quella le password per le app non esistono; " +
+        "3) su Workspace l'amministratore può aver disattivato l'accesso SMTP per l'utente " +
+        "(Admin → Sicurezza → Meno sicure / Accesso SMTP autenticato)."
+      : "Utente o password rifiutati dal server. Su Aruba l'utente è l'indirizzo completo della casella, non solo la parte prima della chiocciola.";
+  }
   if (b.includes("timeout") || b.includes("timed out"))
     return "Il server non ha risposto in tempo. Di solito è la porta sbagliata: 465 con TLS, 587 senza.";
   if (b.includes("certificate") || b.includes("tls") || b.includes("ssl"))
     return "Handshake TLS fallito: la porta e l'impostazione TLS non vanno d'accordo. La 465 vuole TLS acceso, la 587 spento.";
-  if (b.includes("enotfound") || b.includes("dns") || b.includes("resolve"))
-    return "Host non trovato: controlla il nome del server. Su Aruba è smtps.aruba.it.";
+  if (b.includes("enotfound") || b.includes("dns") || b.includes("resolve")) {
+    return google
+      ? "Host non trovato: per Google il server è smtp.gmail.com."
+      : "Host non trovato: controlla il nome del server. Su Aruba è smtps.aruba.it.";
+  }
   return g.slice(0, 500);
 }
 
@@ -588,7 +645,7 @@ async function smtpInvioRapido(d: Record<string, unknown>) {
       });
       riusciti.push(a);
     } catch (e) {
-      falliti.push({ a, errore: leggibile(e) });
+      falliti.push({ a, errore: leggibile(e, String(casella.host)) });
     }
   }
   /* close() non restituisce sempre una promise, e se la
@@ -1258,7 +1315,7 @@ async function postaInvia(d: Record<string, unknown>) {
       partite++;
     } catch (e) {
       await db.from("mm_email").update({
-        stato: "fallita", errore: leggibile(e), smtp_id: smtpId,
+        stato: "fallita", errore: leggibile(e, String(casella.host)), smtp_id: smtpId,
       }).eq("id", m.id);
       fallite++;
     }
@@ -1428,7 +1485,7 @@ async function codaScarica() {
         }).eq("id", m.id);
         partite++; dallaCasella++;
       } catch (e) {
-        await db.from("mm_email").update({ stato: "fallita", errore: leggibile(e) }).eq("id", m.id);
+        await db.from("mm_email").update({ stato: "fallita", errore: leggibile(e, String(casella.host)) }).eq("id", m.id);
         fallite++;
       }
       if (i < daMandare.length - 1) await attendi(PAUSA_CODA * 1000);
