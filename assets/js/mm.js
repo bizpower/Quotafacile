@@ -1947,8 +1947,10 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
               <strong>Su Gmail non va la password con cui entri nella casella:</strong> Google rifiuta
               SMTP con quella, ed è l'errore <code>535</code>. Serve una <strong>password per le
               app</strong> di 16 caratteri, che si genera su
-              <code>myaccount.google.com</code> → Sicurezza, e che esiste solo se la verifica in due
-              passaggi è attiva. L'utente è l'indirizzo completo.`
+              <code>myaccount.google.com/apppasswords</code> e che esiste solo se la verifica in due
+              passaggi è attiva. Google la mostra a gruppi di quattro — <em>abcd efgh ijkl mnop</em> —
+              ma <strong>gli spazi non ne fanno parte</strong>: incollala pure com'è, li togliamo noi.
+              L'utente è l'indirizzo completo.`
             : f.fornitore === "aruba" ? `
               Su Aruba l'utente è l'indirizzo completo della casella, non solo la parte prima della
               chiocciola.`
