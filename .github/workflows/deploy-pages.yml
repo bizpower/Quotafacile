@@ -83,7 +83,12 @@ jobs:
           # La scrive il pre-render leggendo le rotte reali, così
           # una guida nuova ci finisce da sola e non c'è un secondo
           # elenco da ricordarsi di aggiornare a mano.
-          cp index.html robots.txt llms.txt _sito/
+          # favicon.ico sta nella radice e non sotto assets/ perché
+          # le richieste nude a /favicon.ico — quelle dei crawler
+          # che non leggono i <link> — arrivano lì e da nessun'altra
+          # parte. Le altre misure, PNG, stanno in assets/img/ e le
+          # porta il copy qui sopra.
+          cp index.html robots.txt llms.txt favicon.ico _sito/
           # Il dominio definitivo. Serve al percorso di pubblicazione
           # classico; con le Actions il dominio si imposta comunque
           # in Settings → Pages, ma tenerlo qui vuol dire che il
