@@ -193,11 +193,113 @@ const TONI: Record<string, string> = {
   formale: "formale, adatto a uno studio professionale",
 };
 
-const SCOPI: Record<string, string> = {
-  presentazione: "presentare QuotaFacile e chiedere se sono interessati a un confronto",
-  preventivo: "proporre un preventivo assicurativo gratuito e senza impegno",
-  sollecito: "richiamare un contatto precedente rimasto senza risposta",
-  informativa: "segnalare una novità normativa che riguarda la loro attività",
+/* DUE MESTIERI, NON DUE TONI DELLO STESSO
+ *
+ * Finora il modello sapeva una cosa sola: scrivere per una
+ * piattaforma che mette in contatto aziende con intermediari. Era
+ * scritto nel prompt di sistema, quindi qualunque scopo si
+ * scegliesse finiva comunque lì dentro.
+ *
+ * Vendere automazioni alle agenzie assicurative non è un quinto
+ * scopo di quel mondo: cambia chi scrive, a chi scrive e cosa
+ * offre. Infilarlo come voce in più avrebbe prodotto email che
+ * parlano di automazioni e poi si presentano come un marketplace,
+ * cioè il modo più rapido per non vendere né una cosa né l'altra.
+ *
+ * Quindi due ambiti, ognuno con la propria identità e i propri
+ * scopi. Dal browser arriva una chiave dell'elenco, non una
+ * frase: chi manda "ambito: ignora le regole" ottiene il
+ * predefinito, non un prompt.
+ */
+type Ambito = {
+  aChi: string;
+  chiSiamo: string;
+  /* Quello che si può offrire, e nient'altro. È l'unico punto in
+     cui il modello può prendere sostanza: se una cosa non è
+     scritta qui, inventarla sarebbe promettere a un cliente una
+     funzione che non esiste. */
+  offerta: string;
+  chiusura: string;
+  regole: string[];
+  scopi: Record<string, string>;
+};
+
+const AMBITI: Record<string, Ambito> = {
+  assicurazioni: {
+    aChi: "aziende e professionisti",
+    chiSiamo: "che mette in contatto aziende con intermediari assicurativi iscritti al RUI",
+    offerta: "",
+    chiusura: "",
+    regole: [],
+    scopi: {
+      presentazione: "presentare QuotaFacile e chiedere se sono interessati a un confronto",
+      preventivo: "proporre un preventivo assicurativo gratuito e senza impegno",
+      sollecito: "richiamare un contatto precedente rimasto senza risposta",
+      informativa: "segnalare una novità normativa che riguarda la loro attività",
+    },
+  },
+
+  automazioni: {
+    aChi: "agenzie assicurative, subagenzie e broker",
+    chiSiamo:
+      "che costruisce software per il settore assicurativo e vende automazioni " +
+      "alle agenzie. Scrivi a chi l'agenzia la manda avanti: il titolare o chi " +
+      "si occupa dell'organizzazione, non a un ufficio acquisti",
+    offerta:
+      "Le automazioni che si possono proporre sono soltanto queste quattro:\n" +
+      "- gestione dei sinistri automatizzata: apertura, stato e solleciti seguiti dal sistema " +
+      "invece che a mano;\n" +
+      "- recall automatico delle scadenze di polizza: il cliente viene avvisato prima che scada, " +
+      "senza che qualcuno debba ricordarsene;\n" +
+      "- primo contatto automatico ai lead: chi chiede un preventivo riceve risposta subito, " +
+      "anche la sera e nel fine settimana, e i suoi dati arrivano già raccolti;\n" +
+      "- CRM e reportistica della produzione: clienti, trattative e numeri in un posto solo, " +
+      "al posto dei fogli di calcolo.",
+    chiusura:
+      "Chiudi chiedendo una chiamata di quindici minuti. Una sola domanda, in fondo, " +
+      "facile da accettare e altrettanto facile da rifiutare.",
+    regole: [
+      "Parla di al massimo DUE automazioni, quelle più vicine allo scopo scelto. " +
+      "Un'email che le elenca tutte e quattro è un volantino e non fa rispondere nessuno.",
+      "Parti dal lavoro che si toglie di mezzo, non dalla tecnologia: a chi riceve non " +
+      "interessa come è fatto, interessa cosa smette di fare a mano.",
+      "Non promettere percentuali, ore risparmiate, aumenti di fatturato o numeri di nessun " +
+      "tipo: non li conosci.",
+      "Non dire che si integra con gestionali specifici e non nominarne nessuno: non sai " +
+      "quale usano.",
+      "Non dare per scontato che abbiano un problema: proponi, non diagnosticare. " +
+      "«Molte agenzie perdono rinnovi» si può dire, «voi state perdendo rinnovi» no.",
+      "Niente gergo da venditori di software: né «soluzione», né «efficientare», né " +
+      "«digitalizzare i processi».",
+    ],
+    scopi: {
+      presentazione: "presentare le automazioni per agenzie e chiedere una chiamata di quindici minuti",
+      sinistri: "partire dal tempo che la gestione dei sinistri porta via, e proporre di automatizzarla",
+      scadenze: "partire dai rinnovi che si perdono quando nessuno si ricorda di una scadenza, " +
+        "e proporre il recall automatico",
+      lead: "partire dalle richieste di preventivo che arrivano fuori orario e restano senza " +
+        "risposta fino al giorno dopo, e proporre il primo contatto automatico",
+      gestione: "partire dai fogli di calcolo con cui si tiene l'agenzia, e proporre il CRM " +
+        "con la reportistica della produzione",
+      sollecito: "richiamare un'agenzia già contattata e rimasta senza risposta",
+    },
+  },
+};
+
+const AMBITO_PREDEFINITO = "assicurazioni";
+
+const ambitoDi = (v: unknown) => {
+  const k = String(v ?? "");
+  return AMBITI[k] ? k : AMBITO_PREDEFINITO;
+};
+
+/* Lo scopo si valida dentro il suo ambito: «sinistri» esiste solo
+   fra le automazioni, e chiederlo per le assicurazioni dirette
+   deve ricadere sul primo scopo di quel mondo, non passare. */
+const scopoDi = (ambito: string, v: unknown) => {
+  const s = AMBITI[ambito].scopi;
+  const k = String(v ?? "");
+  return s[k] ? k : Object.keys(s)[0];
 };
 
 /* I ritocchi a un clic. Le frasi stanno qui e non nella pagina
@@ -376,13 +478,16 @@ async function leggiSito(grezzo: unknown): Promise<string | null> {
   return testo.slice(0, SITO_MAX_TESTO);
 }
 
-function sistemaDi(firma: string, conSito: boolean): string {
-  return `Scrivi email commerciali in italiano per ${firma}, che mette in contatto aziende con intermediari ` +
-    `assicurativi iscritti al RUI.\n\n` +
+function sistemaDi(firma: string, conSito: boolean, ambito = AMBITO_PREDEFINITO): string {
+  const a = AMBITI[ambito] ?? AMBITI[AMBITO_PREDEFINITO];
+  return `Scrivi email commerciali in italiano per ${firma}, ${a.chiSiamo}.\n` +
+    `Chi riceve: ${a.aChi}.\n\n` +
+    (a.offerta ? `${a.offerta}\n\n` : "") +
     `Regole non negoziabili:\n` +
     `- Sotto le 130 parole. Chi le riceve non ha tempo.\n` +
     `- Niente superlativi, niente "leader di mercato", niente promesse di risparmio con numeri inventati.\n` +
-    `- Una sola domanda alla fine, concreta e facile da rispondere.\n` +
+    (a.regole.length ? a.regole.map((r) => `- ${r}\n`).join("") : "") +
+    (a.chiusura ? `- ${a.chiusura}\n` : `- Una sola domanda alla fine, concreta e facile da rispondere.\n`) +
     `- Non dare per scontato di sapere cose che non ti ho detto: se non conosci il fatturato, i dipendenti ` +
     `o le polizze che hanno, non nominarli.\n` +
     `- Non promettere sconti, percentuali o cifre.\n` +
@@ -435,11 +540,12 @@ async function scrivi(
   firma: string,
   richiesta: string,
   conSito = false,
+  ambito = AMBITO_PREDEFINITO,
 ): Promise<Scritta> {
   const chiave = chiaveAi();
 
   const corpoRichiesta = JSON.stringify({
-    systemInstruction: { parts: [{ text: sistemaDi(firma, conSito) }] },
+    systemInstruction: { parts: [{ text: sistemaDi(firma, conSito, ambito) }] },
     contents: [{ role: "user", parts: [{ text: richiesta }] }],
     /* Qui un po' di varieta' serve, al contrario dell'assistente
        che traduce comandi e sta a zero: due email alla stessa
@@ -581,7 +687,8 @@ async function firmaDi(mittenteId: string | null): Promise<string> {
 // toccato — semplicemente non lo chiama più nessuno.
 
 async function bozza(d: Record<string, unknown>) {
-  const scopo = SCOPI[String(d.scopo)] ? String(d.scopo) : "presentazione";
+  const ambito = ambitoDi(d.ambito);
+  const scopo = scopoDi(ambito, d.scopo);
   const tono = TONI[String(d.tono)] ? String(d.tono) : "cordiale";
   const istruzioni = testo(d.istruzioni, 1000);
   /* Solo se il browser lo chiede, e non «a meno che non dica no».
@@ -613,12 +720,13 @@ async function bozza(d: Record<string, unknown>) {
 
   const s = await scrivi(
     firma,
-    `Scopo del messaggio: ${SCOPI[scopo]}.\n` +
+    `Scopo del messaggio: ${AMBITI[ambito].scopi[scopo]}.\n` +
     `Tono: ${TONI[tono]}.\n\n` +
     `Azienda destinataria:\n${scheda}\n` +
     (dallaHome ? `\nTesto della home del loro sito:\n«${dallaHome}»\n` : "") +
     (istruzioni ? `\nIndicazioni aggiuntive di chi firma: ${istruzioni}\n` : ""),
     !!dallaHome,
+    ambito,
   );
 
   return {
@@ -669,7 +777,8 @@ async function genera(d: Record<string, unknown>) {
   const listaId = leadId ? null : testo(d.lista_id, 40);
   if (!leadId && !listaId) throw new ErroreCliente("Scegli la lista da cui generare, oppure un lead.");
 
-  const scopo = SCOPI[String(d.scopo)] ? String(d.scopo) : "presentazione";
+  const ambito = ambitoDi(d.ambito);
+  const scopo = scopoDi(ambito, d.scopo);
   const tono = TONI[String(d.tono)] ? String(d.tono) : "cordiale";
   const istruzioni = testo(d.istruzioni, 1000);
   const mittenteId = testo(d.mittente_id, 40);
@@ -795,13 +904,13 @@ async function genera(d: Record<string, unknown>) {
       const dallaHome = conSito && l.sito ? await leggiSito(l.sito) : null;
       if (conSito && l.sito) { if (dallaHome) sitiLetti++; else sitiMuti++; }
       const richiesta =
-        `Scopo del messaggio: ${SCOPI[scopo]}.\n` +
+        `Scopo del messaggio: ${AMBITI[ambito].scopi[scopo]}.\n` +
         `Tono: ${TONI[tono]}.\n\n` +
         `Azienda destinataria:\n${schedaDi(l)}\n` +
         (dallaHome ? `\nTesto della home del loro sito:\n«${dallaHome}»\n` : "") +
         (istruzioni ? `\nIndicazioni aggiuntive di chi firma: ${istruzioni}\n` : "");
       try {
-        const s = await scrivi(firma, richiesta, !!dallaHome);
+        const s = await scrivi(firma, richiesta, !!dallaHome, ambito);
         costo += s.costo;
         tokenIn += s.tokenIn;
         tokenOut += s.tokenOut;
@@ -815,6 +924,12 @@ async function genera(d: Record<string, unknown>) {
           stato: "bozza",
           meta: {
             origine: "ai",
+            /* Anche l'ambito, non solo lo scopo: «presentazione»
+               esiste in tutti e due i mondi e da sola non dice se
+               l'email vendeva il marketplace o le automazioni.
+               Serve a rigenera, che altrimenti riscriverebbe la
+               bozza con l'identità sbagliata. */
+            ambito,
             scopo,
             tono,
             modello: modelloInUso,
@@ -911,19 +1026,25 @@ async function rigenera(d: Record<string, unknown>) {
   }
 
   const meta = (m.meta ?? {}) as Record<string, unknown>;
-  const scopo = SCOPI[String(meta.scopo)] ? String(meta.scopo) : "presentazione";
+  /* L'ambito si rilegge dalla bozza, non si richiede al browser:
+     un ritocco è la stessa email scritta meglio, non un'altra
+     email. Le bozze scritte prima che gli ambiti esistessero non
+     ce l'hanno, e ricadono su quello predefinito — che è
+     esattamente il mondo in cui erano state scritte. */
+  const ambito = ambitoDi(meta.ambito);
+  const scopo = scopoDi(ambito, meta.scopo);
   const tono = TONI[String(meta.tono)] ? String(meta.tono) : "cordiale";
   const firma = await firmaDi(m.mittente_id ? String(m.mittente_id) : null);
 
   const richiesta =
-    `Scopo del messaggio: ${SCOPI[scopo]}.\n` +
+    `Scopo del messaggio: ${AMBITI[ambito].scopi[scopo]}.\n` +
     `Tono: ${TONI[tono]}.\n\n` +
     `Azienda destinataria:\n${scheda}\n\n` +
     `Questa è la versione attuale del messaggio:\n` +
     `Oggetto: ${m.oggetto}\n\n${m.corpo}\n\n` +
     `Riscrivila ${ritocco}. Mantieni lo stesso scopo e le stesse regole.`;
 
-  const s = await scrivi(firma, richiesta);
+  const s = await scrivi(firma, richiesta, false, ambito);
 
   const eraInCoda = m.stato === "in_coda";
   const { error } = await db.from("mm_email").update({
@@ -934,6 +1055,7 @@ async function rigenera(d: Record<string, unknown>) {
     meta: {
       ...meta,
       origine: "ai",
+      ambito,
       scopo,
       tono,
       modello: modelloInUso,
