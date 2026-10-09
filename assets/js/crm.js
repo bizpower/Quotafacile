@@ -502,6 +502,36 @@
           ${L.dati.length ? "Di là si rinominano e si eliminano." : "Scegli dei lead qui sotto per crearne la prima."}
         </p>`;
 
+    /* Il ponte verso il Mail Marketing.
+       Scrivere le email e programmarne l'invio esiste già di là,
+       finito: la scrittura assistita prende una lista, le bozze
+       si rileggono in Email Ready, «Programma» chiede giorno e
+       ora e il resto lo fa il giro della coda, che passa ogni
+       minuto. Rifare qui anche solo il bottone avrebbe voluto
+       dire due strade per la stessa cosa.
+       Quindi di qui si parte soltanto: l'indirizzo porta con sé
+       la lista, e la finestra di là si apre già su quella.
+
+       Il numero di scrivibili non è un di più. Il modello scrive
+       solo a chi ha un'email, e un'azienda su due non ce l'ha in
+       archivio perché Google non la fornisce: saperlo prima di
+       pagare una generazione evita di scoprirlo dopo, davanti a
+       «nessuna bozza scritta». */
+    const scrivibili = base.filter(l => l.email && !l.no_contatto).length;
+
+    const barraInvio = apertaOra ? `
+        <div class="admin-actions" style="margin:.6rem 0;align-items:center">
+          ${scrivibili ? `
+            <a class="btn btn-primary btn-sm" href="#/admin/crm/mail/pronte?genera=${esc(apertaOra.id)}">✨ Scrivi le email con l'AI</a>`
+          : `<button class="btn btn-primary btn-sm" disabled title="Nessuno di questi lead ha un'email">✨ Scrivi le email con l'AI</button>`}
+          <a class="btn btn-ghost btn-sm" href="#/admin/crm/mail/liste?l=${esc(apertaOra.id)}">Apri nel Mail Marketing</a>
+          <span class="muted" style="font-size:.78rem">
+            ${scrivibili
+              ? `${scrivibili} su ${base.length} ${scrivibili === 1 ? "ha" : "hanno"} un'email. Le bozze si rileggono e si programmano in Email Ready.`
+              : "Nessuno di questi lead ha un'email in archivio: rifai la ricerca con «solo con email pubblica» qui sopra, oppure aggiungila a mano dal Mail Marketing."}
+          </span>
+        </div>` : "";
+
     const barraScelta = scelta && L.scelti.size ? `
         <div class="admin-actions" style="margin:.8rem 0;align-items:center">
           <strong style="font-size:.85rem">${plurale(L.scelti.size, "lead scelto", "lead scelti")}</strong>
@@ -521,6 +551,7 @@
         <h3>📇 ${apertaOra ? `Lista «${esc(apertaOra.nome)}» (${base.length})` : `Lead in archivio (${salvati.length})`}</h3>
         ${salvati.length ? `
           ${barraListe}
+          ${barraInvio}
           <div class="filterbar" style="margin:.6rem 0">
             <button class="chip ${R.filtroStato === "tutti" ? "active" : ""}" data-lead-filtro="tutti">Tutti</button>
             ${Object.entries(STATI_LEAD).map(([k, v]) => `
