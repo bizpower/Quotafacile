@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firma email — QuotaFacile</title>
+<!--
+  Questa pagina non fa parte del sito: non viene pubblicata.
+  Il workflow di deploy copia i file per inclusione, uno per uno,
+  e tools/ non è nell'elenco.
+
+  Serve a una cosa sola: avere la firma sotto gli occhi, vederla
+  come la vedrà chi la riceve, e copiarla senza passare da un
+  editor che ci infila dentro il suo stile.
+
+  Tutti i dati qui dentro sono già nel progetto — legal.js per
+  l'anagrafica e il RUI, qf-mm per il piede di legge — e nessuno è
+  inventato. Se cambia un recapito, cambia lì e qui.
+-->
+<style>
+  :root {
+    --green-800: #145233; --green-600: #2C8C5E; --green-testo: #267A52;
+    --ink: #12291C; --ink-soft: #4C5F55; --line: #DCE5E0; --bg: #F6F8F7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.2rem 5rem; background: var(--bg); color: var(--ink);
+    font: 400 15px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .foglio { max-width: 50rem; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  h2 { font-size: 1.05rem; margin: 2.6rem 0 .4rem; letter-spacing: -.01em; }
+  p { margin: .5rem 0; }
+  .muted { color: var(--ink-soft); font-size: .9rem; }
+  .riquadro {
+    background: #fff; border: 1px solid var(--line); border-radius: 14px;
+    padding: 1.6rem; margin: .9rem 0;
+  }
+  .riquadro.testo { padding: 1.1rem 1.3rem; }
+  pre {
+    margin: 0; white-space: pre-wrap; word-break: break-word;
+    font: 400 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--ink);
+  }
+  button {
+    border: 1.5px solid var(--green-800); background: var(--green-800); color: #fff;
+    border-radius: 999px; padding: .45rem 1.1rem; font: 600 .85rem inherit;
+    cursor: pointer; margin-top: .7rem;
+  }
+  button.vuoto { background: #fff; color: var(--green-800); }
+  button:active { transform: translateY(1px); }
+  .nota {
+    border-left: 3px solid var(--green-600); background: #fff;
+    padding: .8rem 1rem; border-radius: 0 10px 10px 0; margin: .9rem 0;
+    font-size: .9rem; color: var(--ink-soft);
+  }
+  .nota strong { color: var(--ink); }
+  ol { padding-left: 1.2rem; }
+  ol li { margin: .3rem 0; font-size: .92rem; }
+  code { background: #fff; border: 1px solid var(--line); border-radius: 5px; padding: .05rem .3rem; font-size: .85em; }
+</style>
+</head>
+<body>
+<div class="foglio">
+
+  <h1>Firma email</h1>
+  <p class="muted">Due versioni, perché i due canali non sono la stessa cosa: Gmail manda HTML e la
+  firma può avere il logo e il grassetto; il mail marketing della piattaforma manda testo semplice e
+  non può averli. Sotto ci sono tutte e due, già pronte.</p>
+
+  <!-- ====================================================== -->
+  <h2>1 · Gmail — <code>r.difalco@quotafacile.net</code></h2>
+  <p class="muted">Questa è quella con il logo. Il marchio non è un'immagine allegata: è il file che il
+  sito pubblica già, letto dal suo indirizzo pubblico, così non pesa sul messaggio e non finisce fra gli
+  allegati di chi riceve.</p>
+
+  <div class="riquadro">
+    <div id="firma-html">
+<!-- ↓↓↓ FIRMA — da qui ↓↓↓ -->
+<table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;max-width:540px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#12291C">
+  <tr>
+    <td style="vertical-align:top;padding:0 16px 0 0">
+      <img src="https://www.quotafacile.net/assets/img/favicon-192.png" width="58" height="58" alt="QuotaFacile" style="display:block;width:58px;height:58px;border:0;border-radius:13px">
+    </td>
+    <td style="vertical-align:top;padding:0 0 0 16px;border-left:3px solid #145233">
+      <div style="font-size:17px;font-weight:700;letter-spacing:-0.01em;color:#12291C;line-height:1.3">Riccardo Di Falco</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#267A52;padding-top:3px">Founder</div>
+      <div style="font-size:14px;padding-top:9px;line-height:1.5">
+        <a href="https://www.quotafacile.net" style="color:#145233;text-decoration:none;font-weight:700">Quota<span style="color:#267A52">Facile</span></a>
+        <span style="color:#DCE5E0">&#9474;</span>
+        <a href="https://www.quotafacile.net" style="color:#4C5F55;text-decoration:none">www.quotafacile.net</a>
+      </div>
+      <div style="font-size:13px;color:#4C5F55;padding-top:3px;line-height:1.5">
+        <a href="mailto:r.difalco@quotafacile.net" style="color:#4C5F55;text-decoration:none">r.difalco@quotafacile.net</a>
+        <span style="color:#DCE5E0">&#9474;</span>
+        Via Gramsci 16 &middot; 20073 Opera (MI)
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:14px 0 0">
+      <div style="border-top:1px solid #DCE5E0;padding-top:10px;font-size:10px;line-height:1.55;color:#8A978F;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+        <strong style="color:#4C5F55;font-weight:600">QuotaFacile</strong> &egrave; una piattaforma di informazione e messa in contatto: non svolge attivit&agrave; di distribuzione assicurativa ai sensi dell&rsquo;art.&nbsp;106 del d.lgs.&nbsp;209/2005, non colloca polizze e non percepisce provvigioni.<br>
+        Riccardo Di Falco &mdash; impresa individuale &middot; P.&nbsp;IVA 11784600964 &middot; Via Gramsci 16, 20073 Opera (MI).<br>
+        Intermediario assicurativo iscritto al RUI, sezione&nbsp;E n.&nbsp;E000688335 dal 24/06/2021, per conto di Colombo &amp; Partners S.r.l. &mdash; attivit&agrave; soggetta alla vigilanza dell&rsquo;IVASS.<br>
+        Come trattiamo i dati di contatto: <a href="https://www.quotafacile.net/privacy/" style="color:#8A978F;text-decoration:underline">privacy</a> &middot; <a href="https://www.quotafacile.net/privacy-imprese/" style="color:#8A978F;text-decoration:underline">informativa alle imprese</a> &middot; <a href="https://www.quotafacile.net/note-legali/" style="color:#8A978F;text-decoration:underline">note legali</a>. Per non ricevere pi&ugrave; nostre comunicazioni basta rispondere <strong style="color:#4C5F55;font-weight:600">NO</strong>: non serve motivare nulla.
+      </div>
+    </td>
+  </tr>
+</table>
+<!-- ↑↑↑ FIRMA — a qui ↑↑↑ -->
+    </div>
+    <button id="copia-html">Copia la firma</button>
+    <button class="vuoto" id="copia-sorgente">Copia il codice HTML</button>
+  </div>
+
+  <p class="muted"><strong>Dove si incolla:</strong></p>
+  <ol class="muted">
+    <li>Gmail &rarr; &#9881; &rarr; <em>Visualizza tutte le impostazioni</em> &rarr; <em>Generali</em> &rarr; <em>Firma</em>.</li>
+    <li><em>Crea nuova</em>, chiamala per esempio <code>QuotaFacile</code>.</li>
+    <li>Clicca <strong>Copia la firma</strong> qui sopra e incolla nel riquadro con <code>Ctrl+V</code> (<code>&#8984;V</code> su Mac).</li>
+    <li>Sotto, in <em>Impostazioni predefinite firma</em>, scegli quella firma sia per i messaggi nuovi sia per le risposte.</li>
+    <li>In fondo alla pagina, <em>Salva modifiche</em>.</li>
+  </ol>
+
+  <div class="nota">
+    <strong>Se incollando si perde la grafica:</strong> Gmail a volte incolla come testo semplice.
+    Usa <code>Ctrl+Shift+V</code>, oppure il pulsante <em>Copia il codice HTML</em> e incollalo dove
+    il tuo editor accetta HTML. Il logo lo prende da
+    <code>www.quotafacile.net/assets/img/favicon-192.png</code>: resta visibile finché il sito è online,
+    che è esattamente la condizione in cui ha senso una firma che porta a quel sito.
+  </div>
+
+  <!-- ====================================================== -->
+  <h2>2 · Mail Marketing della piattaforma</h2>
+  <p class="muted">Qui le email partono in <strong>testo semplice</strong>, non in HTML: nessun logo e
+  nessun grassetto vero, perché non esistono nel formato. Non è una mancanza da correggere a vista —
+  nel contatto a freddo il testo semplice passa i filtri meglio dell'HTML, e un'email che arriva senza
+  logo vale più di una con il logo che finisce in spam.</p>
+
+  <div class="nota">
+    <strong>Importante:</strong> il piede di legge — da dove viene l'indirizzo, come si fa a non
+    ricevere più niente, sede e partita IVA — <strong>lo aggiunge già il sistema a ogni invio</strong>,
+    sempre, e non è disattivabile. Quindi questa firma <em>non</em> lo ripete: se incollassi qui sotto
+    anche quella parte, chi riceve se la troverebbe due volte.
+  </div>
+
+  <div class="riquadro testo">
+<pre id="firma-testo">—
+Riccardo Di Falco · Founder
+QuotaFacile · www.quotafacile.net
+r.difalco@quotafacile.net
+
+QuotaFacile è una piattaforma di informazione e messa in contatto: non svolge attività
+di distribuzione assicurativa ai sensi dell'art. 106 del d.lgs. 209/2005, non colloca
+polizze e non percepisce provvigioni. Riccardo Di Falco è intermediario assicurativo
+iscritto al RUI, sezione E n. E000688335, per conto di Colombo &amp; Partners S.r.l.
+Attività soggetta alla vigilanza dell'IVASS.</pre>
+    <button id="copia-testo">Copia il testo</button>
+  </div>
+
+  <p class="muted"><strong>Dove si incolla:</strong> CRM Bizpower &rarr; Mail Marketing &rarr;
+  <em>Caselle di invio</em> &rarr; la casella <code>r.difalco@quotafacile.net</code> &rarr; campo
+  <em>Firma</em>, con <em>firma attiva</em> acceso.</p>
+
+  <!-- ====================================================== -->
+  <h2>3 · Variante con il grassetto nel testo semplice</h2>
+  <p class="muted">Il testo semplice non ha il grassetto, ma Unicode ha delle lettere che <em>sono</em>
+  già in grassetto. Si possono incollare ovunque e si vedono anche dove l'HTML non arriva.</p>
+
+  <div class="riquadro testo">
+<pre id="firma-testo-bold">—
+𝗥𝗶𝗰𝗰𝗮𝗿𝗱𝗼 𝗗𝗶 𝗙𝗮𝗹𝗰𝗼 · Founder
+𝗤𝘂𝗼𝘁𝗮𝗙𝗮𝗰𝗶𝗹𝗲 · www.quotafacile.net
+r.difalco@quotafacile.net
+
+QuotaFacile è una piattaforma di informazione e messa in contatto: non svolge attività
+di distribuzione assicurativa ai sensi dell'art. 106 del d.lgs. 209/2005, non colloca
+polizze e non percepisce provvigioni. Riccardo Di Falco è intermediario assicurativo
+iscritto al RUI, sezione E n. E000688335, per conto di Colombo &amp; Partners S.r.l.
+Attività soggetta alla vigilanza dell'IVASS.</pre>
+    <button id="copia-testo-bold">Copia il testo</button>
+  </div>
+
+  <div class="nota">
+    <strong>Quanto costa:</strong> quelle non sono lettere, sono simboli matematici che somigliano a
+    lettere. Uno screen reader legge «lettera maiuscola R matematica in grassetto» una per una invece
+    di «Riccardo»; qualche client Android senza il font giusto mostra dei quadratini; e alcuni filtri
+    antispam li contano come carattere anomalo. Per la posta che mandi a mano va benissimo. Per una
+    campagna a freddo — dove il filtro antispam decide se l'email esiste — userei la versione 2.
+  </div>
+
+  <!-- ====================================================== -->
+  <h2>Da dove vengono questi dati</h2>
+  <p class="muted">Nessuno è stato inventato per riempire la firma. Nome, sede, partita IVA, numero e
+  sezione del RUI e l'intermediario per cui operi stanno in <code>assets/js/legal.js</code>; la frase
+  sulla natura della piattaforma è la stessa del piede del sito; il rimando all'opposizione è lo stesso
+  che il mail marketing aggiunge da sé. <strong>Non c'è un numero di telefono</strong> perché nel
+  progetto non ce n'è uno: se vuoi metterlo, dimmelo e lo aggiungo in tutte e tre le versioni.</p>
+
+</div>
+
+<script>
+  /* Copiare una firma è l'unico punto in cui un passaggio di mano
+     fa danni: un editor di mezzo ci infila il suo font e il
+     risultato è una firma che a te sembra giusta e a chi riceve no.
+     Qui si copia il nodo così com'è, HTML compreso. */
+  function avviso(b, testo) {
+    const prima = b.textContent;
+    b.textContent = testo;
+    setTimeout(() => { b.textContent = prima; }, 1800);
+  }
+
+  async function copiaRicco(nodo, bottone) {
+    const html = nodo.innerHTML;
+    const testo = nodo.innerText;
+    try {
+      await navigator.clipboard.write([new ClipboardItem({
+        "text/html": new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([testo], { type: "text/plain" })
+      })]);
+      avviso(bottone, "Copiata ✓");
+      return;
+    } catch (e) { /* vecchi browser, o pagina aperta da file:// */ }
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.selectNodeContents(nodo);
+    sel.removeAllRanges(); sel.addRange(r);
+    const fatto = document.execCommand("copy");
+    sel.removeAllRanges();
+    avviso(bottone, fatto ? "Copiata ✓" : "Selezionala e copia a mano");
+  }
+
+  async function copiaTesto(testo, bottone) {
+    try { await navigator.clipboard.writeText(testo); avviso(bottone, "Copiato ✓"); }
+    catch (e) { avviso(bottone, "Selezionalo e copia a mano"); }
+  }
+
+  document.getElementById("copia-html")
+    .addEventListener("click", ev => copiaRicco(document.getElementById("firma-html"), ev.currentTarget));
+
+  document.getElementById("copia-sorgente")
+    .addEventListener("click", ev => copiaTesto(
+      document.getElementById("firma-html").innerHTML.trim(), ev.currentTarget));
+
+  for (const id of ["firma-testo", "firma-testo-bold"]) {
+    document.getElementById("copia-" + id.replace("firma-", ""))
+      .addEventListener("click", ev => copiaTesto(document.getElementById(id).innerText, ev.currentTarget));
+  }
+</script>
+</body>
+</html>

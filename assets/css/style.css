@@ -1106,6 +1106,18 @@ a.chip { display: inline-block; text-decoration: none; }
   padding: .85rem 0; border-bottom: 1px dashed var(--line);
 }
 .lead-scheda:last-of-type { border-bottom: 0; }
+/* La casella per le liste sta sulla riga del nome e non in una
+   colonna sua: la griglia della scheda è già due colonne, e
+   aggiungerne una terza avrebbe voluto dire rifarla anche nelle
+   due soglie per telefono qui sotto. Il nome diventa cliccabile,
+   che su uno schermo stretto è il bersaglio più facile. */
+.lead-scelta { display: flex; align-items: center; gap: .5rem; cursor: pointer; }
+.lead-scelta input { flex: 0 0 auto; }
+.crm-lista-dest, .crm-lista-nome {
+  font-size: .8rem; padding: .35rem .5rem; border-radius: 8px;
+  border: 1.5px solid var(--line); background: #fff; font-family: var(--font-body);
+}
+.crm-lista-nome { min-width: 14rem; }
 .lead-lavorazione { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
 .lead-lavorazione select {
   font-size: .8rem; padding: .3rem .5rem; border-radius: 8px;
