@@ -2879,6 +2879,28 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
 
     if (fase === "vuoto") { carica(); return; }
 
+    /* Si arriva qui dal CRM con la lista già scelta: l'indirizzo
+       porta ?genera=<id> e la finestra della scrittura assistita
+       si apre su quella lista, senza doverla ricercare in una
+       tendina che da lì si era appena chiusa.
+
+       Il parametro si consuma subito. Lasciarlo nell'indirizzo
+       vorrebbe dire che ogni ridisegno — un filtro, un salvataggio,
+       il tasto indietro — riapre la finestra appena chiusa, e non
+       si riuscirebbe più a uscirne. Si toglie con replaceState e
+       non cambiando rotta, così la cronologia non si riempie di
+       passaggi che nessuno ha fatto. */
+    const listaDaScrivere = QF().query().genera;
+    if (listaDaScrivere) {
+      try { history.replaceState({}, "", location.pathname); } catch (e) { /* senza history si tira avanti */ }
+      generaLead = null;
+      formGenera = { ...formGenera, lista_id: listaDaScrivere };
+      ultimaGenerazione = null;
+      generaAperto = true;
+      QF().render();
+      return;
+    }
+
     /* Nel Send Log «aggiorna» deve rileggere anche il registro:
        è la sezione in cui un dato vecchio racconta una bugia —
        una coda ferma da un'ora che continua a sembrare in moto. */
@@ -3421,7 +3443,16 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
         QF().render();
       }));
 
-    if (generaAperto) legaGenerazione($);
+    /* Solo da Lead Lists.
+       bindListe non si ferma sulle altre rotte: i suoi gestori si
+       attaccano a elementi che altrove non esistono, quindi non
+       facevano niente. La finestra di generazione però esiste in
+       due sezioni, e su Email Ready la legavano tutti e due —
+       qui e bindPronte. Due gestori sullo stesso submit vuol dire
+       che un clic solo su «Scrivi le bozze» faceva partire due
+       generazioni: due chiamate a pagamento al modello e due
+       serie di bozze per le stesse aziende. */
+    if (generaAperto && rottaCorrente === "liste") legaGenerazione($);
 
     document.querySelectorAll("[data-togli]").forEach(b =>
       b.addEventListener("click", async () => {
