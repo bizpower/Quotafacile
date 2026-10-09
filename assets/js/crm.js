@@ -24,6 +24,17 @@
   const API = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-crm";
   const API_LEAD = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-lead";
   const API_MAIL = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-mail";
+  /* Le liste di lead non sono una cosa del CRM: sono le stesse
+     del Mail Marketing, nelle stesse due tabelle. Qui si chiede
+     a quella funzione, con la stessa chiave di amministrazione.
+
+     Costruirne di nuove qui sarebbe stato più rapido e sbagliato:
+     lo stesso lead sarebbe finito in due raccolte che da lì in
+     poi invecchiano separate, ed è esattamente il difetto che
+     questo progetto si è portato dietro da Lovable e ha già
+     corretto una volta. Una lista fatta nel CRM si vede nel Mail
+     Marketing e viceversa, perché è la stessa lista. */
+  const API_MM = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-mm";
 
   const QF = () => window.QF;
   const esc = s => window.QF.esc(s);
@@ -42,6 +53,10 @@
      eventi del CRM a una schermata che non è la sua. */
   let dentroMail = false;
   let dentroMagazine = false;
+  /* Quale scheda è a schermo. bind() non riceve l'indirizzo, e le
+     liste si chiedono al server solo quando si apre la scheda che
+     le usa. */
+  let sezioneCorrente = "panoramica";
   /* Credenziali appena generate. Restano a schermo finché non le
      si chiude, perché è l'unico momento in cui la password è
      leggibile: dopo, nel database, c'è solo la sua forma cifrata
@@ -59,6 +74,11 @@
      più di una richiesta normale. */
   async function chiamaMail(azione, d = {}) {
     return chiama(azione, d, API_MAIL, 45000);
+  }
+
+  /* Le liste: stessa chiave, altra funzione. */
+  async function chiamaMM(azione, d = {}) {
+    return chiama(azione, d, API_MM, 30000);
   }
 
   async function chiama(azione, d = {}, endpoint = API, timeout = 20000) {
@@ -323,12 +343,81 @@
     filtroStato: "tutti"
   };
 
+  /* Stato delle liste. Separato da `ricerca` perché risponde a
+     un'altra domanda: lì si sceglie fra attività appena trovate
+     — identificate dal place_id di Google — qui fra lead già in
+     archivio, che hanno un id nostro. Tenere un solo insieme di
+     "scelti" per due cose diverse è il modo più rapido per
+     aggiungere a una lista il contatto sbagliato.
+
+     Si carica alla prima apertura della scheda e non al
+     caricamento del CRM: la panoramica del mail marketing è una
+     dozzina di interrogazioni, e la maggior parte delle visite
+     al CRM non riguarda le liste. */
+  const liste = {
+    dati: [],
+    fase: "vuoto",     // vuoto | caricamento | pronto | errore
+    errore: null,
+    aperta: "",        // id della lista mostrata; "" = tutto l'archivio
+    dentro: null,      // { id, ids: Set } — chi c'è nella lista aperta
+    scelti: new Set(), // id dei lead spuntati nell'archivio
+    dest: "",          // lista di destinazione della barra azioni
+    nuovaNome: ""
+  };
+
+  async function caricaListe(forza = false) {
+    if (liste.fase === "caricamento") return;
+    if (liste.fase === "pronto" && !forza) return;
+    liste.fase = "caricamento";
+    const e = await chiamaMM("panoramica");
+    if (e.ok) { liste.dati = e.liste || []; liste.fase = "pronto"; liste.errore = null; }
+    else { liste.fase = "errore"; liste.errore = e.errore || "Liste non raggiungibili."; }
+    QF().render();
+  }
+
+  /* Il server restituisce i lead della lista con le colonne che
+     servono al mail marketing: non ci sono stato della trattativa
+     né assegnazione. Quelli ce li ha già il CRM. Quindi di qui si
+     prendono solo gli identificativi, e le schede restano quelle
+     complete dell'archivio. */
+  async function apriLista(id) {
+    liste.aperta = id;
+    liste.scelti = new Set();
+    liste.dentro = null;
+    if (!id) { QF().render(); return; }
+    QF().render();
+    const e = await chiamaMM("lista-contenuto", { id });
+    if (!e.ok) { QF().toast(e.errore || "Lista non leggibile."); liste.aperta = ""; QF().render(); return; }
+    liste.dentro = { id, ids: new Set((e.lead || []).map(l => l.id)) };
+    QF().render();
+  }
+
+  /* Cosa sta guardando l'archivio adesso: la lista aperta, se ce
+     n'è una, e dentro quella il filtro di stato. Lo chiedono sia
+     la schermata sia «seleziona i visibili», e tenerne due copie
+     vorrebbe dire selezionare righe che non si vedono. */
+  function baseVisibile() {
+    const salvati = D().lead || [];
+    if (!liste.aperta) return salvati;
+    return liste.dentro ? salvati.filter(l => liste.dentro.ids.has(l.id)) : [];
+  }
+
+  function elencoVisibile() {
+    const b = baseVisibile();
+    return ricerca.filtroStato === "tutti" ? b : b.filter(l => l.stato === ricerca.filtroStato);
+  }
+
   function leadView() {
     const salvati = D().lead || [];
+    const L = liste;
+    /* Con una lista aperta l'archivio si restringe a lei, e i
+       conteggi sulle linguette degli stati contano quello che si
+       sta guardando: numeri che non tornano con le schede sotto
+       sono peggio di nessun numero. */
+    const base = baseVisibile();
     const perStato = {};
-    salvati.forEach(l => { perStato[l.stato] = (perStato[l.stato] || 0) + 1; });
-    const elenco = ricerca.filtroStato === "tutti"
-      ? salvati : salvati.filter(l => l.stato === ricerca.filtroStato);
+    base.forEach(l => { perStato[l.stato] = (perStato[l.stato] || 0) + 1; });
+    const elenco = elencoVisibile();
 
     const R = ricerca;
     const precisa = R.modalita === "precisa";
@@ -390,19 +479,68 @@
       </div>`;
     };
 
+    /* Le liste sono quelle del Mail Marketing, non una seconda
+       raccolta: la stessa azienda sta in una riga sola e le liste
+       ci puntano. Da qui si scelgono i lead e li si mette dentro;
+       rinominarle o cancellarle resta di là, dove c'è la scheda
+       che fa solo quello. */
+    const scelta = L.fase === "pronto";
+    const apertaOra = L.dati.find(x => x.id === L.aperta) || null;
+
+    const barraListe = L.fase === "errore" ? `
+        <p class="privacy-hint">Liste non disponibili: ${esc(L.errore || "")}
+          <button class="btn btn-ghost btn-sm" data-liste-riprova>Riprova</button></p>`
+      : L.fase !== "pronto" ? `<p class="muted" style="font-size:.82rem">Carico le liste…</p>`
+      : `
+        <div class="filterbar" style="margin:.6rem 0">
+          <button class="chip ${L.aperta ? "" : "active"}" data-lista-filtro="">Tutto l'archivio (${salvati.length})</button>
+          ${L.dati.map(x => `
+            <button class="chip ${L.aperta === x.id ? "active" : ""}" data-lista-filtro="${esc(x.id)}">${esc(x.nome)} (${x.quanti ?? 0})</button>`).join("")}
+        </div>
+        <p class="muted" style="font-size:.78rem;margin:-.2rem 0 .6rem">
+          Le liste sono le stesse del <a href="#/admin/crm/mail/liste">Mail Marketing</a>: una creata qui si vede di là, e viceversa.
+          ${L.dati.length ? "Di là si rinominano e si eliminano." : "Scegli dei lead qui sotto per crearne la prima."}
+        </p>`;
+
+    const barraScelta = scelta && L.scelti.size ? `
+        <div class="admin-actions" style="margin:.8rem 0;align-items:center">
+          <strong style="font-size:.85rem">${plurale(L.scelti.size, "lead scelto", "lead scelti")}</strong>
+          <select data-lista-dest class="crm-lista-dest">
+            <option value="">— in quale lista —</option>
+            ${L.dati.map(x => `<option value="${esc(x.id)}" ${L.dest === x.id ? "selected" : ""}>${esc(x.nome)} (${x.quanti ?? 0})</option>`).join("")}
+            <option value="__nuova__" ${L.dest === "__nuova__" ? "selected" : ""}>＋ Crea una lista nuova</option>
+          </select>
+          ${L.dest === "__nuova__" ? `
+            <input data-lista-nome class="crm-lista-nome" value="${esc(L.nuovaNome)}" placeholder="Ristoranti Milano · settembre">` : ""}
+          <button class="btn btn-primary btn-sm" data-lista-aggiungi ${L.dest ? "" : "disabled"}>Aggiungi alla lista</button>
+          <button class="btn btn-ghost btn-sm" data-lista-nessuno>Deseleziona</button>
+        </div>` : "";
+
     const archivio = `
       <div class="card" style="margin-top:1.2rem">
-        <h3>📇 Lead in archivio (${salvati.length})</h3>
+        <h3>📇 ${apertaOra ? `Lista «${esc(apertaOra.nome)}» (${base.length})` : `Lead in archivio (${salvati.length})`}</h3>
         ${salvati.length ? `
+          ${barraListe}
           <div class="filterbar" style="margin:.6rem 0">
             <button class="chip ${R.filtroStato === "tutti" ? "active" : ""}" data-lead-filtro="tutti">Tutti</button>
             ${Object.entries(STATI_LEAD).map(([k, v]) => `
               <button class="chip ${R.filtroStato === k ? "active" : ""}" data-lead-filtro="${k}">${v}${perStato[k] ? ` (${perStato[k]})` : ""}</button>`).join("")}
           </div>
+          ${scelta && elenco.length ? `
+            <div class="admin-actions" style="margin:.6rem 0">
+              <button class="btn btn-outline btn-sm" data-lista-tutti>Seleziona i ${elenco.length} visibili</button>
+            </div>` : ""}
+          ${barraScelta}
+          ${L.aperta && !L.dentro ? `<p class="muted">Carico la lista…</p>` : ""}
           ${elenco.map(l => `
             <div class="lead-scheda">
               <div class="lead-corpo">
-                <strong>${esc(l.nome)}</strong>
+                ${scelta ? `
+                  <label class="lead-scelta">
+                    <input type="checkbox" data-lista-scegli="${esc(l.id)}" ${L.scelti.has(l.id) ? "checked" : ""}>
+                    <strong>${esc(l.nome)}</strong>
+                  </label>`
+                : `<strong>${esc(l.nome)}</strong>`}
                 <span>${esc(l.indirizzo || "—")}</span>
                 <span class="lead-meta">
                   ${l.telefono ? `<a href="tel:${esc(String(l.telefono).replace(/\s/g, ""))}">📞 ${esc(l.telefono)}</a>` : `<span class="muted">senza telefono</span>`}
@@ -428,9 +566,16 @@
                 ${l.no_contatto
                   ? `<button class="btn btn-ghost btn-sm" data-lead-riapri="${esc(l.id)}" title="Riapri il contatto">Riapri</button>`
                   : `<button class="btn btn-ghost btn-sm" data-lead-nocontatto="${esc(l.id)}" title="Registra che si è opposto a essere contattato">🚫 Si è opposto</button>`}
+                ${L.aperta ? `
+                  <button class="btn btn-ghost btn-sm" data-lista-togli="${esc(l.id)}" title="Togli da questa lista — il lead resta in archivio">Togli dalla lista</button>` : ""}
                 <button class="btn btn-ghost btn-sm danger" data-lead-elimina="${esc(l.id)}">🗑</button>
               </div>
-            </div>`).join("") || `<p class="muted">Nessun lead con questo filtro.</p>`}`
+            </div>`).join("") || (
+              L.aperta && !L.dentro ? ""
+              : L.aperta ? `<p class="muted">${ricerca.filtroStato === "tutti"
+                  ? "Questa lista è vuota. Torna a «Tutto l'archivio», scegli dei lead e aggiungili qui."
+                  : "Nessun lead con questo filtro, dentro questa lista."}</p>`
+              : `<p class="muted">Nessun lead con questo filtro.</p>`)}`
         : `<p class="muted">Nessun lead in archivio. Fai una ricerca qui sopra e salva quelli che ti interessano.</p>`}
       </div>`;
 
@@ -752,6 +897,7 @@
     }
 
     const sezione = SEZIONI[sub] ? sub : "panoramica";
+    sezioneCorrente = sezione;
 
     const testa = `
       <div class="admin-top">
@@ -863,6 +1009,83 @@
 
     document.querySelectorAll("[data-lead-filtro]").forEach(b =>
       b.addEventListener("click", () => { R.filtroStato = b.dataset.leadFiltro; QF().render(); }));
+
+    /* ---- liste di lead ----
+       Le stesse del Mail Marketing: qui si compongono, di là si
+       usano per scrivere. */
+    if (sezioneCorrente === "lead" && liste.fase === "vuoto") caricaListe();
+
+    $("[data-liste-riprova]")?.addEventListener("click", () => { liste.fase = "vuoto"; caricaListe(true); });
+
+    document.querySelectorAll("[data-lista-filtro]").forEach(b =>
+      b.addEventListener("click", () => apriLista(b.dataset.listaFiltro)));
+
+    document.querySelectorAll("[data-lista-scegli]").forEach(c =>
+      c.addEventListener("change", () => {
+        const id = c.dataset.listaScegli;
+        if (c.checked) liste.scelti.add(id); else liste.scelti.delete(id);
+        /* Si ridisegna soltanto quando la barra delle azioni
+           compare o sparisce: a metà elenco, spuntare una casella
+           non deve riportare in cima la pagina. */
+        const barra = document.querySelector("[data-lista-aggiungi]");
+        if (!barra || liste.scelti.size === 0) QF().render();
+        else {
+          const quanti = barra.parentElement?.querySelector("strong");
+          if (quanti) quanti.textContent = plurale(liste.scelti.size, "lead scelto", "lead scelti");
+        }
+      }));
+
+    $("[data-lista-tutti]")?.addEventListener("click", () => {
+      elencoVisibile().forEach(l => liste.scelti.add(l.id));
+      QF().render();
+    });
+    $("[data-lista-nessuno]")?.addEventListener("click", () => { liste.scelti.clear(); QF().render(); });
+
+    $("[data-lista-dest]")?.addEventListener("change", ev => {
+      liste.dest = ev.currentTarget.value;
+      QF().render();
+    });
+    /* Il nome si legge a ogni battuta: il ridisegno successivo
+       ricostruisce il campo da capo, e quello che c'era scritto
+       deve sopravvivergli. */
+    $("[data-lista-nome]")?.addEventListener("input", ev => { liste.nuovaNome = ev.currentTarget.value; });
+
+    $("[data-lista-aggiungi]")?.addEventListener("click", async ev => {
+      const ids = [...liste.scelti];
+      if (!ids.length || !liste.dest) return;
+      const b = ev.currentTarget;
+      b.disabled = true; b.textContent = "Aggiungo…";
+
+      let destinazione = liste.dest;
+      if (destinazione === "__nuova__") {
+        const nome = (liste.nuovaNome || "").trim();
+        if (!nome) { QF().toast("Dai un nome alla lista."); b.disabled = false; b.textContent = "Aggiungi alla lista"; return; }
+        const c = await chiamaMM("lista-salva", { nome });
+        if (!c.ok) { QF().toast(c.errore || "Lista non creata."); QF().render(); return; }
+        destinazione = c.id;
+      }
+
+      const e = await chiamaMM("lista-aggiungi", { lista_id: destinazione, lead_ids: ids });
+      if (!e.ok) { QF().toast(e.errore || "Aggiunta non riuscita."); QF().render(); return; }
+      QF().toast(e.aggiunti === e.richiesti
+        ? `${plurale(e.aggiunti, "lead aggiunto", "lead aggiunti")} alla lista.`
+        : `${e.aggiunti} nella lista, ${e.richiesti - e.aggiunti} c'erano già.`);
+      liste.scelti = new Set();
+      liste.dest = "";
+      liste.nuovaNome = "";
+      await caricaListe(true);
+      if (liste.aperta) await apriLista(liste.aperta);
+    });
+
+    document.querySelectorAll("[data-lista-togli]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const e = await chiamaMM("lista-togli", { lista_id: liste.aperta, lead_id: b.dataset.listaTogli });
+        if (!e.ok) { QF().toast(e.errore || "Operazione non riuscita."); return; }
+        QF().toast("Tolto dalla lista. Il lead resta in archivio.");
+        liste.scelti.delete(b.dataset.listaTogli);
+        await caricaListe(true);
+        await apriLista(liste.aperta);
+      }));
 
     document.querySelectorAll("[data-lead-stato]").forEach(s =>
       s.addEventListener("change", async () => {
