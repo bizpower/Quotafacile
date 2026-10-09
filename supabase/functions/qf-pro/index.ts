@@ -426,10 +426,26 @@ async function salvaAbbonamento(sub: Record<string, unknown>) {
     return;
   }
 
-  const voce = (sub.items as { data?: { price?: { id?: string } }[] })?.data?.[0];
-  const fine = sub.current_period_end
-    ? new Date(Number(sub.current_period_end) * 1000).toISOString()
-    : null;
+  const voce = (sub.items as {
+    data?: { price?: { id?: string }; current_period_end?: number }[];
+  })?.data?.[0];
+
+  /* Dalla versione 2025-03-31 "basil" il periodo di fatturazione
+     non sta piu' sulla sottoscrizione ma sulle sue voci, perche'
+     una sottoscrizione puo' avere voci con scadenze diverse.
+     L'endpoint registrato su Stripe parla 2025-12-15 "clover", che
+     e' successiva: sub.current_period_end arrivava sempre vuoto e
+     periodo_fine finiva a null a ogni evento.
+     Non si perdeva l'abbonamento — stato, piano e badge si
+     scrivevano lo stesso — si perdeva la data, cioe' l'unica cosa
+     che la scheda mostra a chi ha appena messo la carta: "prova
+     gratuita fino al —".
+     Si legge dalla voce; il campo vecchio resta come ripiego
+     perche' la lettura di checkout.session.completed non fissa una
+     versione e segue quella predefinita del profilo Stripe, che
+     potrebbe essere precedente. */
+  const scadenza = voce?.current_period_end ?? sub.current_period_end;
+  const fine = scadenza ? new Date(Number(scadenza) * 1000).toISOString() : null;
 
   const { error } = await db.from("pro_abbonamenti").upsert({
     profilo_id: profiloId,
