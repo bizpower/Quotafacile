@@ -810,7 +810,8 @@
      La finestra è la stessa — una lista di uno non merita un
      secondo modulo da tenere allineato. */
   let generaLead = null;
-  let formGenera = { lista_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "",
+  let formGenera = { ambito: "assicurazioni", lista_id: "", scopo: "presentazione",
+                     tono: "cordiale", istruzioni: "",
                      sovrascrivi: false, leggi_sito: true };
   let inGenerazione = false;
   let ultimaGenerazione = null;   // l'esito dell'ultimo blocco, da mostrare
@@ -882,9 +883,31 @@
       await rileggi();
     }
 
+    /* Cambiare mondo ridisegna gli scopi, perché sono suoi.
+       Quello scelto prima può non esistere più: si ricade sul
+       primo invece di mandare al server una chiave che di là
+       verrebbe scartata in silenzio. Il resto del modulo —
+       istruzioni, spunte — si rilegge prima, altrimenti il
+       ridisegno lo azzererebbe. */
+    $("#g-ambito")?.addEventListener("change", ev => {
+      const a = ev.currentTarget.value;
+      formGenera = {
+        ...formGenera,
+        ambito: a,
+        scopo: scopoValido(a, $("#g-scopo")?.value),
+        lista_id: $("#g-lista")?.value || formGenera.lista_id,
+        tono: $("#g-tono")?.value || formGenera.tono,
+        istruzioni: $("#g-istruzioni")?.value ?? formGenera.istruzioni,
+        sovrascrivi: $("#g-sovrascrivi")?.checked ?? formGenera.sovrascrivi,
+        leggi_sito: $("#g-sito")?.checked ?? formGenera.leggi_sito
+      };
+      QF().render();
+    });
+
     $("#mm-genera-form")?.addEventListener("submit", async e => {
       e.preventDefault();
       formGenera = {
+        ambito: $("#g-ambito")?.value || formGenera.ambito,
         lista_id: $("#g-lista")?.value || "",
         lead_id: generaLead ? generaLead.id : null,
         scopo: $("#g-scopo").value,
@@ -1345,12 +1368,23 @@
                 esc(l.nome)}${l.quanti != null ? ` · ${l.quanti} aziende` : ""}</option>`).join("")}
             </select></label>`}
 
+          ${/* Cosa stiamo proponendo viene prima dello scopo, perché
+                lo scopo dipende da lui: cambia il mondo e cambiano
+                le voci sotto. Gli scopi non sono più scritti a mano
+                qui — erano già divergenti dall'altra schermata —
+                ma letti dalla stessa tabella. */""}
+          <label class="field" style="margin-top:.6rem"><span>Che cosa stiamo proponendo</span>
+            <select id="g-ambito">
+              ${Object.entries(AMBITI).map(([k, a]) => `
+                <option value="${k}" ${formGenera.ambito === k ? "selected" : ""}>${esc(a.nome)}</option>`).join("")}
+            </select>
+            <em class="muted" style="font-size:.76rem">${esc((AMBITI[formGenera.ambito] || AMBITI.assicurazioni).spiega)}</em>
+          </label>
+
           <label class="field" style="margin-top:.6rem"><span>Scopo del messaggio</span>
             <select id="g-scopo">
-              <option value="presentazione" ${formGenera.scopo === "presentazione" ? "selected" : ""}>Presentare QuotaFacile</option>
-              <option value="preventivo" ${formGenera.scopo === "preventivo" ? "selected" : ""}>Proporre un preventivo gratuito</option>
-              <option value="sollecito" ${formGenera.scopo === "sollecito" ? "selected" : ""}>Richiamare chi non ha risposto</option>
-              <option value="informativa" ${formGenera.scopo === "informativa" ? "selected" : ""}>Segnalare una novità normativa</option>
+              ${Object.entries(scopiDi(formGenera.ambito)).map(([k, v]) => `
+                <option value="${k}" ${formGenera.scopo === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
             </select></label>
 
           <label class="field" style="margin-top:.6rem"><span>Tono</span>
@@ -1506,15 +1540,54 @@
   let modelloAperto = null;  // modello in modifica, o "nuovo"
   let anteprima = null;      // { oggetto, corpo, avvisi }
   let bozza = null;          // quello che ha scritto il modello
-  const scrittura = { lead_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "", leggi_sito: true };
+  const scrittura = { ambito: "assicurazioni", lead_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "", leggi_sito: true };
   let scrivendo = false;
 
-  const SCOPI = {
-    presentazione: "Presentare QuotaFacile",
-    preventivo: "Proporre un preventivo gratuito",
-    sollecito: "Richiamare un contatto senza risposta",
-    informativa: "Segnalare una novità normativa"
+  /* I due mestieri, come li conosce il server.
+     Qui ci sono solo le etichette da mostrare: le istruzioni vere
+     — chi siamo, cosa offriamo, cosa non si può promettere —
+     stanno in qf-mm-ai e non passano mai da questa pagina. Dal
+     browser esce una chiave, non una frase.
+
+     Le CHIAVI devono essere identiche a quelle del server. Se qui
+     ne comparisse una che di là non esiste, il server ricadrebbe
+     in silenzio sul primo scopo di quell'ambito e si scoprirebbe
+     solo leggendo un'email che parla d'altro. */
+  const AMBITI = {
+    assicurazioni: {
+      nome: "Assicurazioni — QuotaFacile",
+      spiega: "Il marketplace: mettere in contatto aziende e professionisti con intermediari iscritti al RUI.",
+      scopi: {
+        presentazione: "Presentare QuotaFacile",
+        preventivo: "Proporre un preventivo gratuito",
+        sollecito: "Richiamare un contatto senza risposta",
+        informativa: "Segnalare una novità normativa"
+      }
+    },
+    automazioni: {
+      nome: "Automazioni per agenzie",
+      spiega: "Vendere automazioni ad agenzie, subagenzie e broker. Chiude chiedendo una chiamata di quindici minuti.",
+      scopi: {
+        presentazione: "Presentare le automazioni",
+        sinistri: "Partire dalla gestione dei sinistri",
+        scadenze: "Partire dai rinnovi che si perdono",
+        lead: "Partire dalle richieste fuori orario",
+        gestione: "Partire dai fogli di calcolo",
+        sollecito: "Richiamare chi non ha risposto"
+      }
+    }
   };
+
+  /* Cambiando mondo lo scopo di prima può non esistere più:
+     «sinistri» non vuol dire niente per il marketplace. Si ricade
+     sul primo, che in tutti e due i casi è «presentazione». */
+  const scopiDi = a => (AMBITI[a] || AMBITI.assicurazioni).scopi;
+  const scopoValido = (a, s) => (scopiDi(a)[s] ? s : Object.keys(scopiDi(a))[0]);
+
+  /* Da scopo nostro a scopo dei modelli: quelli che qf-mail
+     riconosce passano con il proprio nome, tutti gli altri sono
+     primi contatti. Vedi il commento nel salvataggio. */
+  const SCOPO_MODELLO = { preventivo: "preventivo", sollecito: "sollecito", informativa: "informativa" };
   const TONI = { diretto: "Diretto", cordiale: "Cordiale", formale: "Formale" };
   const SEGNAPOSTO = {
     "{azienda}": "il nome dell'attività",
@@ -1663,9 +1736,15 @@
       </p>
       <form id="mm-ai-form">
         <div class="mm-campi">
+          <label class="field mm-campo-largo"><span>Che cosa stiamo proponendo</span>
+            <select id="a-ambito">
+              ${Object.entries(AMBITI).map(([k, a]) => `<option value="${k}" ${scrittura.ambito === k ? "selected" : ""}>${esc(a.nome)}</option>`).join("")}
+            </select>
+            <em class="muted" style="font-size:.76rem">${esc((AMBITI[scrittura.ambito] || AMBITI.assicurazioni).spiega)}</em>
+          </label>
           <label class="field"><span>Scopo</span>
             <select id="a-scopo">
-              ${Object.entries(SCOPI).map(([k, v]) => `<option value="${k}" ${scrittura.scopo === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
+              ${Object.entries(scopiDi(scrittura.ambito)).map(([k, v]) => `<option value="${k}" ${scrittura.scopo === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
             </select></label>
           <label class="field"><span>Tono</span>
             <select id="a-tono">
@@ -4022,8 +4101,22 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
   function bindScrittore() {
     const $ = s => document.querySelector(s);
 
+    /* Come nell'altra finestra: il mondo decide gli scopi, quindi
+       cambiarlo ridisegna. Si rilegge prima quello che l'utente ha
+       già scritto, altrimenti il ridisegno lo butta via. */
+    $("#a-ambito")?.addEventListener("change", ev => {
+      scrittura.ambito = ev.currentTarget.value;
+      scrittura.scopo = scopoValido(scrittura.ambito, $("#a-scopo")?.value);
+      scrittura.tono = $("#a-tono")?.value ?? scrittura.tono;
+      scrittura.lead_id = $("#a-lead")?.value ?? scrittura.lead_id;
+      scrittura.istruzioni = $("#a-istruzioni")?.value ?? scrittura.istruzioni;
+      scrittura.leggi_sito = $("#a-sito")?.checked ?? scrittura.leggi_sito;
+      QF().render();
+    });
+
     $("#mm-ai-form")?.addEventListener("submit", async e => {
       e.preventDefault();
+      scrittura.ambito = $("#a-ambito")?.value || scrittura.ambito;
       scrittura.scopo = $("#a-scopo").value;
       scrittura.tono = $("#a-tono").value;
       scrittura.lead_id = $("#a-lead").value;
@@ -4060,7 +4153,15 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
       if (!nome) return;
       const esito = await chiamaMail("salva-modello", {
         nome, oggetto: bozza.oggetto, corpo: bozza.corpo,
-        scopo: scrittura.scopo === "presentazione" ? "contatto" : scrittura.scopo,
+        /* Il vocabolario dei modelli è di qf-mail e ne conosce
+           quattro: contatto, preventivo, sollecito, informativa.
+           Gli scopi delle automazioni — sinistri, scadenze, lead,
+           gestione — lì non esistono, e mandarli tali e quali
+           farebbe rifiutare il salvataggio con un errore che non
+           spiega niente. Sono tutti primi contatti: tranne il
+           sollecito, che il suo nome ce l'ha già, diventano
+           «contatto». */
+        scopo: SCOPO_MODELLO[scrittura.scopo] || "contatto",
         attivo: true
       });
       if (!esito.ok) { QF().toast(esito.errore || "Salvataggio non riuscito."); return; }
