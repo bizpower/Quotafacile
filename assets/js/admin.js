@@ -1057,10 +1057,10 @@ Usa **grassetto** per i numeri che contano."></textarea>
             "Il marketplace: ciò che i visitatori vedono e ciò che ti scrivono.",
             ["Richieste di preventivo e consulenza", "Iscrizioni degli intermediari e verifica RUI",
              "Bacheca: approvazione e moderazione", "Guide SEO e segnalazioni"])}
-          ${porta("#/admin/crm", "🏢", "CRM Bizpower",
-            "L'amministrazione della società: quello che resta in ufficio.",
-            ["Collaboratori, ruoli e produzione", "Lead locali e pipeline",
-             "Documenti e contratti", "Mail e invii"])}
+          ${porta("#/admin/crm", "🏢", "CRM",
+            "Il lavoro che resta in ufficio: non quello che si vede da fuori.",
+            ["Collaboratori, ruoli e documenti", "Lead locali e lavorazione",
+             "Posta e modelli", "Mail Marketing e Magazine"])}
         </div>
       </div>
     </section>`;

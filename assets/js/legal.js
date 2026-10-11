@@ -508,9 +508,9 @@
     non colloca polizze, non percepisce provvigioni sui contratti conclusi e non partecipa al rapporto
     contrattuale che si instaura tra utente e intermediario.<br>
     <strong>Il gestore del sito è però un intermediario iscritto alla sezione
-    ${esc(C.gestoreIntermediario.sezioneRui)} del RUI ed è presente tra i professionisti in vetrina:</strong>
-    la circostanza è dichiarata per esteso nelle <a href="#/note-legali">note legali</a>, che ti invitiamo
-    a leggere prima di conferire i tuoi dati.</p>
+    ${esc(C.gestoreIntermediario.sezioneRui)} del RUI, pur non avendo un profilo tra i professionisti
+    in vetrina:</strong> la circostanza è dichiarata per esteso nelle
+    <a href="#/note-legali">note legali</a>, che ti invitiamo a leggere prima di conferire i tuoi dati.</p>
 
     <h2>2. Definizioni</h2>
     <ul>
@@ -809,11 +809,11 @@
     ${todo(C.gestoreIntermediario.operaPerConto)}, l'intermediario che risponde di lui nei confronti
     dell'IVASS.</p>
     <p>Ne discende un punto che riteniamo giusto dichiarare apertamente, invece di lasciarlo dedurre:
-    <strong>il gestore è anche uno dei professionisti presenti in vetrina</strong>. Quando lo contatti
-    tramite il sito, il rapporto che nasce è a tutti gli effetti un rapporto di intermediazione
-    assicurativa, soggetto agli obblighi di informativa, correttezza e trasparenza del d.lgs. 209/2005
-    e dei regolamenti IVASS n. 40/2018 e n. 41/2018 — obblighi che restano a suo carico esattamente
-    come per ogni altro intermediario iscritto.</p>
+    chi gestisce la piattaforma esercita anche l'attività che la piattaforma mette in contatto.
+    Per questo <strong>il gestore non ha un profilo tra i professionisti in vetrina</strong>: non
+    compare fra quelli che puoi confrontare e non riceve richieste da questo sito in qualità di
+    intermediario. Resta un intermediario iscritto — il fatto è dichiarato qui sopra perché è vero
+    e va saputo — ma non è parte dell'elenco che ordiniamo.</p>
     <p>Gli altri intermediari presenti operano in piena autonomia, sotto la propria responsabilità e
     nel rispetto degli obblighi che la normativa di settore pone a loro carico. ${C.brand} non
     percepisce alcun compenso dai professionisti in vetrina e non ne condiziona il posizionamento in

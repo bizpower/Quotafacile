@@ -1,14 +1,20 @@
 /* ============================================================
-   QuotaFacile — CRM Bizpower
+   QuotaFacile — CRM
    ------------------------------------------------------------
    Rotta: #/admin/crm — dentro l'area riservata, dietro la stessa
    chiave della console di piattaforma.
 
-   Due cose distinte dietro la stessa porta:
-   - la console di PIATTAFORMA modera QuotaFacile (bacheca,
-     richieste, intermediari): riguarda il marketplace;
-   - questo CRM amministra BIZPOWER: collaboratori, lead, posta,
-     produzione. Riguarda la società.
+   Si chiamava «CRM Bizpower». Il nome raccontava com'era nato —
+   un modulo della società che gestisce il sito — e non cosa fa
+   per chi lo apre. Chi ci entra sta amministrando QuotaFacile,
+   non una seconda azienda: due marchi dietro la stessa porta
+   erano una distinzione interna fatta leggere a chi lavora.
+
+   Due cose distinte dietro quella porta, e restano distinte:
+   - la console di PIATTAFORMA modera ciò che si vede da fuori
+     (bacheca, richieste, intermediari);
+   - il CRM è il lavoro che resta in ufficio: collaboratori,
+     lead, posta.
    Tenerli separati evita l'errore più facile, cioè mostrare in
    pubblico un dato che non doveva uscire dall'ufficio.
 
@@ -201,8 +207,7 @@
             ["Collaboratori e anagrafica squadra", true],
             ["Accessi personali dei collaboratori", true],
             ["Lead locali (ricerca per zona e categoria)", true],
-            ["Mail: modelli, invio, registro", true],
-            ["Produzione e classifica", true]
+            ["Mail: modelli, invio, registro", true]
           ].map(([t, fatto]) => `
             <div class="crm-passo ${fatto ? "fatto" : ""}">
               <span>${fatto ? "✓" : "○"}</span><span>${esc(t)}</span>
@@ -248,7 +253,7 @@
       </div>`;
 
     return `
-    <p class="admin-hint">La squadra di Bizpower. Da qui si crea anche l'accesso personale di ciascuno: chi ce l'ha entra dalla stessa porta con la propria email, vede la sua area e carica i propri documenti. Non vede la squadra, non vede il marketplace, non può cambiarsi il ruolo — e non perché manchi la schermata: glielo nega il database.</p>
+    <p class="admin-hint">Le persone che lavorano con te. Da qui si crea anche l'accesso personale di ciascuno: chi ce l'ha entra dalla stessa porta con la propria email, vede la sua area e carica i propri documenti. Non vede la squadra, non vede il marketplace, non può cambiarsi il ruolo — e non perché manchi la schermata: glielo nega il database.</p>
 
     ${credenziali ? `
       <div class="card credenziali">
@@ -613,88 +618,17 @@
     return modulo + risultati() + archivio;
   }
 
-  /* ---------------- SEZIONE · PRODUZIONE ----------------
-     Il punteggio non è una colonna: è una somma che il database
-     ricalcola a ogni lettura dalle attività registrate e dai
-     lead chiusi. Un numero che si può digitare a mano non misura
-     niente, e una classifica costruita così non motiva nessuno —
-     si scopre subito che dipende da chi tiene la penna. */
-
-  const VALORI = [
-    ["📞 Chiamata", 2], ["✉️ Email", 1], ["🤝 Incontro", 5],
-    ["📄 Preventivo", 8], ["📝 Nota", 0]
-  ];
-  const BONUS = [["Esito positivo", 3], ["Da richiamare", 1], ["Cliente chiuso", 20]];
-
-  function produzioneView() {
-    const p = [...(D().produzione || [])].sort((a, b) => b.punti - a.punti);
-    const attivi = p.filter(x => x.attivo);
-    const massimo = Math.max(1, ...attivi.map(x => x.punti));
-    const totali = attivi.reduce((n, x) => n + x.punti, 0);
-
-    const tile = (v, l, hint) => `
-      <div class="kpi-tile"><strong>${v}</strong><span>${l}</span>${hint ? `<em>${hint}</em>` : ""}</div>`;
-
-    return `
-    <p class="admin-hint">Il punteggio lo calcola il database dai fatti registrati: le attività e i lead diventati clienti. Non esiste da nessuna parte un numero da scrivere a mano — per questo si può guardare senza doversi chiedere chi l'ha messo lì.</p>
-
-    <p class="privacy-hint">Le attività si registravano dalla scheda della pipeline, che non c'è più: quelle già registrate continuano a contare, ma da questa console non se ne aggiungono di nuove. Le email inviate dal Mail Marketing sì, quelle si registrano da sole.</p>
-
-    <div class="kpi-grid">
-      ${tile(totali, "Punti della squadra", "somma di chi è attivo")}
-      ${tile(attivi.reduce((n, x) => n + x.attivita, 0), "Attività registrate", "chiamate, email, incontri, preventivi")}
-      ${tile(attivi.reduce((n, x) => n + x.clienti, 0), "Lead diventati clienti", "il risultato, non il tentativo")}
-      ${tile(attivi.reduce((n, x) => n + x.lead_assegnati, 0), "Lead assegnati", "quanto lavoro c'è in mano")}
-    </div>
-
-    <div class="card" style="margin-top:1.2rem">
-      <h3>🏆 Classifica</h3>
-      ${attivi.length ? attivi.map((x, i) => `
-        <div class="prod-riga">
-          <span class="leader-rank ${i === 0 && x.punti > 0 ? "gold" : ""}">${i + 1}</span>
-          <span class="mini-avatar">${esc(QF().initials(x.nome))}</span>
-          <span class="prod-info">
-            <strong>${esc(x.nome)}</strong>
-            <span>${esc(RUOLI[x.ruolo] || x.ruolo)}${x.ultima_attivita ? ` · ultima attività ${dataBreve(x.ultima_attivita)}` : " · nessuna attività registrata"}</span>
-            <span class="prod-barra"><i style="width:${Math.round(x.punti / massimo * 100)}%"></i></span>
-            <span class="prod-dettaglio">
-              ${plurale(x.chiamate, "chiamata", "chiamate")} · ${plurale(x.incontri, "incontro", "incontri")} · ${plurale(x.preventivi, "preventivo", "preventivi")}
-              · ${plurale(x.clienti, "cliente", "clienti")} su ${plurale(x.lead_assegnati, "lead", "lead")}
-            </span>
-          </span>
-          <span class="leader-pts">${x.punti} pt</span>
-        </div>`).join("")
-      : `<p class="muted">Nessun collaboratore attivo. La classifica compare quando c'è qualcuno in squadra e qualcosa di registrato.</p>`}
-
-      ${p.length > attivi.length ? `
-        <p class="privacy-hint">${p.length - attivi.length === 1
-          ? "Un collaboratore disattivato non compare in classifica, ma la sua storia resta nel database."
-          : `${p.length - attivi.length} collaboratori disattivati non compaiono in classifica, ma la loro storia resta nel database.`}</p>` : ""}
-    </div>
-
-    <div class="card" style="margin-top:1.2rem">
-      <h3>⚖️ Come si contano i punti</h3>
-      <p class="muted" style="font-size:.85rem">I numeri sono discutibili — e vanno discussi — ma il principio no: vale di più ciò che porta avanti il lavoro, non ciò che lo fa sembrare avanti.</p>
-      <div class="grid-2" style="gap:1.2rem;margin-top:.8rem">
-        <div>
-          <h4 style="font-size:.9rem;margin:0 0 .4rem">Per attività</h4>
-          ${VALORI.map(([n, v]) => `
-            <div class="bar-row"><span class="bar-label" style="width:auto">${n}</span>
-              <span class="bar-track"><i style="width:${v / 8 * 100}%"></i></span>
-              <span class="bar-val">${v}</span></div>`).join("")}
-          <p class="privacy-hint">Una nota vale zero: serve a ricordare, non a produrre. Darle punti insegnerebbe solo a scrivere note.</p>
-        </div>
-        <div>
-          <h4 style="font-size:.9rem;margin:0 0 .4rem">In più</h4>
-          ${BONUS.map(([n, v]) => `
-            <div class="bar-row"><span class="bar-label" style="width:auto">${n}</span>
-              <span class="bar-track"><i style="width:${v / 20 * 100}%"></i></span>
-              <span class="bar-val">+${v}</span></div>`).join("")}
-          <p class="privacy-hint">Un cliente chiuso pesa quanto una giornata di telefonate. Per cambiare questi pesi si modifica <code>crm_interno.valore_attivita</code> nel database: la classifica si riallinea da sola, perché non c'è nulla di salvato da ricalcolare.</p>
-        </div>
-      </div>
-    </div>`;
-  }
+  /* La sezione PRODUZIONE non c'è più.
+     Era una classifica a punti dei collaboratori, calcolata dalle
+     attività registrate. Il calcolo resta nel database — la vista
+     `crm_interno.produzione` e i pesi delle attività sono dove
+     erano, e il punteggio continua a comparire nella scheda di
+     ogni collaboratore. Sparisce la classifica come scheda a sé:
+     una graduatoria fra colleghi è una cosa che si guarda ogni
+     giorno e misura poco, e chiedeva una voce nella barra accanto
+     a quelle da cui si lavora davvero.
+     Niente è stato cancellato: se un giorno serve di nuovo, i
+     dati ci sono tutti. */
 
   /* ---------------- SEZIONE · MAIL ----------------
      Invio dalla casella della società, con modelli e registro.
@@ -727,7 +661,7 @@
       ? modelli.find(x => x.id === posta.modificaModello) : null;
 
     return `
-    <p class="admin-hint">Invio dalla casella di Bizpower, con modelli riutilizzabili e registro di ciò che è partito. Un'email inviata è un fatto che riguarda una persona: va saputo che è stata mandata, a chi e con quale testo — serve a non scrivere due volte alla stessa azienda e a rispondere se qualcuno chiede conto di un messaggio.</p>
+    <p class="admin-hint">Invio dalla casella della società, con modelli riutilizzabili e registro di ciò che è partito. Un'email inviata è un fatto che riguarda una persona: va saputo che è stata mandata, a chi e con quale testo — serve a non scrivere due volte alla stessa azienda e a rispondere se qualcuno chiede conto di un messaggio.</p>
 
     ${configurata === false ? `
       <div class="legal-warning">
@@ -892,8 +826,7 @@
     lead: ["🔎 Lead locali", leadView],
     posta: ["✉️ Posta", mailView],
     mail: ["📮 Mail Marketing", null],
-    magazine: ["📰 Magazine", null],
-    produzione: ["🏆 Produzione", produzioneView]
+    magazine: ["📰 Magazine", null]
   };
 
   /* Il mail marketing è un modulo a sé, con le sue undici voci e
@@ -934,8 +867,8 @@
       <div class="admin-top">
         <div>
           <a class="crm-indietro" href="#/admin">← Area riservata</a>
-          <span class="eyebrow">Amministrazione società</span>
-          <h1 style="font-size:clamp(1.6rem,3.5vw,2.2rem);margin:0">CRM Bizpower</h1>
+          <span class="eyebrow">Area riservata</span>
+          <h1 style="font-size:clamp(1.6rem,3.5vw,2.2rem);margin:0">CRM</h1>
         </div>
         <button class="btn btn-ghost btn-sm" id="crm-ricarica">↻ Aggiorna</button>
       </div>`;
@@ -996,7 +929,14 @@
        l'altra è rimasta indietro per settimane. Qui resta solo
        cosa fare dei risultati, che è l'unica cosa diversa fra le
        due schermate. */
-    window.QF_RICERCA.lega(R, async (dati) => {
+    /* Col punto interrogativo, come due righe più su per le
+       categorie. I cinque file dell'area riservata arrivano
+       insieme e di norma c'è: ma se uno solo tarda o non arriva,
+       qui saltava tutto il resto di bind() — e il CRM restava a
+       schermo con i bottoni che non rispondevano, senza dire
+       niente. Una schermata che non reagisce è il guasto più
+       difficile da riferire: non si sa nemmeno cosa raccontare. */
+    window.QF_RICERCA?.lega(R, async (dati) => {
       R.scelti = new Set();
       R.errore = null;
       const esito = await chiamaLead("cerca", dati);

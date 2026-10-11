@@ -1005,8 +1005,9 @@ const DOMANDE_IDENTITA = [
     r: `No. QuotaFacile <strong>non svolge attività di distribuzione assicurativa</strong> ai sensi
         dell'art. 106 del d.lgs. 209/2005: non colloca polizze e non percepisce provvigioni sui
         contratti. È una piattaforma di informazione e messa in contatto. Il sito è gestito da
-        Riccardo Di Falco, intermediario iscritto alla sezione E del RUI, che è anche presente fra
-        i professionisti in vetrina: è dichiarato nelle <a href="#/note-legali">note legali</a>.`
+        Riccardo Di Falco, intermediario iscritto alla sezione E del RUI, che però
+        <strong>non ha un profilo fra i professionisti in vetrina</strong>: è dichiarato nelle
+        <a href="#/note-legali">note legali</a>.`
   },
   {
     d: "Quanto costa usare QuotaFacile?",
@@ -1093,8 +1094,14 @@ views.home = () => {
           <a href="#/professionisti" class="btn btn-light">Sei un intermediario?</a>
         </div>
         <div class="hero-trust">
-          <div><strong>${DB.brokers.length + (DB.proProfile ? 1 : 0)}</strong><span>intermediari iscritti</span></div>
-          <div><strong>${contaRisposte()}</strong><span>risposte pubblicate</span></div>
+          ${/* «1 intermediari iscritti» si legge sopra ogni altra
+                cosa della pagina, ed è il genere di sbavatura che
+                fa dubitare del resto. Finché sono pochi il numero
+                conta davvero, quindi si scrive giusto invece di
+                nasconderlo. */""}
+          <div><strong>${DB.brokers.length + (DB.proProfile ? 1 : 0)}</strong><span>${
+            DB.brokers.length + (DB.proProfile ? 1 : 0) === 1 ? "intermediario iscritto" : "intermediari iscritti"}</span></div>
+          <div><strong>${contaRisposte()}</strong><span>${contaRisposte() === 1 ? "risposta pubblicata" : "risposte pubblicate"}</span></div>
           <div><strong>100%</strong><span>gratuito per chi cerca</span></div>
         </div>
       </div>
@@ -1151,7 +1158,7 @@ views.home = () => {
     <div class="container">
       <div class="section-head">
         <span class="eyebrow">Intermediari in evidenza</span>
-        <h2>Le QuotaPass della settimana</h2>
+        <h2>${featured.length === 1 ? "La QuotaPass della settimana" : "Le QuotaPass della settimana"}</h2>
         <p class="muted">In evidenza chi risponde di più in bacheca: la visibilità si guadagna aiutando.</p>
       </div>
       <div class="pass-grid">
@@ -1376,7 +1383,13 @@ views.professionisti = () => {
           <a href="#piani" class="btn btn-outline">Vedi i piani</a>
         </div>
       </div>
-      <div class="rise-2">${qpass(DB.brokers[1])}</div>
+      ${/* La seconda tessera, se c'è: sulla home ne compare già
+            una, e mostrare due volte la stessa persona in due
+            pagine fa sembrare la vetrina più vuota di quanto sia.
+            Con un intermediario solo si ripiega sul primo, e con
+            nessuno non si disegna niente invece di rompere la
+            pagina su un indice che non esiste. */""}
+      ${DB.brokers.length ? `<div class="rise-2">${qpass(DB.brokers[1] || DB.brokers[0])}</div>` : ""}
     </div>
   </section>
 
@@ -1511,9 +1524,11 @@ views.professionisti = () => {
           <p class="muted">Sì. L'abbonamento è mensile e si interrompe dalla mensilità successiva.
           Il profilo gratuito resta, con le risposte che hai scritto.</p></div>
         <div class="card"><h3>Il gestore è un concorrente?</h3>
-          <p class="muted">QuotaFacile è gestita da un intermediario iscritto alla sezione E del RUI,
-          che è anche presente in vetrina. Lo scriviamo in chiaro nelle
-          <a href="#/note-legali">note legali</a>, perché è il tipo di cosa che è giusto sapere prima.</p></div>
+          <p class="muted">No. QuotaFacile è gestita da un intermediario iscritto alla sezione E del RUI,
+          ma <strong>non ha un profilo in vetrina</strong>: non compare fra quelli che l'utente
+          confronta e non riceve contatti da qui come professionista. Che il gestore sia un
+          intermediario resta scritto in chiaro nelle <a href="#/note-legali">note legali</a>,
+          perché è il tipo di cosa che è giusto sapere prima.</p></div>
       </div>
     </div>
   </section>
