@@ -178,7 +178,7 @@
         <div>
           <span class="eyebrow">Area personale</span>
           <h1 style="font-size:clamp(1.5rem,3.5vw,2rem);margin:0">Ciao ${esc(io.nome.split(" ")[0])}</h1>
-          <p class="muted" style="margin:.2rem 0 0;font-size:.88rem">${esc(RUOLI[io.ruolo] || io.ruolo)} · Bizpower</p>
+          <p class="muted" style="margin:.2rem 0 0;font-size:.88rem">${esc(RUOLI[io.ruolo] || io.ruolo)}</p>
         </div>
         <button class="btn btn-ghost btn-sm" id="area-esci">Esci</button>
       </div>`;
