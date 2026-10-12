@@ -802,6 +802,7 @@
      da mostrare sul bottone. */
   const quantiPronte = () => (postaDati?.conteggi?.pronta ?? 0);
   const quantiInCoda = () => (postaDati?.conteggi?.in_coda ?? 0);
+  const quantiBozze = () => (postaDati?.conteggi?.bozza ?? 0);
 
   /* Gli identificativi su cui agire. Per "pronte" e "coda" non
      bastano quelli a schermo - l'elenco e' filtrato - quindi si
@@ -811,7 +812,8 @@
      posta-programma applicano agli id che ricevono. */
   async function bersaglioIds() {
     if (invioBersaglio === "scelti") return { ids: [...scelte], troncato: false };
-    const stato = invioBersaglio === "coda" ? "in_coda" : "pronta";
+    const stato = invioBersaglio === "coda" ? "in_coda"
+      : invioBersaglio === "bozze" ? "bozza" : "pronta";
     const e = await chiama("posta-elenco", { stato, cerca: "", campagna_id: "" }, 30000);
     if (!e.ok) return { ids: [], errore: e.errore || "Elenco non leggibile." };
     const ids = (e.posta || []).map(m => m.id);
@@ -1380,7 +1382,7 @@
       ${/* Le azioni che prendono tutto, non i selezionati. Stanno
             su una riga loro e non accanto a «CSV» perché fanno una
             cosa di natura diversa: ignorano i filtri a schermo. */
-        (quantiPronte() || quantiInCoda()) ? `
+        (quantiPronte() || quantiInCoda() || quantiBozze()) ? `
         <div class="mm-tutte">
           ${quantiPronte() ? `
             <button class="btn btn-outline btn-sm" id="mm-tutte-invia" ${caselle.length ? "" : "disabled"}
@@ -1389,6 +1391,19 @@
             <button class="btn btn-outline btn-sm" id="mm-tutte-programma" ${caselle.length ? "" : "disabled"}
               title="${caselle.length ? "" : "Serve prima una casella di invio attiva"}">
               🕒 Programma tutte le pronte (${quantiPronte()})</button>` : ""}
+          ${quantiBozze() ? `
+            ${/* Il passaggio che mancava.
+                  Dopo una generazione ci sono trenta bozze, e per
+                  programmarle vanno prima approvate: significava
+                  filtrare su «bozze», spuntare tutto, approvare,
+                  cambiare filtro e rispuntare tutto. Cinque
+                  passaggi per dire «vanno bene».
+                  Gli altri due bottoni di questa riga prendono
+                  tutto ignorando i filtri; questo fa lo stesso, ed
+                  è il motivo per cui sta qui e non fra le azioni
+                  sui selezionati. */""}
+            <button class="btn btn-outline btn-sm" id="mm-tutte-pronta">
+              ✓ Approva tutte le bozze (${quantiBozze()})</button>` : ""}
           ${quantiInCoda() ? `
             <button class="btn btn-outline btn-sm" id="mm-tutte-coda" ${caselle.length ? "" : "disabled"}>
               🔄 Riprogramma la coda (${quantiInCoda()})</button>` : ""}
@@ -4221,6 +4236,31 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
     $("#mm-tutte-programma")?.addEventListener("click", () => {
       invioBersaglio = "pronte"; invioAperto = "programma"; quandoInvio = fraUnOra(); QF().render();
     });
+    $("#mm-tutte-pronta")?.addEventListener("click", async () => {
+      /* Approvare non manda niente: sposta da «bozza» a «pronta»,
+         cioè dice che il testo va bene. L'invio resta un gesto a
+         parte, e deve restarlo. */
+      if (!confirm(
+        `Approvare tutte le ${quantiBozze()} bozze?\n\n` +
+        "Vuol dire che i testi vanno bene e possono partire. " +
+        "Non parte niente adesso: dopo si programmano o si inviano.\n\n" +
+        "Riguarda tutte le bozze, non solo quelle che vedi: i filtri qui sopra non contano.")) return;
+
+      const prima = invioBersaglio;
+      invioBersaglio = "bozze";
+      const b = await bersaglioIds();
+      invioBersaglio = prima;
+
+      if (b.errore) { QF().toast(b.errore); return; }
+      if (!b.ids.length) { QF().toast("Nessuna bozza da approvare."); return; }
+
+      const e = await chiama("posta-stato", { ids: b.ids, stato: "pronta" });
+      if (!e.ok) { QF().toast(e.errore || "Approvazione non riuscita."); return; }
+      QF().toast(`${plurale(e.aggiornati, "bozza approvata", "bozze approvate")}.${
+        b.troncato ? ` Le prime ${b.ids.length} di ${b.totale}: ripremi per le altre.` : ""}`);
+      await caricaPosta2();
+    });
+
     $("#mm-tutte-coda")?.addEventListener("click", () => {
       /* Riprogrammare non è inviare: qui il modo "adesso" non
          esiste, e il bottone dice «Sposta la data». */
