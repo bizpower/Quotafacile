@@ -680,8 +680,24 @@ function faqJsonLd(faqs) {
         "mainEntity": utili.map(f => {
           const best = f.risposte.find(r => r.accettata) || f.risposte[0];
           const a = autoreDi(best);
+          /* worksFor solo con una ragione sociale vera: un
+             segnaposto non diventa un'azienda perché lo si mette
+             fra le virgolette di un JSON-LD. Oggi questo ramo non
+             si raggiunge — la risposta "migliore" di una guida e
+             di una domanda del giorno è sempre quella della
+             redazione, che sta in testa all'elenco ed è l'unica
+             con accettata:true — quindi non è una perdita in
+             corso ma un freno a mano: il giorno in cui l'ordine
+             delle risposte cambia, il segnaposto non finisce nei
+             dati strutturati. autoreJsonLd() ha già questa
+             regola, e le due funzioni devono dire la stessa cosa. */
           const autore = a && !a.auto
-            ? { "@type": "Person", "name": a.nome, "jobTitle": a.ruolo, "worksFor": { "@type": "Organization", "name": a.azienda } }
+            ? {
+                "@type": "Person", "name": a.nome, "jobTitle": a.ruolo,
+                ...(a.azienda && !DA_COMPILARE(a.azienda)
+                  ? { "worksFor": { "@type": "Organization", "name": a.azienda } }
+                  : {})
+              }
             : { "@type": "Organization", "name": "Redazione QuotaFacile", "@id": base + "#org" };
           return {
             "@type": "Question",
@@ -903,6 +919,17 @@ function directoryJsonLd(lista) {
    contenuto: li evidenziamo invece di stamparli come fossero veri. */
 const DA_COMPILARE = v => typeof v === "string" && /^«.*»$/.test(v);
 const campo = v => DA_COMPILARE(v) ? `<span class="todo-field">${esc(v)}</span>` : esc(v);
+
+/* Nome e ragione sociale insieme — ma la parentesi si apre solo se
+   dentro c'è qualcosa. I segnaposto «...» sono promemoria per chi
+   compila le schede, e il filtro li toglie da tutte le tessere; in
+   due punti però il nome e l'azienda venivano cuciti a mano e il
+   promemoria usciva fuori: nella riga «Stai contattando
+   direttamente ...» del modulo di preventivo, che la legge
+   l'utente, e nel nome del destinatario scritto nella mail di
+   notifica. Qui il nome va da solo finché l'azienda non c'è. */
+const nomeEAzienda = b =>
+  b && b.azienda && !DA_COMPILARE(b.azienda) ? `${b.nome} (${b.azienda})` : (b ? b.nome : "");
 
 /* Etichetta RUI: senza numero verificato non stampiamo un numero.
    Sezione e data di iscrizione restano visibili perché sono i dati
@@ -2346,7 +2373,7 @@ views.preventivo = (query) => {
       <div class="section-head">
         <span class="eyebrow">Gratis e senza impegno</span>
         <h1 class="titolo-sezione">${dest ? `Richiesta a ${esc(dest.nome)}` : "Richiedi un preventivo assicurativo o una consulenza"}</h1>
-        ${dest ? `<p class="muted">Stai contattando direttamente ${esc(dest.ruolo).toLowerCase()} ${esc(dest.nome)} (${esc(dest.azienda)}).</p>` : `<p class="muted">Compila in 2 minuti: gli intermediari specializzati ti ricontattano direttamente.</p>`}
+        ${dest ? `<p class="muted">Stai contattando direttamente ${esc(dest.ruolo).toLowerCase()} ${esc(nomeEAzienda(dest))}.</p>` : `<p class="muted">Compila in 2 minuti: gli intermediari specializzati ti ricontattano direttamente.</p>`}
       </div>
       <div class="card">
         <div class="stepper" aria-hidden="true">
@@ -3395,7 +3422,7 @@ function bind() {
       telefono: $("#q-tel").value.trim(),
       note: $("#q-note").value.trim(),
       destinatarioId: dest ? dest.id : null,
-      destinatarioNome: dest ? `${dest.nome} (${dest.azienda})` : null,
+      destinatarioNome: dest ? nomeEAzienda(dest) : null,
       destinatarioEmail: dest && dest.email && !DA_COMPILARE(dest.email) ? dest.email : null,
       consenso: true,
       consensoTesto: "Consenso alla trasmissione dei recapiti all'intermediario destinatario",
