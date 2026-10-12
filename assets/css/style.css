@@ -2421,3 +2421,23 @@ a.chip { display: inline-block; text-decoration: none; }
   .mag-barra-b { flex: 0 0 auto; min-height: 40px; }
 }
 
+
+/* ---------- Mail Marketing · la scelta che cambia tutto il testo ----------
+   «Che cosa stiamo proponendo» decide chi il modello dice di
+   essere: il marketplace o le automazioni per agenzie. Era una
+   tendina fra le altre e la si saltava, generando dodici email
+   con l'identità sbagliata. Qui sta in un riquadro suo, con i
+   due pulsanti grandi: una scelta che si può non vedere, su
+   qualcosa che cambia tutto, è una scelta progettata male. */
+.mm-ambito {
+  background: var(--green-50); border: 1.5px solid var(--green-100);
+  border-radius: 12px; padding: .7rem .8rem;
+}
+.mm-ambito > span { font-weight: 700; color: var(--ink); }
+.mm-ambito .chip { font-size: .82rem; }
+
+/* Il pannello che resta dopo un salvataggio, e la scorciatoia del
+   cruscotto: sono il passo successivo messo dove si è già, non un
+   avviso che sparisce da solo. */
+.mm-appena, .mm-scorciatoia { border-left: 3px solid var(--green-600); }
+.mm-scorciatoia { margin-bottom: 1rem; }

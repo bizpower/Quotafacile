@@ -205,8 +205,34 @@
     const totale = g.reduce((a, x) => a + x.quante, 0);
     const caselle = smtpDelMittente();
 
+    const liste = D().liste || [];
+    const inListe = liste.reduce((t, l) => t + (l.quanti ?? 0), 0);
+
     return `
     ${avvisoInvio()}
+
+    ${/* Il passo che si fa più spesso, dove si arriva.
+          Scrivere le email voleva dire: Email Ready, «Genera con
+          AI», ritrovare la lista nella tendina. Tre passaggi per
+          la cosa per cui si è aperto il modulo. Qui il bottone è
+          fra i primi che si vedono, e apre la stessa finestra —
+          non una copia da tenere allineata. */""}
+    ${liste.length ? `
+      <div class="card mm-scorciatoia">
+        <div class="mm-testata">
+          <div>
+            <strong>✨ Scrivi le email con l'AI</strong>
+            <p class="muted" style="margin:.2rem 0 0;font-size:.84rem">
+              ${plurale(liste.length, "lista pronta", "liste pronte")} · ${plurale(inListe, "azienda dentro", "aziende dentro")}.
+              Scegli cosa stai proponendo e a quale lista, il resto lo fa il modello.
+            </p>
+          </div>
+          <div class="mm-azioni">
+            <button class="btn btn-primary btn-sm" id="mm-scrivi-ora">Scrivi le email</button>
+            <a class="btn btn-ghost btn-sm" href="#/admin/crm/mail/lead-finder">Cerca altre aziende</a>
+          </div>
+        </div>
+      </div>` : ""}
 
     <div class="mm-riquadri">
       ${RIQUADRI().map(([k, ico, etichetta, valore, sotto]) => {
@@ -327,7 +353,8 @@
         L'invio verso di loro è rifiutato dal server, non nascosto dall'interfaccia.
       </p>` : ""}
 
-    ${dettaglio ? dettaglioView() : ""}`;
+    ${dettaglio ? dettaglioView() : ""}
+    ${generaAperto ? generaView() : ""}`;
   }
 
   /* Il dettaglio di un riquadro. Su Lovable era un dialog con
@@ -406,6 +433,13 @@
   let salvaAperto = false;
   let listaScelta = "";
   let nuovaLista = "";
+  /* Cosa è appena finito in archivio, e dove.
+     Finito il salvataggio restava un avviso che spariva da solo e
+     poi bisognava andare in Email Ready, aprire la generazione e
+     ritrovare a mano la lista appena creata: tre passaggi per
+     continuare la cosa che si stava già facendo. Resta invece
+     scritto a schermo, con il bottone che fa il passo dopo. */
+  let appenaSalvate = null;   // { listaId, nome, quante }
 
   /* Quale voce è a schermo: bind() non riceve l'indirizzo. */
   let rottaCorrente = "dashboard";
@@ -499,7 +533,35 @@
           </div>` : ""}
       </div>`}
 
-    ${salvaAperto ? salvaView() : ""}`;
+    ${pannelloSalvate()}
+    ${salvaAperto ? salvaView() : ""}
+    ${generaAperto ? generaView() : ""}`;
+  }
+
+  /* Il passo dopo, dove si è: scrivere le email a quelle che si è
+     appena salvato. La lista è già quella giusta — non la si
+     sceglie di nuovo da una tendina. */
+  function pannelloSalvate() {
+    if (!appenaSalvate) return "";
+    const l = D().liste.find(x => x.id === appenaSalvate.listaId);
+    const quante = l ? (l.quanti ?? appenaSalvate.quante) : appenaSalvate.quante;
+    return `
+    <div class="card mm-appena" style="margin-top:1rem">
+      <div class="mm-testata">
+        <div>
+          <strong>${plurale(appenaSalvate.quante, "attività salvata", "attività salvate")} in «${esc(appenaSalvate.nome)}»</strong>
+          <p class="muted" style="margin:.2rem 0 0;font-size:.82rem">
+            Ora la lista ne contiene ${plurale(quante, "azienda", "aziende")}.
+            Il modello scrive solo a chi ha un indirizzo email.
+          </p>
+        </div>
+        <div class="mm-azioni">
+          <button class="btn btn-primary btn-sm" data-scrivi-appena>✨ Scrivi le email con l'AI</button>
+          <a class="btn btn-outline btn-sm" href="#/admin/crm/mail/liste?l=${esc(appenaSalvate.listaId)}">Apri la lista</a>
+          <button class="btn btn-ghost btn-sm" data-chiudi-appena aria-label="Chiudi">✕</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   function salvaView() {
@@ -810,7 +872,77 @@
      La finestra è la stessa — una lista di uno non merita un
      secondo modulo da tenere allineato. */
   let generaLead = null;
-  let formGenera = { ambito: "assicurazioni", lista_id: "", scopo: "presentazione",
+  /* I due mestieri, come li conosce il server.
+     Qui ci sono solo le etichette da mostrare: le istruzioni vere
+     — chi siamo, cosa offriamo, cosa non si può promettere —
+     stanno in qf-mm-ai e non passano mai da questa pagina. Dal
+     browser esce una chiave, non una frase.
+
+     Le CHIAVI devono essere identiche a quelle del server. Se qui
+     ne comparisse una che di là non esiste, il server ricadrebbe
+     in silenzio sul primo scopo di quell'ambito e si scoprirebbe
+     solo leggendo un'email che parla d'altro. */
+  const AMBITI = {
+    assicurazioni: {
+      nome: "Assicurazioni — QuotaFacile",
+      spiega: "Il marketplace: mettere in contatto aziende e professionisti con intermediari iscritti al RUI.",
+      scopi: {
+        presentazione: "Presentare QuotaFacile",
+        preventivo: "Proporre un preventivo gratuito",
+        sollecito: "Richiamare un contatto senza risposta",
+        informativa: "Segnalare una novità normativa"
+      }
+    },
+    automazioni: {
+      nome: "Automazioni per agenzie",
+      spiega: "Vendere automazioni ad agenzie, subagenzie e broker. Chiude chiedendo una chiamata di quindici minuti.",
+      scopi: {
+        presentazione: "Presentare le automazioni",
+        sinistri: "Partire dalla gestione dei sinistri",
+        scadenze: "Partire dai rinnovi che si perdono",
+        lead: "Partire dalle richieste fuori orario",
+        gestione: "Partire dai fogli di calcolo",
+        sollecito: "Richiamare chi non ha risposto"
+      }
+    }
+  };
+
+  /* Cambiando mondo lo scopo di prima può non esistere più:
+     «sinistri» non vuol dire niente per il marketplace. Si ricade
+     sul primo, che in tutti e due i casi è «presentazione». */
+  const scopiDi = a => (AMBITI[a] || AMBITI.assicurazioni).scopi;
+  const scopoValido = (a, s) => (scopiDi(a)[s] ? s : Object.keys(scopiDi(a))[0]);
+
+  /* Da scopo nostro a scopo dei modelli: quelli che qf-mail
+     riconosce passano con il proprio nome, tutti gli altri sono
+     primi contatti. Vedi il commento nel salvataggio. */
+  const SCOPO_MODELLO = { preventivo: "preventivo", sollecito: "sollecito", informativa: "informativa" };
+
+  /* L'ambito è un modo di lavorare, non una scelta per email: chi
+     sta facendo una campagna alle agenzie la fa tutta, non una sì
+     e una no. Quindi si ricorda, e la volta dopo la finestra si
+     apre già come l'avevi lasciata.
+
+     In localStorage e non in una variabile perché fra una
+     generazione e l'altra ci si passa dal Lead Finder, si
+     ricarica la pagina, si torna il giorno dopo. Senza memoria il
+     campo tornava ogni volta su «Assicurazioni» — ed è
+     esattamente così che si manda una campagna con il testo
+     sbagliato credendo di aver scelto. */
+  const AMBITO_CHIAVE = "qf_mm_ambito";
+
+  function ambitoRicordato() {
+    try {
+      const v = localStorage.getItem(AMBITO_CHIAVE);
+      return AMBITI[v] ? v : "assicurazioni";
+    } catch (e) { return "assicurazioni"; }
+  }
+
+  function ricordaAmbito(a) {
+    try { if (AMBITI[a]) localStorage.setItem(AMBITO_CHIAVE, a); } catch (e) { /* in incognito non si ricorda, e va bene */ }
+  }
+
+  let formGenera = { ambito: ambitoRicordato(), lista_id: "", scopo: "presentazione",
                      tono: "cordiale", istruzioni: "",
                      sovrascrivi: false, leggi_sito: true };
   let inGenerazione = false;
@@ -889,8 +1021,10 @@
        verrebbe scartata in silenzio. Il resto del modulo —
        istruzioni, spunte — si rilegge prima, altrimenti il
        ridisegno lo azzererebbe. */
-    $("#g-ambito")?.addEventListener("change", ev => {
-      const a = ev.currentTarget.value;
+    document.querySelectorAll("[data-ambito]").forEach(b =>
+      b.addEventListener("click", () => {
+      const a = b.dataset.ambito;
+      ricordaAmbito(a);
       formGenera = {
         ...formGenera,
         ambito: a,
@@ -902,12 +1036,12 @@
         leggi_sito: $("#g-sito")?.checked ?? formGenera.leggi_sito
       };
       QF().render();
-    });
+    }));
 
     $("#mm-genera-form")?.addEventListener("submit", async e => {
       e.preventDefault();
       formGenera = {
-        ambito: $("#g-ambito")?.value || formGenera.ambito,
+        ambito: formGenera.ambito,
         lista_id: $("#g-lista")?.value || "",
         lead_id: generaLead ? generaLead.id : null,
         scopo: $("#g-scopo").value,
@@ -1351,6 +1485,26 @@
           </div>`
         : `
         <form id="mm-genera-form">
+          ${/* COSA SI STA VENDENDO, IN CIMA E NON IN UNA TENDINA
+                Era un menu a tendina fra gli altri, e nasceva su
+                «Assicurazioni». Chi apriva la finestra per scrivere
+                alle agenzie non lo notava, generava dodici email
+                che presentavano il marketplace, e concludeva che la
+                cosa non fosse stata fatta. Un campo che si può non
+                vedere, su una scelta che cambia tutto il testo, è
+                un campo progettato male.
+                Ora sono due pulsanti, in cima, e quello attivo si
+                vede da lontano. */""}
+          <div class="field mm-ambito">
+            <span>Che cosa stiamo proponendo</span>
+            <div class="filterbar" style="margin:.35rem 0 .3rem">
+              ${Object.entries(AMBITI).map(([k, a]) => `
+                <button type="button" class="chip ${formGenera.ambito === k ? "active" : ""}"
+                        data-ambito="${k}" aria-pressed="${formGenera.ambito === k}">${esc(a.nome)}</button>`).join("")}
+            </div>
+            <em class="muted" style="font-size:.76rem">${esc((AMBITI[formGenera.ambito] || AMBITI.assicurazioni).spiega)}</em>
+          </div>
+
           ${generaLead ? `
             <table class="admin-kv">
               <tr><th>Attività</th><td><strong>${esc(generaLead.nome)}</strong></td></tr>
@@ -1367,19 +1521,6 @@
               ${ll.map(l => `<option value="${esc(l.id)}" ${formGenera.lista_id === l.id ? "selected" : ""}>${
                 esc(l.nome)}${l.quanti != null ? ` · ${l.quanti} aziende` : ""}</option>`).join("")}
             </select></label>`}
-
-          ${/* Cosa stiamo proponendo viene prima dello scopo, perché
-                lo scopo dipende da lui: cambia il mondo e cambiano
-                le voci sotto. Gli scopi non sono più scritti a mano
-                qui — erano già divergenti dall'altra schermata —
-                ma letti dalla stessa tabella. */""}
-          <label class="field" style="margin-top:.6rem"><span>Che cosa stiamo proponendo</span>
-            <select id="g-ambito">
-              ${Object.entries(AMBITI).map(([k, a]) => `
-                <option value="${k}" ${formGenera.ambito === k ? "selected" : ""}>${esc(a.nome)}</option>`).join("")}
-            </select>
-            <em class="muted" style="font-size:.76rem">${esc((AMBITI[formGenera.ambito] || AMBITI.assicurazioni).spiega)}</em>
-          </label>
 
           <label class="field" style="margin-top:.6rem"><span>Scopo del messaggio</span>
             <select id="g-scopo">
@@ -1540,54 +1681,9 @@
   let modelloAperto = null;  // modello in modifica, o "nuovo"
   let anteprima = null;      // { oggetto, corpo, avvisi }
   let bozza = null;          // quello che ha scritto il modello
-  const scrittura = { ambito: "assicurazioni", lead_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "", leggi_sito: true };
+  const scrittura = { ambito: ambitoRicordato(), lead_id: "", scopo: "presentazione", tono: "cordiale", istruzioni: "", leggi_sito: true };
   let scrivendo = false;
 
-  /* I due mestieri, come li conosce il server.
-     Qui ci sono solo le etichette da mostrare: le istruzioni vere
-     — chi siamo, cosa offriamo, cosa non si può promettere —
-     stanno in qf-mm-ai e non passano mai da questa pagina. Dal
-     browser esce una chiave, non una frase.
-
-     Le CHIAVI devono essere identiche a quelle del server. Se qui
-     ne comparisse una che di là non esiste, il server ricadrebbe
-     in silenzio sul primo scopo di quell'ambito e si scoprirebbe
-     solo leggendo un'email che parla d'altro. */
-  const AMBITI = {
-    assicurazioni: {
-      nome: "Assicurazioni — QuotaFacile",
-      spiega: "Il marketplace: mettere in contatto aziende e professionisti con intermediari iscritti al RUI.",
-      scopi: {
-        presentazione: "Presentare QuotaFacile",
-        preventivo: "Proporre un preventivo gratuito",
-        sollecito: "Richiamare un contatto senza risposta",
-        informativa: "Segnalare una novità normativa"
-      }
-    },
-    automazioni: {
-      nome: "Automazioni per agenzie",
-      spiega: "Vendere automazioni ad agenzie, subagenzie e broker. Chiude chiedendo una chiamata di quindici minuti.",
-      scopi: {
-        presentazione: "Presentare le automazioni",
-        sinistri: "Partire dalla gestione dei sinistri",
-        scadenze: "Partire dai rinnovi che si perdono",
-        lead: "Partire dalle richieste fuori orario",
-        gestione: "Partire dai fogli di calcolo",
-        sollecito: "Richiamare chi non ha risposto"
-      }
-    }
-  };
-
-  /* Cambiando mondo lo scopo di prima può non esistere più:
-     «sinistri» non vuol dire niente per il marketplace. Si ricade
-     sul primo, che in tutti e due i casi è «presentazione». */
-  const scopiDi = a => (AMBITI[a] || AMBITI.assicurazioni).scopi;
-  const scopoValido = (a, s) => (scopiDi(a)[s] ? s : Object.keys(scopiDi(a))[0]);
-
-  /* Da scopo nostro a scopo dei modelli: quelli che qf-mail
-     riconosce passano con il proprio nome, tutti gli altri sono
-     primi contatti. Vedi il commento nel salvataggio. */
-  const SCOPO_MODELLO = { preventivo: "preventivo", sollecito: "sollecito", informativa: "informativa" };
   const TONI = { diretto: "Diretto", cordiale: "Cordiale", formale: "Formale" };
   const SEGNAPOSTO = {
     "{azienda}": "il nome dell'attività",
@@ -1736,12 +1832,15 @@
       </p>
       <form id="mm-ai-form">
         <div class="mm-campi">
-          <label class="field mm-campo-largo"><span>Che cosa stiamo proponendo</span>
-            <select id="a-ambito">
-              ${Object.entries(AMBITI).map(([k, a]) => `<option value="${k}" ${scrittura.ambito === k ? "selected" : ""}>${esc(a.nome)}</option>`).join("")}
-            </select>
+          <div class="field mm-campo-largo mm-ambito">
+            <span>Che cosa stiamo proponendo</span>
+            <div class="filterbar" style="margin:.35rem 0 .3rem">
+              ${Object.entries(AMBITI).map(([k, a]) => `
+                <button type="button" class="chip ${scrittura.ambito === k ? "active" : ""}"
+                        data-ambito-w="${k}" aria-pressed="${scrittura.ambito === k}">${esc(a.nome)}</button>`).join("")}
+            </div>
             <em class="muted" style="font-size:.76rem">${esc((AMBITI[scrittura.ambito] || AMBITI.assicurazioni).spiega)}</em>
-          </label>
+          </div>
           <label class="field"><span>Scopo</span>
             <select id="a-scopo">
               ${Object.entries(scopiDi(scrittura.ambito)).map(([k, v]) => `<option value="${k}" ${scrittura.scopo === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
@@ -3010,6 +3109,27 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
 
     if (dettaglio) chiudiConEsc(() => { dettaglio = null; });
 
+    /* I GESTORI DELLA GENERAZIONE SI LEGANO QUI, UNA VOLTA SOLA.
+       La finestra compare ormai in quattro schermate — Lead
+       Lists, Email Ready, Lead Finder, Dashboard — e ognuna
+       aveva, o avrebbe avuto, la sua riga. Due di quelle righe
+       scattavano insieme su Email Ready: un clic su «Scrivi le
+       bozze» faceva partire due generazioni, cioè due chiamate a
+       pagamento e due serie di bozze per le stesse aziende.
+       Legarli qui, dove si sa soltanto se la finestra è aperta,
+       toglie il problema invece di correggerlo una rotta per
+       volta. */
+    if (generaAperto) legaGenerazione($);
+
+    /* La scorciatoia del cruscotto: apre la finestra senza lista
+       scelta, perché da lì non se ne sta guardando una. */
+    $("#mm-scrivi-ora")?.addEventListener("click", () => {
+      generaLead = null;
+      ultimaGenerazione = null;
+      generaAperto = true;
+      QF().render();
+    });
+
     bindSmtp();
     bindFinder();
     bindListe();
@@ -3406,6 +3526,18 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
       })), "ricerca");
     });
 
+    $("[data-chiudi-appena]")?.addEventListener("click", () => { appenaSalvate = null; QF().render(); });
+
+    /* Si apre la stessa finestra di Email Ready, già sulla lista
+       appena riempita: è il motivo per cui questo pannello esiste. */
+    $("[data-scrivi-appena]")?.addEventListener("click", () => {
+      generaLead = null;
+      formGenera = { ...formGenera, lista_id: appenaSalvate.listaId };
+      ultimaGenerazione = null;
+      generaAperto = true;
+      QF().render();
+    });
+
     $("#mm-salva-lista")?.addEventListener("click", () => {
       salvaAperto = true;
       listaScelta = D().liste[0]?.id || "__nuova__";
@@ -3447,9 +3579,11 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
       const a = await chiama("lista-aggiungi", { lista_id: lista, place_ids: selezionate.map(r => r.place_id) });
       if (!a.ok) { QF().toast(a.errore || "Non riuscito ad aggiungerle alla lista."); return; }
 
+      const nomeLista = (D().liste.find(x => x.id === lista) || {}).nome || nuovaLista || "la lista";
       salvaAperto = false; nuovaLista = "";
       scelti = new Set();
       risultati = risultati.map(r => ({ ...r, gia: true }));
+      appenaSalvate = { listaId: lista, nome: nomeLista, quante: selezionate.length };
       QF().toast(`${plurale(a.aggiunti, "attività aggiunta", "attività aggiunte")} alla lista.`);
       await carica();
     });
@@ -3521,17 +3655,6 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
         generaAperto = true;
         QF().render();
       }));
-
-    /* Solo da Lead Lists.
-       bindListe non si ferma sulle altre rotte: i suoi gestori si
-       attaccano a elementi che altrove non esistono, quindi non
-       facevano niente. La finestra di generazione però esiste in
-       due sezioni, e su Email Ready la legavano tutti e due —
-       qui e bindPronte. Due gestori sullo stesso submit vuol dire
-       che un clic solo su «Scrivi le bozze» faceva partire due
-       generazioni: due chiamate a pagamento al modello e due
-       serie di bozze per le stesse aziende. */
-    if (generaAperto && rottaCorrente === "liste") legaGenerazione($);
 
     document.querySelectorAll("[data-togli]").forEach(b =>
       b.addEventListener("click", async () => {
@@ -3874,7 +3997,6 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
       QF().render();
     });
 
-    legaGenerazione($);
 
     /* Riscrivere i selezionati. Uno alla volta e non in parallelo:
        sono già tre chiamate in parallelo dentro il server, e
@@ -4104,19 +4226,20 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
     /* Come nell'altra finestra: il mondo decide gli scopi, quindi
        cambiarlo ridisegna. Si rilegge prima quello che l'utente ha
        già scritto, altrimenti il ridisegno lo butta via. */
-    $("#a-ambito")?.addEventListener("change", ev => {
-      scrittura.ambito = ev.currentTarget.value;
+    document.querySelectorAll("[data-ambito-w]").forEach(bt =>
+      bt.addEventListener("click", () => {
+      scrittura.ambito = bt.dataset.ambitoW;
+      ricordaAmbito(scrittura.ambito);
       scrittura.scopo = scopoValido(scrittura.ambito, $("#a-scopo")?.value);
       scrittura.tono = $("#a-tono")?.value ?? scrittura.tono;
       scrittura.lead_id = $("#a-lead")?.value ?? scrittura.lead_id;
       scrittura.istruzioni = $("#a-istruzioni")?.value ?? scrittura.istruzioni;
       scrittura.leggi_sito = $("#a-sito")?.checked ?? scrittura.leggi_sito;
       QF().render();
-    });
+    }));
 
     $("#mm-ai-form")?.addEventListener("submit", async e => {
       e.preventDefault();
-      scrittura.ambito = $("#a-ambito")?.value || scrittura.ambito;
       scrittura.scopo = $("#a-scopo").value;
       scrittura.tono = $("#a-tono").value;
       scrittura.lead_id = $("#a-lead").value;
