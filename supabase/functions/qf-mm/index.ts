@@ -1253,11 +1253,43 @@ async function postaInvia(d: Record<string, unknown>) {
   if (!smtpId) throw new ErroreCliente("Scegli la casella da cui devono partire.");
 
   const { data: righe, error } = await db.from("mm_email")
-    .select("id,destinatario,oggetto,corpo,lead_id")
+    .select("id,destinatario,oggetto,corpo,lead_id,stato")
     .in("id", ids).in("stato", ["pronta", "in_coda"]);
   if (error) throw new Error(error.message);
   if (!righe?.length) {
     throw new ErroreCliente("Nessuno dei messaggi scelti è approvato: da «bozza» vanno prima messi in «pronta».");
+  }
+
+  /* I messaggi già in coda qui non si toccano.
+   *
+   * Prima si toccavano: lo stato «in_coda» era fra quelli
+   * ammessi. Ma la coda la sta già guardando il giro automatico,
+   * una volta al minuto, e nessuno dei due si accorge dell'altro:
+   * il giro sceglie cinque messaggi e li manda uno per uno,
+   * marcandoli «inviata» solo dopo che sono partiti. Chi
+   * spuntava una riga in coda e premeva «Invia adesso» in quel
+   * mezzo minuto la mandava una seconda volta — allo stesso
+   * indirizzo, con lo stesso testo.
+   *
+   * Non è una finestra teorica: lunedì mattina il giro resta al
+   * lavoro per sei minuti di fila mentre si guarda l'elenco. E
+   * una mail doppia a un'agenzia non è un inestetismo, è il
+   * segnale che i fornitori leggono come spam — proprio quello
+   * che SPF, DKIM e DMARC servono a evitare.
+   *
+   * Per anticipare un messaggio in coda c'è già «Riprogramma la
+   * coda»: cambia l'orario e il giro lo prende da sé. Una strada
+   * sola per la coda, e il doppio invio non si pone. */
+  const giaInCoda = righe.filter((r: { stato: string }) => r.stato === "in_coda");
+  const daQui = righe.filter((r: { stato: string }) => r.stato === "pronta");
+  if (!daQui.length) {
+    throw new ErroreCliente(
+      giaInCoda.length === 1
+        ? "Il messaggio scelto è già in coda: parte da solo all'orario stabilito. " +
+          "Per anticiparlo usa «Riprogramma la coda»."
+        : `I ${giaInCoda.length} messaggi scelti sono già in coda: partono da soli ` +
+          "all'orario stabilito. Per anticiparli usa «Riprogramma la coda».",
+    );
   }
 
   /* I controlli si rifanno adesso, non ci si fida di quelli fatti
@@ -1272,14 +1304,14 @@ async function postaInvia(d: Record<string, unknown>) {
     ...(opposti ?? []).map((r: { email: string }) => r.email.toLowerCase()),
   ]);
 
-  const bloccati = righe.filter((r) => nero.has(r.destinatario.toLowerCase()));
+  const bloccati = daQui.filter((r) => nero.has(r.destinatario.toLowerCase()));
   if (bloccati.length) {
     await db.from("mm_email").update({
       stato: "annullata",
       errore: "Il destinatario si è opposto o è in blacklist: l'invio è stato rifiutato.",
     }).in("id", bloccati.map((r) => r.id));
   }
-  const ammessi = righe.filter((r) => !nero.has(r.destinatario.toLowerCase()));
+  const ammessi = daQui.filter((r) => !nero.has(r.destinatario.toLowerCase()));
   if (!ammessi.length) {
     throw new ErroreCliente(
       `${plurale(bloccati.length, "messaggio era diretto", "messaggi erano diretti")} a chi si è opposto: non è partito niente.`,
@@ -1331,6 +1363,11 @@ async function postaInvia(d: Record<string, unknown>) {
   return {
     partite, fallite, rimasti, fermato,
     bloccati: bloccati.length,
+    /* Quanti dei messaggi scelti erano già in coda e sono stati
+       lasciati al giro automatico. Torna indietro come numero
+       perché chi ha premuto deve sapere che non sono spariti:
+       partiranno, solo non da questo bottone. */
+    giaInCoda: giaInCoda.length,
     limite: residua < ammessi.length ? residua : null,
   };
 }
