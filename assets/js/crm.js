@@ -41,6 +41,12 @@
      corretto una volta. Una lista fatta nel CRM si vede nel Mail
      Marketing e viceversa, perché è la stessa lista. */
   const API_MM = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-mm";
+  /* Leggere la casella è una funzione a sé: apre un socket verso
+     un server di posta esterno e ci mette qualche secondo, mentre
+     tutto il resto del CRM risponde in millisecondi. Tenerle
+     insieme vorrebbe dire che una lettura lenta rallenta anche
+     chi stava solo guardando i collaboratori. */
+  const API_POSTA = "https://vainqxalnxyzjqautcop.supabase.co/functions/v1/qf-posta";
 
   const QF = () => window.QF;
   const esc = s => window.QF.esc(s);
@@ -630,158 +636,162 @@
      Niente è stato cancellato: se un giorno serve di nuovo, i
      dati ci sono tutti. */
 
-  /* ---------------- SEZIONE · MAIL ----------------
-     Invio dalla casella della società, con modelli e registro.
+  /* ---------------- SEZIONE · POSTA ----------------
+     Quello che arriva, non quello che parte.
 
-     La lettura della posta in arrivo non c'è, e non è una
-     dimenticanza: richiederebbe IMAP, cioè una connessione lunga
-     a un server di posta, mentre le funzioni su cui gira questo
-     CRM sono fatte per rispondere in fretta e spegnersi. Ne
-     sarebbe uscita una schermata che a volte mostra la posta e a
-     volte no — peggio di una che manca. */
+     Qui c'era l'invio: modelli, un modulo per scrivere a un lead,
+     il registro di ciò che era partito. Tutte e tre quelle cose
+     esistono anche nel Mail Marketing — gli stessi modelli, letti
+     dalla stessa funzione, e un registro che sa anche cosa è
+     fallito e perché. Erano due schermate per lo stesso lavoro, e
+     la domanda che restava senza risposta era l'altra: «mi hanno
+     risposto?».
 
-  const SCOPI = {
-    contatto: "Primo contatto", preventivo: "Preventivo",
-    sollecito: "Sollecito", informativa: "Informativa"
+     C'era scritto che leggere la casella non si poteva fare,
+     perché IMAP vuole una connessione lunga. Mezza verità: IMAP
+     ha due modi, e quello che tiene la connessione aperta (IDLE)
+     davvero non sta in una Edge Function. Collegarsi, chiedere
+     cosa è arrivato e chiudere invece sì — è la stessa forma
+     dell'invio, che da mesi funziona. La legge qf-posta.
+
+     Niente viene salvato: la casella è già l'archivio, e copiare
+     il corpo di email altrui in un database sarebbe un
+     trattamento in più da dichiarare. Si legge e si mostra, come
+     fa un programma di posta. */
+
+  /* La posta in arrivo. Si chiede quando si apre la scheda, non
+     al caricamento del CRM: è una connessione a un server esterno
+     e qualche secondo di attesa, e la maggior parte delle visite
+     al CRM non riguarda la casella. */
+  const arrivo = {
+    fase: "vuoto",      // vuoto | caricamento | pronto | errore
+    messaggi: [],
+    errore: null,
+    giorni: 14,
+    guardati: 0,
+    casella: null,
+    soloRisposte: false
   };
 
-  const posta = {
-    modello: "", lead: "", chi: "", destinatario: "",
-    oggetto: "", corpo: "",
-    anteprima: null, errore: null, inCorso: false,
-    modificaModello: null
-  };
+  async function chiamaPosta(azione, d = {}) {
+    return chiama(azione, d, API_POSTA, 60000);
+  }
+
+  async function caricaArrivo(forza = false) {
+    if (arrivo.fase === "caricamento") return;
+    if (arrivo.fase === "pronto" && !forza) return;
+    arrivo.fase = "caricamento"; arrivo.errore = null;
+    QF().render();
+    const e = await chiamaPosta("leggi", { giorni: arrivo.giorni, quante: 40 });
+    if (e.ok) {
+      arrivo.messaggi = e.messaggi || [];
+      arrivo.guardati = e.guardati || 0;
+      arrivo.casella = e.casella || null;
+      arrivo.fase = "pronto";
+    } else {
+      arrivo.fase = "errore";
+      arrivo.errore = e.errore || "Casella non raggiungibile.";
+    }
+    QF().render();
+  }
 
   function mailView() {
-    const modelli = D().modelli || [];
-    const inviate = D().inviate || [];
-    const configurata = D().postaConfigurata;
-    const lead = (D().lead || []).filter(l => !l.no_contatto);
-    const m = posta.modificaModello && posta.modificaModello !== "nuovo"
-      ? modelli.find(x => x.id === posta.modificaModello) : null;
+    const A = arrivo;
+    const elenco = A.soloRisposte ? A.messaggi.filter(m => m.risposta_a_campagna) : A.messaggi;
+    const risposte = A.messaggi.filter(m => m.risposta_a_campagna).length;
+    const opposizioni = A.messaggi.filter(m => m.pare_opposizione).length;
 
-    return `
-    <p class="admin-hint">Invio dalla casella della società, con modelli riutilizzabili e registro di ciò che è partito. Un'email inviata è un fatto che riguarda una persona: va saputo che è stata mandata, a chi e con quale testo — serve a non scrivere due volte alla stessa azienda e a rispondere se qualcuno chiede conto di un messaggio.</p>
-
-    ${configurata === false ? `
-      <div class="legal-warning">
-        <strong>La casella non è ancora collegata.</strong> Servono quattro segreti fra le impostazioni del progetto Supabase:
-        <code>QF_SMTP_HOST</code> (su Aruba <code>smtps.aruba.it</code>), <code>QF_SMTP_PORT</code> (<code>465</code>),
-        <code>QF_SMTP_USER</code> (l'indirizzo completo) e <code>QF_SMTP_PASS</code>.
-        Fino ad allora modelli e registro funzionano, l'invio no.
-      </div>` : ""}
-
-    <div class="grid-2" style="align-items:start">
+    const testa = `
       <div class="card">
-        <h3>✍️ Scrivi</h3>
-        <form id="mail-form">
-          <div class="field"><label for="ml-lead">A chi <span class="muted">(un lead in archivio, o lascia vuoto e scrivi l'indirizzo)</span></label>
-            <select id="ml-lead">
-              <option value="">— destinatario libero —</option>
-              ${lead.map(l => `<option value="${esc(l.id)}" ${posta.lead === l.id ? "selected" : ""}>${esc(l.nome)}${l.email ? " · " + esc(l.email) : " · senza email"}</option>`).join("")}
+        <div class="admin-top" style="margin:0">
+          <div>
+            <h3 style="margin:0">\u2709\ufe0f Posta in arrivo</h3>
+            <p class="muted" style="margin:.3rem 0 0;font-size:.85rem">
+              ${A.casella ? `Casella <strong>${esc(A.casella)}</strong> \u00b7 ` : ""}ultimi ${A.giorni} giorni.
+              Le risposte alle email partite dal Mail Marketing stanno in cima.
+              Qui non si salva niente: la posta resta nella casella e si legge da l\u00ec ogni volta.
+            </p>
+          </div>
+          <div class="admin-actions">
+            <select data-arrivo-giorni class="crm-lista-dest">
+              ${[7, 14, 30, 60].map(g => `<option value="${g}" ${A.giorni === g ? "selected" : ""}>ultimi ${g} giorni</option>`).join("")}
             </select>
-            ${(D().lead || []).some(l => l.no_contatto)
-              ? `<p class="privacy-hint">${(D().lead || []).filter(l => l.no_contatto).length} lead non compaiono qui perché si sono opposti al contatto.</p>` : ""}
+            <button class="btn btn-outline btn-sm" data-arrivo-ricarica ${A.fase === "caricamento" ? "disabled" : ""}>
+              ${A.fase === "caricamento" ? "Leggo\u2026" : "\u21bb Rileggi"}</button>
           </div>
+        </div>
+      </div>`;
 
-          <div class="field" style="margin-top:.6rem"><label for="ml-dest">Indirizzo</label>
-            <input id="ml-dest" type="email" value="${esc(posta.destinatario)}" placeholder="Se il lead non ce l'ha, cercalo sul loro sito"></div>
+    if (A.fase === "caricamento") {
+      return testa + `<div class="card" style="margin-top:1.2rem"><p class="muted">Mi collego alla casella\u2026 ci vuole qualche secondo.</p></div>`;
+    }
 
-          <div class="grid-2" style="gap:.6rem;margin-top:.6rem">
-            <div class="field"><label for="ml-modello">Modello</label>
-              <select id="ml-modello">
-                <option value="">— scrivo io —</option>
-                ${modelli.map(x => `<option value="${esc(x.id)}" ${posta.modello === x.id ? "selected" : ""}>${esc(x.nome)}</option>`).join("")}
-              </select></div>
-            <div class="field"><label for="ml-chi">A nome di</label>
-              <select id="ml-chi">
-                <option value="">— scegli chi firma —</option>
-                ${attivi().map(c => `<option value="${esc(c.id)}" ${posta.chi === c.id ? "selected" : ""}>${esc(c.nome)}</option>`).join("")}
-              </select></div>
-          </div>
+    if (A.fase === "errore") {
+      return testa + `
+      <div class="legal-warning" role="alert" style="margin-top:1.2rem">
+        <strong>Non sono riuscito a leggere la casella.</strong> ${esc(A.errore || "")}
+        <p class="muted" style="font-size:.85rem;margin:.6rem 0 0">
+          Serve la stessa password per le app usata per l'invio, e l'accesso IMAP acceso sulla
+          casella. Su Gmail: Impostazioni \u2192 Inoltro e POP/IMAP \u2192 attiva IMAP.
+        </p>
+        <button class="btn btn-outline btn-sm" style="margin-top:.6rem" data-arrivo-ricarica>Riprova</button>
+      </div>`;
+    }
 
-          <div class="field" style="margin-top:.6rem"><label for="ml-oggetto">Oggetto <span class="muted">(vuoto = quello del modello)</span></label>
-            <input id="ml-oggetto" value="${esc(posta.oggetto)}"></div>
-          <div class="field" style="margin-top:.6rem"><label for="ml-corpo">Testo <span class="muted">(vuoto = quello del modello)</span></label>
-            <textarea id="ml-corpo" rows="6" placeholder="Variabili disponibili: {azienda} {citta} {telefono} {mittente}">${esc(posta.corpo)}</textarea></div>
+    if (A.fase === "vuoto") {
+      return testa + `<div class="card" style="margin-top:1.2rem"><p class="muted">Carico\u2026</p></div>`;
+    }
 
-          <div style="display:flex;gap:.5rem;margin-top:.9rem;flex-wrap:wrap">
-            <button class="btn btn-outline" type="button" id="ml-anteprima">👁 Anteprima</button>
-            <button class="btn btn-primary" style="flex:1" type="submit" ${posta.inCorso || configurata === false ? "disabled" : ""}>
-              ${posta.inCorso ? "Invio in corso…" : "Invia"}
-            </button>
-          </div>
-          <p class="privacy-hint">Ogni messaggio esce con in fondo come farsi togliere dagli invii. I contatti sono raccolti in legittimo interesse, e l'art. 21 del GDPR dà a chiunque il diritto di opporsi: un diritto che per essere esercitato richiede di indovinare a chi scrivere non è un diritto esercitabile.</p>
-        </form>
-      </div>
+    return testa + `
+      <div class="card" style="margin-top:1.2rem">
+        <div class="filterbar" style="margin-bottom:.6rem">
+          <button class="chip ${A.soloRisposte ? "" : "active"}" data-arrivo-filtro="tutte">Tutte (${A.messaggi.length})</button>
+          <button class="chip ${A.soloRisposte ? "active" : ""}" data-arrivo-filtro="risposte">Risposte alle campagne (${risposte})</button>
+        </div>
 
-      <div>
-        ${posta.errore ? `<div class="legal-warning" role="alert" style="margin-bottom:1rem"><strong>Non inviata.</strong> ${esc(posta.errore)}</div>` : ""}
-        ${posta.anteprima ? `
-          <div class="card" style="margin-bottom:1rem">
-            <h3>Anteprima</h3>
-            ${(posta.anteprima.avvisi || []).map(a => `<p class="privacy-hint">⚠️ ${esc(a)}</p>`).join("")}
-            <table class="admin-kv">
-              <tr><th>A</th><td>${esc(posta.anteprima.destinatario)}</td></tr>
-              <tr><th>Oggetto</th><td>${esc(posta.anteprima.oggetto)}</td></tr>
-            </table>
-            <pre class="mail-corpo">${esc(posta.anteprima.corpo)}</pre>
+        ${opposizioni ? `
+          <div class="legal-warning" role="status" style="margin-bottom:.8rem">
+            <strong>${plurale(opposizioni, "messaggio sembra", "messaggi sembrano")} dire di no.</strong>
+            Sono in cima, con il bollino arancione. Leggili: se \u00e8 davvero un'opposizione,
+            registrala dalla scheda del lead \u2014 l'art. 21 del GDPR vuole che basti chiederlo,
+            e il piede di ogni nostra email promette che basta rispondere NO.
+            <span class="muted">Non la registro da solo: se sbagliassi a leggere bloccherei
+            per sempre un'azienda che voleva dire altro.</span>
           </div>` : ""}
 
-        <div class="card">
-          <h3>📋 Modelli (${modelli.length})</h3>
-          ${posta.modificaModello ? `
-            <form id="mail-modello-form" data-id="${m ? esc(m.id) : ""}">
-              <div class="field"><label for="mm-nome">Nome *</label>
-                <input id="mm-nome" required value="${m ? esc(m.nome) : ""}" placeholder="Primo contatto"></div>
-              <div class="field" style="margin-top:.5rem"><label for="mm-scopo">Scopo</label>
-                <select id="mm-scopo">${Object.entries(SCOPI).map(([k, v]) =>
-                  `<option value="${k}" ${m && m.scopo === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
-              <div class="field" style="margin-top:.5rem"><label for="mm-oggetto">Oggetto *</label>
-                <input id="mm-oggetto" required value="${m ? esc(m.oggetto) : ""}"></div>
-              <div class="field" style="margin-top:.5rem"><label for="mm-corpo">Testo *</label>
-                <textarea id="mm-corpo" required rows="8">${m ? esc(m.corpo) : ""}</textarea>
-                <p class="privacy-hint">Variabili: <code>{azienda}</code> <code>{citta}</code> <code>{telefono}</code> <code>{mittente}</code></p></div>
-              <div style="display:flex;gap:.5rem;margin-top:.7rem">
-                <button class="btn btn-primary btn-sm" type="submit">Salva</button>
-                <button class="btn btn-ghost btn-sm" type="button" data-mail-annulla>Annulla</button>
-              </div>
-            </form>`
-          : `<button class="btn btn-outline btn-sm" data-mail-nuovo>➕ Nuovo modello</button>
-             ${modelli.map(x => `
-              <div class="lead-row">
-                <span class="lead-icon">✉️</span>
-                <span class="leader-info"><strong>${esc(x.nome)}</strong>
-                  <span>${esc(SCOPI[x.scopo] || x.scopo)} · ${esc(x.oggetto)}</span></span>
-                <span style="display:flex;gap:.3rem">
-                  <button class="btn btn-ghost btn-sm" data-mail-modifica="${esc(x.id)}">✏️</button>
-                  <button class="btn btn-ghost btn-sm danger" data-mail-elimina="${esc(x.id)}">🗑</button>
-                </span>
-              </div>`).join("")}`}
-        </div>
-      </div>
-    </div>
+        ${elenco.length ? elenco.map(m => `
+          <div class="lead-scheda">
+            <div class="lead-corpo">
+              <strong>${esc(m.oggetto)}</strong>
+              <span>${esc(m.da)}</span>
+              <span class="lead-meta">
+                ${m.pare_opposizione ? `<span class="pill" style="background:var(--gold-100);color:var(--gold-testo)">\u26a0 sembra un NO</span> ` : ""}
+                ${m.risposta_a_campagna
+                  ? `<span class="pill">\u21a9 risposta a una nostra email</span>`
+                  : `<span class="muted">non risulta fra chi abbiamo scritto</span>`}
+                ${m.quando ? ` \u00b7 <span class="muted">${esc(m.quando)}</span>` : ""}
+              </span>
+              ${m.nostra_email ? `
+                <span class="lead-meta muted">Noi gli avevamo scritto \u00ab${esc(m.nostra_email.oggetto)}\u00bb il ${dataBreve(m.nostra_email.inviata_il)}</span>` : ""}
+              ${m.anteprima ? `<span class="lead-meta" style="color:var(--ink)">${esc(m.anteprima)}</span>` : ""}
+            </div>
+            <div class="lead-lavorazione">
+              ${m.lead_id ? `<a class="btn btn-ghost btn-sm" href="#/admin/crm/lead">Vedi il lead</a>` : ""}
+              <a class="btn btn-ghost btn-sm" href="https://mail.google.com/mail/u/0/#search/${encodeURIComponent(m.email)}" target="_blank" rel="noopener">Apri in Gmail</a>
+            </div>
+          </div>`).join("")
+        : `<p class="muted">${A.soloRisposte
+            ? "Nessuna risposta alle campagne in questo periodo."
+            : "Niente di nuovo in questo periodo."}</p>`}
 
-    <div class="card" style="margin-top:1.2rem">
-      <h3>📨 Registro degli invii (${inviate.length})</h3>
-      ${inviate.length ? inviate.map(x => `
-        <div class="lead-row">
-          <span class="lead-icon">${x.esito === "inviata" ? "✅" : "⚠️"}</span>
-          <span class="leader-info">
-            <strong>${esc(x.oggetto)}</strong>
-            <span>a ${esc(x.destinatario)} · ${dataOra(x.inviata_il)}${x.collaboratore_id ? " · " + esc((D().collaboratori.find(c => c.id === x.collaboratore_id) || {}).nome || "—") : ""}</span>
-            ${x.errore ? `<span class="doc-scadenza scaduto">${esc(x.errore)}</span>` : ""}
-          </span>
-        </div>`).join("")
-      : `<p class="muted">Nessun invio ancora. Il registro si riempie da solo, riuscito o fallito.</p>`}
-    </div>
-
-    <div class="card crm-inarrivo" style="margin-top:1.2rem">
-      <span class="pill">Non costruito, e spiego perché</span>
-      <h3 style="margin:.6rem 0">📥 La posta in arrivo</h3>
-      <p class="muted" style="font-size:.88rem">Leggere la casella richiede IMAP: una connessione lunga a un server di posta, tenuta aperta. Le funzioni su cui gira questo CRM sono fatte per rispondere in fretta a una richiesta e poi spegnersi, e per Deno non esiste un client IMAP che me la senta di mettere in mezzo fra te e la tua casella. Costruirlo lo stesso avrebbe prodotto una schermata che a volte mostra la posta e a volte no — e una schermata inaffidabile è peggio di una che manca.</p>
-      <p class="privacy-hint">Se la lettura della posta ti serve davvero, la strada seria è un servizio dedicato che riceve la posta e la consegna qui: si può fare, ma è un lavoro a sé e va deciso con calma.</p>
-    </div>`;
+        <p class="privacy-hint" style="margin-top:.8rem">
+          Guardati ${plurale(A.guardati, "messaggio", "messaggi")} negli ultimi ${A.giorni} giorni,
+          mostrati i pi\u00f9 recenti. Per rispondere si usa la casella: questa schermata serve a
+          sapere <em>chi</em> ha risposto, non a sostituire il programma di posta.
+          I modelli e il registro degli invii sono nel
+          <a href="#/admin/crm/mail/modelli">Mail Marketing</a>.
+        </p>
+      </div>`;
   }
 
   /* L'assistente non sta più qui.
@@ -1111,90 +1121,22 @@
         await carica();
       }));
 
-    /* ---- posta ---- */
-    /* Come negli altri moduli: i campi si leggono prima di ogni
-       ridisegno, perché il render ricostruisce il modulo da capo. */
-    function leggiPosta() {
-      const g = id => document.querySelector(id)?.value;
-      posta.lead = g("#ml-lead") ?? posta.lead;
-      posta.destinatario = g("#ml-dest") ?? posta.destinatario;
-      posta.modello = g("#ml-modello") ?? posta.modello;
-      posta.chi = g("#ml-chi") ?? posta.chi;
-      posta.oggetto = g("#ml-oggetto") ?? posta.oggetto;
-      posta.corpo = g("#ml-corpo") ?? posta.corpo;
-    }
-    const datiPosta = () => ({
-      leadId: posta.lead || null,
-      modelloId: posta.modello || null,
-      collaboratoreId: posta.chi || null,
-      destinatario: posta.destinatario || null,
-      oggetto: posta.oggetto || null,
-      corpo: posta.corpo || null
-    });
+    /* ---- posta in arrivo ---- */
+    if (sezioneCorrente === "posta" && arrivo.fase === "vuoto") caricaArrivo();
 
-    /* Scegliendo un lead il suo indirizzo si porta dietro, se ce
-       l'ha. E se NON ce l'ha il campo si svuota: lasciarci
-       l'indirizzo del lead precedente significherebbe scrivere a
-       una ditta il messaggio destinato a un'altra, ed è il tipo
-       di errore che ci si accorge solo dalla risposta. */
-    $("#ml-lead")?.addEventListener("change", () => {
-      leggiPosta();
-      const l = (D().lead || []).find(x => x.id === posta.lead);
-      if (posta.lead) posta.destinatario = l?.email || "";
-      posta.anteprima = null; posta.errore = null;
-      QF().render();
-    });
+    document.querySelectorAll("[data-arrivo-ricarica]").forEach(b =>
+      b.addEventListener("click", () => caricaArrivo(true)));
 
-    $("#ml-anteprima")?.addEventListener("click", async () => {
-      leggiPosta();
-      const e = await chiamaMail("anteprima", datiPosta());
-      if (e.ok) { posta.anteprima = e; posta.errore = null; }
-      else { posta.anteprima = null; posta.errore = e.errore || "Anteprima non riuscita."; }
-      QF().render();
-    });
-
-    $("#mail-form")?.addEventListener("submit", async ev => {
-      ev.preventDefault();
-      leggiPosta();
-      if (!confirm("Inviare davvero questo messaggio?\n\nUn'email parte una volta sola: l'anteprima serve a evitare di accorgersene dopo.")) return;
-      posta.inCorso = true; posta.errore = null;
-      QF().render();
-      const e = await chiamaMail("invia", datiPosta());
-      posta.inCorso = false;
-      if (!e.ok) { posta.errore = e.errore || "Invio non riuscito."; QF().render(); return; }
-      QF().toast("Email inviata a " + e.destinatario);
-      posta.anteprima = null; posta.oggetto = ""; posta.corpo = ""; posta.destinatario = ""; posta.lead = "";
-      await carica();
-    });
-
-    $("[data-mail-nuovo]")?.addEventListener("click", () => { posta.modificaModello = "nuovo"; QF().render(); });
-    $("[data-mail-annulla]")?.addEventListener("click", () => { posta.modificaModello = null; QF().render(); });
-    document.querySelectorAll("[data-mail-modifica]").forEach(b =>
-      b.addEventListener("click", () => { posta.modificaModello = b.dataset.mailModifica; QF().render(); }));
-
-    $("#mail-modello-form")?.addEventListener("submit", async ev => {
-      ev.preventDefault();
-      const e = await chiamaMail("salva-modello", {
-        id: ev.target.dataset.id || null,
-        nome: $("#mm-nome").value.trim(),
-        scopo: $("#mm-scopo").value,
-        oggetto: $("#mm-oggetto").value.trim(),
-        corpo: $("#mm-corpo").value
-      });
-      if (!e.ok) { QF().toast(e.errore || "Salvataggio non riuscito."); return; }
-      QF().toast("Modello salvato.");
-      posta.modificaModello = null;
-      await carica();
-    });
-
-    document.querySelectorAll("[data-mail-elimina]").forEach(b =>
-      b.addEventListener("click", async () => {
-        if (!confirm("Eliminare questo modello?\n\nLe email già inviate restano nel registro con il testo che avevano.")) return;
-        const e = await chiamaMail("elimina-modello", { id: b.dataset.mailElimina });
-        if (!e.ok) { QF().toast(e.errore || "Eliminazione non riuscita."); return; }
-        QF().toast("Modello eliminato.");
-        await carica();
+    document.querySelectorAll("[data-arrivo-filtro]").forEach(b =>
+      b.addEventListener("click", () => {
+        arrivo.soloRisposte = b.dataset.arrivoFiltro === "risposte";
+        QF().render();
       }));
+
+    $("[data-arrivo-giorni]")?.addEventListener("change", ev => {
+      arrivo.giorni = Number(ev.currentTarget.value) || 14;
+      caricaArrivo(true);
+    });
 
     /* ---- accessi ---- */
     const nomeDi = id => D().collaboratori.find(c => c.id === id)?.nome || "";
