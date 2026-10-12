@@ -980,6 +980,154 @@
 
     $("#mm-genera-via")?.addEventListener("click", () => { ultimaGenerazione = null; QF().render(); });
 
+  /* ============================================================
+     IL MOTORE DELLA SCRITTURA
+     ------------------------------------------------------------
+     Prima era: premi, aspetti due minuti con la finestra bloccata,
+     ti dice «ne restano 188», ripremi. Per una lista vera volevano
+     dire sedici clic e sedici attese a fissare un bottone spento.
+
+     Adesso parte e va avanti da solo, blocco dopo blocco, finché
+     la lista è finita. Tre scelte dentro, e nessuna è di comodo:
+
+     LA BARRA NON PASSA DAL RIDISEGNO
+     È agganciata al <body>, non a #app, e si aggiorna scrivendoci
+     dentro a mano. Non è un vezzo: render() rifà #app e fa anche
+     scrollTo(0). Se la barra passasse di lì, ogni dodici email la
+     pagina tornerebbe in cima e qualunque campo aperto si
+     azzererebbe. Così invece si può continuare a lavorare — anche
+     nel CRM, che è un'altra schermata — mentre scrive.
+
+     SI FERMA, E SI VEDE COME
+     Un ciclo che chiama un servizio a pagamento deve avere un
+     freno a portata di mano, sempre visibile. Il tasto Ferma non
+     interrompe il blocco in corso — quelle email sono già state
+     pagate e sarebbe uno spreco buttarle — ma non ne comincia un
+     altro.
+
+     E SI FERMA ANCHE DA SOLO
+     Se un giro non fa progressi — restanti che non scendono — il
+     ciclo esce. Senza quel controllo un errore ripetuto diventa
+     una richiesta ogni pochi secondi, all'infinito, su un servizio
+     che conta le chiamate.
+     ============================================================ */
+  const motore = {
+    attiva: false,
+    fermata: false,
+    fatte: 0,
+    totale: null,
+    restanti: 0,
+    saltati: {},
+    falliti: [],
+    siti: { letti: 0, muti: 0 },
+    tokenIn: 0, tokenOut: 0, costo: 0, costoNoto: false,
+    errore: null,
+  };
+
+  function barra() {
+    let el = document.getElementById("mm-barra-lavoro");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "mm-barra-lavoro";
+      el.className = "mm-lavoro";
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+
+  function barraVia() {
+    document.getElementById("mm-barra-lavoro")?.remove();
+  }
+
+  function barraAggiorna() {
+    const m = motore;
+    const el = barra();
+    const tot = m.totale || (m.fatte + m.restanti) || 0;
+    const quota = tot ? Math.round((m.fatte / tot) * 100) : 0;
+
+    const riassunto = [
+      Object.entries(m.saltati).filter(([, v]) => v).length
+        ? "saltate " + Object.entries(m.saltati).filter(([, v]) => v)
+            .map(([k, v]) => v + " " + ({
+              senzaEmail: "senza indirizzo", opposti: "opposte",
+              inBlacklist: "in blacklist", giaContattati: "già contattate",
+              giaScritti: "con una bozza",
+            }[k] || k)).join(", ")
+        : null,
+      m.falliti.length ? m.falliti.length + " non riuscite" : null,
+      m.siti.letti ? m.siti.letti + " home lette" : null,
+    ].filter(Boolean).join(" · ");
+
+    el.innerHTML = m.attiva
+      ? `
+      <div class="mm-lavoro-testo">
+        <strong>✨ Scrivo le bozze… ${m.fatte}${tot ? " di " + tot : ""}</strong>
+        ${riassunto ? `<span class="muted">${esc(riassunto)}</span>` : ""}
+      </div>
+      <div class="mm-lavoro-asta"><i style="width:${quota}%"></i></div>
+      <button class="btn btn-ghost btn-sm" id="mm-lavoro-ferma">${m.fermata ? "Fermo…" : "Ferma"}</button>`
+      : `
+      <div class="mm-lavoro-testo">
+        <strong>${m.errore ? "⚠️ " : "✓ "}${plurale(m.fatte, "bozza scritta", "bozze scritte")}${
+          m.fermata ? " — fermato" : ""}</strong>
+        <span class="muted">${esc(m.errore || riassunto || "Le trovi in Email Ready.")}</span>
+      </div>
+      <a class="btn btn-outline btn-sm" href="#/admin/crm/mail/pronte">Vedile</a>
+      <button class="btn btn-ghost btn-sm" id="mm-lavoro-chiudi">✕</button>`;
+
+    el.querySelector("#mm-lavoro-ferma")?.addEventListener("click", () => {
+      motore.fermata = true;
+      barraAggiorna();
+    });
+    el.querySelector("#mm-lavoro-chiudi")?.addEventListener("click", barraVia);
+  }
+
+  async function generaTutto(parametri) {
+    if (motore.attiva) return;
+    Object.assign(motore, {
+      attiva: true, fermata: false, fatte: 0, totale: null, restanti: 0,
+      saltati: {}, falliti: [], siti: { letti: 0, muti: 0 },
+      tokenIn: 0, tokenOut: 0, costo: 0, costoNoto: false, errore: null,
+    });
+    barraAggiorna();
+
+    let prima = Infinity;
+    for (let giro = 0; giro < 100; giro++) {
+      if (motore.fermata) break;
+
+      /* sovrascrivi sempre: una bozza non spedita è un tentativo,
+         non un fatto. Rifarla sopra è quello che ci si aspetta da
+         «riscrivi»; lasciarla e saltare l'azienda fermava tutto
+         con un errore che sembrava un guasto. */
+      const e = await chiamaAi("genera", { ...parametri, sovrascrivi: true }, 180000);
+
+      if (!e.ok) { motore.errore = e.errore || "Scrittura non riuscita."; break; }
+
+      motore.fatte += e.creati || 0;
+      motore.restanti = e.restanti || 0;
+      if (motore.totale === null) motore.totale = (e.creati || 0) + (e.restanti || 0);
+      for (const [k, v] of Object.entries(e.saltati || {})) motore.saltati[k] = (motore.saltati[k] || 0) + v;
+      if (Array.isArray(e.falliti)) motore.falliti.push(...e.falliti);
+      motore.siti.letti += e.siti?.letti || 0;
+      motore.siti.muti += e.siti?.muti || 0;
+      motore.tokenIn += e.token?.in || 0;
+      motore.tokenOut += e.token?.out || 0;
+      if (e.costoNoto) { motore.costoNoto = true; motore.costo += e.costo || 0; }
+      barraAggiorna();
+
+      if (!e.restanti) break;
+      /* Nessun passo avanti: si esce invece di riprovare in eterno
+         su un servizio che conta le chiamate. */
+      if (e.restanti >= prima) { motore.errore = "La generazione non avanza: fermata."; break; }
+      prima = e.restanti;
+    }
+
+    motore.attiva = false;
+    barraAggiorna();
+    await carica();
+    if (rottaCorrente === "pronte") await caricaPosta2();
+  }
+
     async function generaBlocco() {
       inGenerazione = true;
       QF().render();
@@ -1032,7 +1180,6 @@
         lista_id: $("#g-lista")?.value || formGenera.lista_id,
         tono: $("#g-tono")?.value || formGenera.tono,
         istruzioni: $("#g-istruzioni")?.value ?? formGenera.istruzioni,
-        sovrascrivi: $("#g-sovrascrivi")?.checked ?? formGenera.sovrascrivi,
         leggi_sito: $("#g-sito")?.checked ?? formGenera.leggi_sito
       };
       QF().render();
@@ -1047,12 +1194,20 @@
         scopo: $("#g-scopo").value,
         tono: $("#g-tono").value,
         istruzioni: $("#g-istruzioni").value.trim(),
-        sovrascrivi: $("#g-sovrascrivi").checked,
         leggi_sito: $("#g-sito")?.checked !== false,
         mittente_id: $("#g-mittente")?.value || null
       };
       if (!formGenera.lead_id && !formGenera.lista_id) { QF().toast("Scegli la lista."); return; }
-      await generaBlocco();
+
+      /* Un lead solo resta una chiamata sola: il motore serve a non
+         ripremere sedici volte su una lista, e per uno non c'è
+         niente da ripremere. */
+      if (formGenera.lead_id) { await generaBlocco(); return; }
+
+      generaAperto = false;
+      ultimaGenerazione = null;
+      QF().render();
+      generaTutto(formGenera);
     });
 
     $("#mm-genera-ancora")?.addEventListener("click", generaBlocco);
@@ -1556,29 +1711,24 @@
                 : "Per ogni azienda apre la home una volta sola e la usa per l'aggancio iniziale. Il testo della pagina viene inviato al modello insieme alla scheda: è dichiarato nell'informativa. Chi non ha un sito, o ha un sito che non risponde, ottiene una bozza generica."}</em></span>
           </label>
 
-          <label class="field mm-interruttore" style="margin-top:.6rem">
-            <input type="checkbox" id="g-sovrascrivi" ${formGenera.sovrascrivi ? "checked" : ""}>
-            <span>${generaLead ? "Rifai anche se ha già una bozza" : "Rifai anche chi ha già una bozza"}
-              <em>${generaLead
-                ? "Senza la spunta, se ha già una bozza non spedita non se ne scrive una seconda."
-                : "Senza la spunta, le aziende con una bozza non spedita vengono saltate invece di ritrovarsi due messaggi identici."}</em></span>
-          </label>
-
           <p class="privacy-hint">
             ${generaLead ? `
               Una chiamata a pagamento, qualche secondo. La bozza finisce in
               <a href="#/admin/crm/mail/pronte">Email Ready</a>, in stato «bozza»: da lì si rilegge,
               si ritocca e si approva. Non parte niente da sola.`
             : `
-              Si scrivono <strong>dodici aziende per volta</strong> — <strong>otto</strong> se leggo
-              anche le loro home, perché ogni pagina aggiunge qualche secondo — e alla fine ti dico
-              quante ne restano: duecento in una richiesta sola non ci starebbero.
-              ${quante != null && quante > 12
-                ? `Questa lista ne ha ${quante}, quindi serviranno più passaggi.`
+              Parte e <strong>va avanti da sola</strong> fino in fondo alla lista, a blocchi di dodici
+              — otto se leggo anche le loro home, perché ogni pagina aggiunge qualche secondo.
+              Intanto puoi andare dove vuoi, anche nel CRM: una barra in basso dice a che punto è e
+              ha sempre il tasto <strong>Ferma</strong>.
+              ${quante != null
+                ? `<br>Questa lista ha <strong>${quante} ${quante === 1 ? "azienda" : "aziende"}</strong>:
+                   sono fino a ${quante} ${quante === 1 ? "chiamata" : "chiamate"} a Gemini. Sul piano
+                   gratuito di Google una lista lunga può fermarsi sul limite giornaliero — in quel caso
+                   la barra te lo dice e riprendi domani da dove si era interrotta.`
                 : ""}`}
             <br>Al modello vanno <strong>nome, settore, città, sito e valutazione pubblica</strong>
-            dell'azienda, e <strong>con la spunta qui sopra anche il testo della home del loro
-            sito</strong>. <strong>L'indirizzo email non parte mai.</strong>
+            dell'azienda, e <strong>con la spunta «leggi la home» anche il testo della pagina</strong>. <strong>L'indirizzo email non parte mai.</strong>
             Se sulla pagina c'è il nome del titolare il modello può rivolgersi a lui per nome, ma
             <strong>quel nome non viene salvato in archivio</strong>: resta nel testo della bozza, che
             rileggi prima che parta. Tutto questo è scritto
