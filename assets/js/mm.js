@@ -4311,18 +4311,54 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
         return;
       }
 
+      /* Quelle già in coda si lasciano al giro automatico.
+         Le spunte prendono qualunque riga visibile, comprese
+         quelle in coda, e la coda la sta già svuotando il giro
+         automatico una volta al minuto: mandarle anche da qui
+         vuol dire mandarle due volte, allo stesso indirizzo. Per
+         anticiparle c'è «Riprogramma la coda», che cambia
+         l'orario e lascia il mestiere a chi lo fa già.
+         Il rifiuto vero sta nel server — qui è solo il bottone
+         che non le offre nemmeno. */
+      const inCoda = (postaDati?.posta || [])
+        .filter(m => b.ids.includes(m.id) && m.stato === "in_coda")
+        .map(m => m.id);
+      const daMandare = b.ids.filter(id => !inCoda.includes(id));
+      if (!daMandare.length) {
+        QF().toast(inCoda.length === 1
+          ? "Il messaggio scelto è già in coda: parte da solo all'orario stabilito. Per anticiparlo usa «Riprogramma la coda»."
+          : `I ${inCoda.length} messaggi scelti sono già in coda: partono da soli all'orario stabilito. Per anticiparli usa «Riprogramma la coda».`);
+        invioAperto = null; invioBersaglio = "scelti"; QF().render();
+        return;
+      }
+
       const pausa = Number($("#i-pausa").value);
-      if (!confirm(`Mandare ${plurale(b.ids.length, "messaggio", "messaggi")} adesso?${
+      if (!confirm(`Mandare ${plurale(daMandare.length, "messaggio", "messaggi")} adesso?${
         invioBersaglio !== "scelti" ? " Sono tutte le approvate, non solo quelle che vedi." : ""
+      }${inCoda.length ? ` ${plurale(inCoda.length, "messaggio è già in coda e resta", "messaggi sono già in coda e restano")} al giro automatico.` : ""
       } Una volta partiti non si richiamano.`)) return;
       inInvio = true; QF().render();
-      const esito = await chiama("posta-invia", { ids: b.ids, smtp_id: smtp, pausa_secondi: pausa }, 150000);
+      const esito = await chiama("posta-invia", { ids: daMandare, smtp_id: smtp, pausa_secondi: pausa }, 150000);
       inInvio = false;
       if (!esito.ok) { QF().toast(esito.errore || "Invio non riuscito."); QF().render(); return; }
 
       const note = [
         esito.fallite ? `${esito.fallite} fallite` : null,
         esito.bloccati ? `${esito.bloccati} rifiutate perché opposte o in blacklist` : null,
+        /* Quelle già in coda non le manda questo bottone: le manda
+           il giro automatico all'orario stabilito. Dirlo evita due
+           equivoci opposti — che siano andate perse, o che valga
+           la pena ripremere per farle partire. */
+        /* Quelle già in coda non le manda questo bottone: le manda
+           il giro automatico all'orario stabilito. Dirlo evita due
+           equivoci opposti — che siano andate perse, o che valga
+           la pena ripremere per farle partire.
+           Il numero di qui e quello del server normalmente
+           coincidono; se l'elenco in pagina era vecchio il server
+           ne trova qualcuna in più, e allora vale il suo. */
+        (esito.giaInCoda || inCoda.length)
+          ? `${plurale(esito.giaInCoda || inCoda.length, "era già in coda e parte", "erano già in coda e partono")} all'orario stabilito`
+          : null,
         esito.rimasti ? `${esito.rimasti} ancora da mandare: premi di nuovo` : null,
         esito.limite ? `limite giornaliero della casella: ne restavano ${esito.limite}` : null
       ].filter(Boolean);
