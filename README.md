@@ -246,18 +246,29 @@ I moduli dell'area riservata (`admin`, `crm`, `mm`, `magazine`, `assistente`, `l
 433 KB in tutto) non stanno fra gli script della pagina — arrivano a richiesta al primo accesso, e
 chi visita il sito non li scarica mai.
 
-### Notifiche (opzionali)
+### Notifiche — chi ti dice che è arrivata una richiesta
 
-Nessuna configurata = il sito funziona lo stesso, i contatti si leggono dall'area admin. Da
-impostare fra i *secrets* delle Edge Function del progetto Supabase:
+Tre canali, provati nell'ordine e indipendenti: basta che uno funzioni. Se **nessuno** è
+configurato la richiesta è comunque salvata — *salva prima, notifica poi* — e si legge dall'area
+admin, ma nessuno te lo dice, ed è il modo più facile per perdere un cliente senza accorgersene.
 
-| Variabile | A cosa serve |
-|---|---|
-| `QF_RESEND_KEY`, `QF_RESEND_FROM` | Avviso via email. Parte con `Reply-To` sull'indirizzo dell'utente: rispondendo si scrive al cliente |
-| `QF_TELEGRAM_TOKEN`, `QF_TELEGRAM_CHAT` | Avviso immediato sul telefono. Il token si ottiene da [@BotFather](https://t.me/BotFather) senza registrazioni |
-| `QF_DESTINATARIO` | Casella della piattaforma (default `r.difalco@lori-crm.it`) |
+| Canale | Cosa serve | Stato |
+|---|---|---|
+| **SMTP** | Niente da configurare: usa la prima casella **attiva e con password** di `mm_smtp`, cioè quella del Mail Marketing. La password la legge dal Vault | ✅ **attivo e verificato il 13 ottobre 2026** — richiesta di prova sul percorso pubblico vero, `notifica_inviata: true`, `ultimo_uso` della casella aggiornato 2 secondi dopo |
+| Resend | `QF_RESEND_KEY`, `QF_RESEND_FROM` fra i *secrets* del progetto Supabase | non configurato, e non serve: c'è l'SMTP |
+| Telegram | `QF_TELEGRAM_TOKEN`, `QF_TELEGRAM_CHAT` — il token si ottiene da [@BotFather](https://t.me/BotFather) senza registrazioni | non configurato. Utile come secondo canale, perché è l'unico che non dipende dalla casella |
 
-Se la richiesta è indirizzata a un intermediario, l'avviso parte **anche alla sua casella**.
+`QF_DESTINATARIO` è la casella della piattaforma; senza il segreto vale
+`r.difalco@quotafacile.net`. Se la richiesta è indirizzata a un intermediario, l'avviso parte
+**anche alla sua casella**. L'avviso porta il `Reply-To` sull'indirizzo di chi ha chiesto:
+rispondendo si scrive al cliente.
+
+**⚠️ Una cosa da sapere: il canale SMTP e il mail marketing condividono una casella e una quota.**
+`avvisaSmtp` prende la prima casella attiva di `mm_smtp`, che è la stessa da cui parte la posta
+delle campagne, e il limite giornaliero (250) è uno per tutti e due. Oggi c'è margine da vendere —
+una campagna da trenta messaggi ne usa trenta — ma il giorno in cui la quota finisce l'avviso di una
+richiesta di preventivo **non parte**, e lo si scopre solo guardando `richieste.notifica_errore`.
+È l'unico motivo per cui vale la pena configurare Telegram: è l'unico canale che non passa da lì.
 
 ### Se il servizio non risponde
 
