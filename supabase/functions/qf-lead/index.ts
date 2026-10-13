@@ -545,6 +545,103 @@ async function cerca(d: Record<string, unknown>) {
   };
 }
 
+/* Cercare l'email dei lead che si hanno già.
+ *
+ * PERCHÉ SERVE UN'AZIONE A PARTE
+ * La ricerca dell'email è una scelta al momento della ricerca, e
+ * giustamente: aprire il sito di ogni risultato costa secondi, e
+ * a chi sta esplorando una zona non serve. Ma quando quella
+ * scelta è spenta il lead finisce in archivio con un sito e
+ * nessun indirizzo, identico a uno il cui sito è stato aperto e
+ * l'indirizzo non c'era. Sembra già controllato, e nessuno lo
+ * ricontrolla.
+ *
+ * L'unica via d'uscita era rifare la ricerca — che costa quota
+ * Google per ritrovare aziende che si hanno già, e che per via
+ * di ignoreDuplicates non aggiornerebbe nemmeno le schede
+ * esistenti. Qui invece non si parla con Google: si aprono i siti
+ * che sono già in archivio e si cerca solo l'indirizzo.
+ *
+ * Scrive email_cercata_il sempre, anche quando non trova niente:
+ * è il punto. Un lead passato da qui e rimasto senza email è un
+ * lead di cui si sa che il sito non lo pubblica, e la volta dopo
+ * non viene riaperto per niente.
+ */
+const RECUPERO_MASSIMO = 40;
+
+async function emailRecupera(d: Record<string, unknown>) {
+  const ids = Array.isArray(d.ids) ? d.ids.map(String).slice(0, RECUPERO_MASSIMO) : [];
+
+  /* Senza id si prendono quelli che hanno un sito, non hanno
+     un'email e non sono mai stati guardati. I più recenti per
+     primi: sono quelli che si sta lavorando adesso. */
+  let q = db.from("crm_lead")
+    .select("id,nome,sito")
+    .not("sito", "is", null)
+    .is("email", null);
+  if (ids.length) {
+    q = q.in("id", ids);
+  } else {
+    q = q.is("email_cercata_il", null)
+      .order("raccolto_il", { ascending: false })
+      .limit(RECUPERO_MASSIMO);
+  }
+
+  const { data: righe, error } = await q;
+  if (error) throw new Error(error.message);
+  if (!righe?.length) {
+    /* Non è un errore, ed è una risposta utile: vuol dire che non
+       è rimasto nessuno da guardare. */
+    return { esaminati: 0, trovate: 0, senzaEmail: 0, restanti: 0, dettaglio: [] };
+  }
+
+  const adesso = new Date().toISOString();
+  const dettaglio: { nome: string; email: string | null }[] = [];
+  let trovate = 0;
+
+  /* Sei alla volta, come nella ricerca: abbastanza per non far
+     aspettare, poco per non sembrare un attacco a nessuno. */
+  let i = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(6, righe.length) }, async () => {
+      while (i < righe.length) {
+        const r = righe[i++] as { id: string; nome: string; sito: string };
+        const e = await emailDelSito(String(r.sito));
+        /* L'aggiornamento è una riga per volta e non un upsert in
+           blocco: un sito che non risponde non deve far perdere
+           il lavoro fatto sugli altri cinquanta. */
+        await db.from("crm_lead").update(
+          e
+            ? { email: e, email_fonte: "sito_web", email_trovata_il: adesso, email_cercata_il: adesso }
+            : { email_cercata_il: adesso },
+        ).eq("id", r.id);
+        if (e) trovate++;
+        dettaglio.push({ nome: String(r.nome), email: e });
+      }
+    }),
+  );
+
+  /* Quanti restano da guardare dopo questo giro: chi preme deve
+     sapere se ha finito o se deve premere ancora. */
+  const { count: restanti } = await db.from("crm_lead")
+    .select("id", { count: "exact", head: true })
+    .not("sito", "is", null).is("email", null).is("email_cercata_il", null);
+
+  return {
+    esaminati: righe.length,
+    trovate,
+    senzaEmail: righe.length - trovate,
+    restanti: restanti ?? 0,
+    dettaglio: dettaglio.sort((a, b) => (b.email ? 1 : 0) - (a.email ? 1 : 0)),
+  };
+}
+
+/* Quanti restino da guardare non è un'azione a parte: l'elenco
+   che il CRM ha già in mano porta tutte le colonne, quindi il
+   numero sul bottone lo conta la pagina senza una richiesta in
+   più — e senza il rischio che il numero e le schede sotto
+   raccontino due momenti diversi. */
+
 // ---------------- Archivio ----------------
 
 async function salva(d: Record<string, unknown>) {
@@ -573,6 +670,11 @@ async function salva(d: Record<string, unknown>) {
     email: testo(r.email, 200),
     email_fonte: r.email ? "sito_web" : null,
     email_trovata_il: r.email ? new Date().toISOString() : null,
+    /* Un lead che arriva qui con un'email è un lead il cui sito è
+       stato aperto: la ricerca era accesa. Senza, non si sa, e
+       resta vuota — che è esattamente l'informazione utile,
+       perché dice «questo va ancora guardato». */
+    email_cercata_il: r.email ? new Date().toISOString() : null,
   }));
 
   // ignoreDuplicates: chi è già in archivio resta com'è, con la
@@ -880,6 +982,7 @@ async function diagnostica() {
 const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
   cerca, salva, elenco: () => elenco(), aggiorna, elimina,
   diagnostica: () => diagnostica(),
+  "email-recupera": emailRecupera,
   "etichetta-crea": etichettaCrea,
   "etichetta-elimina": etichettaElimina,
   "etichetta-applica": etichettaApplica,
