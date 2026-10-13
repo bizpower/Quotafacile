@@ -425,6 +425,39 @@ function rottaDaPercorso(pathname) {
     const f = staffFaqs().find(x => x.slug === m[1]);
     if (f) return "faq/" + f.id;
   }
+  /* Le domande della bacheca mancavano, e mancavano in silenzio.
+   *
+   * Hanno un indirizzo pubblico — /bacheca/<slug>/ — che
+   * percorsoDomanda() costruisce, che il deploy scrive come file
+   * e che la sitemap dichiara. Ma la strada di ritorno conosceva
+   * solo /guide/ e /magazine/: arrivando su /bacheca/<slug>/
+   * questa funzione rispondeva "nessuna rotta", e la pagina
+   * disegnava la bacheca intera.
+   *
+   * Si vedeva in due punti, e in nessuno dei due come un errore:
+   *   - le quindici pagine scritte dal pre-render contenevano
+   *     l'elenco invece della domanda, con il titolo e il
+   *     canonical dell'elenco. La sitemap le dichiarava come
+   *     pagine distinte mentre ognuna diceva "io sono
+   *     /bacheca/": una contraddizione che Google risolve
+   *     togliendole dall'indice, e sono proprio le pagine a coda
+   *     lunga su cui si punta;
+   *   - chi ci arrivava davvero — da una ricerca o da un link
+   *     interno — vedeva tutte le domande invece di quella su cui
+   *     aveva cliccato.
+   *
+   * Si risolve dalla stessa fonte da cui quegli indirizzi
+   * nascono: le domande del giorno pubblicate e quelle della
+   * community, cioè le due metà di domandeIndicizzabili(). Le
+   * prime stanno nel repository e si trovano subito; le seconde
+   * arrivano dal database, come già succede alle guide
+   * dell'Admin, e fino ad allora faqDetail() lascia la pagina
+   * com'è invece di cancellarla. */
+  const b = rel.match(/^bacheca\/([^/]+)\/$/);
+  if (b) {
+    const f = [...publishedDaily(), ...domandeCommunity()].find(x => x.slug === b[1]);
+    if (f) return "faq/" + f.id;
+  }
   /* Il Magazine non ha bisogno di cercare niente: lo slug
      nell'indirizzo pubblico è lo stesso che usa la rotta. */
   const g = rel.match(/^magazine\/([^/]+)\/$/);
