@@ -93,7 +93,30 @@
   <meta name="twitter:description" content="Confronta intermediari assicurativi verificati RUI e risparmia sulle tue polizze. Gratuito per chi cerca.">
   <meta name="twitter:image" content="https://www.quotafacile.net/assets/img/og-quotafacile.png">
 
-  <!-- JSON-LD: Organization + WebSite -->
+  <!-- JSON-LD: Organization + WebSite
+       Due dichiarazioni sono state tolte da qui perché dicevano
+       il falso, ed è la stessa regola che vale per tutto il resto
+       dello schema: un dato strutturato deve corrispondere a quello
+       che la pagina ha davvero.
+
+       1. "sameAs" elencava https://www.linkedin.com/,
+          https://www.youtube.com/ e https://www.instagram.com/ —
+          le homepage di quelle piattaforme, non profili.
+          sameAs significa "questo indirizzo identifica la stessa
+          entità": dichiarava che QuotaFacile è la pagina iniziale
+          di YouTube. Finché i profili non esistono la riga non
+          torna, e non ci si mettono indirizzi inventati al loro
+          posto: un profilo che non c'è è peggio di un profilo non
+          dichiarato.
+
+       2. "potentialAction" / SearchAction indicava
+          /#/bacheca?q={search_term_string} come indirizzo di
+          ricerca del sito. Quel parametro non è letto da nessuna
+          parte del codice — verificato — quindi l'indirizzo
+          mostra la bacheca intera e ignora il termine cercato.
+          Era una funzione promessa a Google e inesistente. Il
+          sito non ha una ricerca testuale pubblica: quando
+          l'avrà, la riga si rimette puntando a quella vera. -->
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -103,20 +126,14 @@
         "@id": "https://www.quotafacile.net/#org",
         "name": "QuotaFacile",
         "url": "https://www.quotafacile.net/",
-        "description": "Marketplace assicurativo italiano: intermediari, agenzie e broker in vetrina, preventivi e consulenze gratuite.",
-        "sameAs": ["https://www.linkedin.com/", "https://www.youtube.com/", "https://www.instagram.com/"]
+        "description": "Marketplace assicurativo italiano: intermediari, agenzie e broker in vetrina, preventivi e consulenze gratuite."
       },
       {
         "@type": "WebSite",
         "@id": "https://www.quotafacile.net/#website",
         "url": "https://www.quotafacile.net/",
         "name": "QuotaFacile",
-        "publisher": { "@id": "https://www.quotafacile.net/#org" },
-        "potentialAction": {
-          "@type": "SearchAction",
-          "target": "https://www.quotafacile.net/#/bacheca?q={search_term_string}",
-          "query-input": "required name=search_term_string"
-        }
+        "publisher": { "@id": "https://www.quotafacile.net/#org" }
       }
     ]
   }
