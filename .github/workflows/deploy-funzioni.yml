@@ -1,0 +1,239 @@
+name: Distribuisci le Edge Function
+
+# Il sito si pubblica da solo ad ogni merge; le funzioni no, e
+# quella differenza è costata una correzione a metà.
+#
+# PERCHÉ ESISTE QUESTO WORKFLOW
+# Le funzioni venivano distribuite a mano, una per una, passando
+# il contenuto intero del file dentro una singola chiamata. Per le
+# piccole funziona. Per qf-mm — 102 KB, 2.359 righe — non
+# funziona: è più di quanto una chiamata possa portare, e il
+# limite non si aggira con la pazienza. Il risultato era che il
+# modulo più grande del progetto, quello che fa girare il mail
+# marketing, era l'unico che non si poteva correggere lato
+# server.
+#
+# Qui la distribuzione la fa la CLI ufficiale, che legge i file
+# dal disco: la dimensione non è più un problema per nessuna
+# funzione, né oggi né quando cresceranno.
+#
+# verify_jwt NON SI PASSA DA QUI
+# Sta in supabase/config.toml, una riga per funzione. È l'unico
+# modo perché non torni a «true» per dimenticanza: quel valore,
+# sbagliato, non rompe l'area riservata — rompe il sito per chi
+# lo visita, che è il modo peggiore di accorgersene. Alla fine
+# questo workflow lo rilegge dal progetto e fallisce se non è
+# quello che il repository dichiara.
+#
+# ⚠️ SERVE UN SECRET, UNA VOLTA SOLA
+# Settings → Secrets and variables → Actions → New repository
+# secret, nome esatto SUPABASE_ACCESS_TOKEN, valore un token
+# personale creato su supabase.com/dashboard/account/tokens.
+# Finché non c'è, questo workflow si fermerà con un avviso che
+# spiega cosa manca invece di fallire in rosso ad ogni merge.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+      - "supabase/config.toml"
+      - ".github/workflows/deploy-funzioni.yml"
+  workflow_dispatch:
+    inputs:
+      funzione:
+        description: "Quale distribuire: il nome esatto (es. qf-mm), oppure «tutte»"
+        required: true
+        default: "tutte"
+
+permissions:
+  contents: read
+
+# Due distribuzioni in parallelo sulla stessa funzione lascerebbero
+# in linea quella che finisce per seconda, che non è detto sia
+# quella del commit più recente.
+concurrency:
+  group: funzioni-supabase
+  cancel-in-progress: false
+
+env:
+  PROGETTO: vainqxalnxyzjqautcop
+
+jobs:
+  distribuisci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Serve il commit precedente per sapere cosa è cambiato:
+          # con la profondità 1 il confronto non ha un termine.
+          fetch-depth: 0
+
+      - name: C'è il token?
+        id: token
+        env:
+          TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN:-}" ]; then
+            echo "c_e=no" >> "$GITHUB_OUTPUT"
+            echo "::warning::Manca il secret SUPABASE_ACCESS_TOKEN, quindi non posso distribuire niente. Creane uno su supabase.com/dashboard/account/tokens e aggiungilo in Settings → Secrets and variables → Actions con quel nome esatto. Poi rilancia questo workflow: da quel momento ogni modifica a supabase/functions/ andrà in linea da sola."
+          else
+            echo "c_e=si" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Quali funzioni toccare. Solo quelle cambiate, non tutte:
+      # ridistribuire una funzione che nessuno ha toccato significa
+      # sovrascrivere quello che è in linea con quello che c'è nel
+      # repository, e se qualcuno aveva corretto qualcosa a mano
+      # senza passare da qui quella correzione sparisce senza che
+      # nessuno l'abbia chiesto.
+      - name: Quali funzioni sono cambiate
+        id: quali
+        if: steps.token.outputs.c_e == 'si'
+        env:
+          SCELTA: ${{ inputs.funzione }}
+          PRIMA: ${{ github.event.before }}
+          ADESSO: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          tutte() {
+            for d in supabase/functions/*/; do
+              [ -f "${d}index.ts" ] && basename "$d"
+            done
+          }
+
+          if [ -n "${SCELTA:-}" ]; then
+            if [ "$SCELTA" = "tutte" ]; then
+              echo "Avvio a mano: distribuisco tutte le funzioni del repository."
+              NOMI=$(tutte)
+            elif [ -f "supabase/functions/$SCELTA/index.ts" ]; then
+              echo "Avvio a mano: distribuisco solo «$SCELTA»."
+              NOMI="$SCELTA"
+            else
+              echo "::error::«$SCELTA» non è una funzione di questo repository. Quelle che ci sono: $(tutte | tr '\n' ' ')"
+              exit 1
+            fi
+          elif [ -z "${PRIMA:-}" ] || [ "$PRIMA" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "$PRIMA^{commit}" 2>/dev/null; then
+            # Primo push, ramo appena creato, o storia riscritta: non
+            # c'è un «prima» con cui confrontare. Meglio non
+            # indovinare: si dice cosa fare e non si distribuisce
+            # niente a caso.
+            echo "::warning::Non riesco a risalire al commit precedente, quindi non so quali funzioni siano cambiate e non ne distribuisco nessuna di mia iniziativa. Lancia il workflow a mano (Actions → questo workflow → Run workflow) indicando la funzione, oppure «tutte»."
+            NOMI=""
+          else
+            CAMBIATI=$(git diff --name-only "$PRIMA" "$ADESSO" -- supabase/functions/ || true)
+            NOMI=$(echo "$CAMBIATI" \
+              | sed -n 's#^supabase/functions/\([^/][^/]*\)/.*#\1#p' \
+              | sort -u)
+            # config.toml vale per tutte, ma NON lo si applica a
+            # tutte da soli.
+            #
+            # Sembrerebbe la cosa giusta — è cambiata
+            # un'impostazione comune, riapplichiamola dappertutto —
+            # ed è invece il modo per far sparire del lavoro.
+            # Ridistribuire una funzione che nessuno ha toccato
+            # sovrascrive quello che è in linea con quello che c'è
+            # nel repository: se una correzione era stata messa in
+            # linea senza passare da qui, quella correzione muore in
+            # silenzio, e muore su dodici funzioni in un colpo.
+            #
+            # L'impostazione serve al momento della distribuzione:
+            # ogni funzione la prende quando tocca a lei. Chi vuole
+            # allinearle tutte lo dice a mano, guardando cosa sta
+            # per sovrascrivere.
+            if git diff --name-only "$PRIMA" "$ADESSO" -- supabase/config.toml | grep -q .; then
+              echo "::notice::config.toml è cambiato. Non riapplico le impostazioni a tutte le funzioni di mia iniziativa: ognuna le prenderà alla sua prossima distribuzione. Se vuoi allinearle adesso, lancia il workflow a mano con «tutte» — tieni presente che ridistribuisce ogni funzione dal repository, sovrascrivendo quello che è in linea."
+            fi
+          fi
+
+          # Una funzione cancellata dal repository non si distribuisce
+          # (e non si cancella da qui: togliere qualcosa che è in
+          # linea è una decisione, non un effetto collaterale).
+          FINALI=""
+          for n in $NOMI; do
+            if [ -f "supabase/functions/$n/index.ts" ]; then
+              FINALI="$FINALI $n"
+            else
+              echo "::notice::«$n» non c'è più nel repository: non la distribuisco e non la tocco in linea. Se va eliminata, va eliminata dalla console Supabase."
+            fi
+          done
+          FINALI=$(echo $FINALI | tr -s ' ')
+
+          echo "nomi=$FINALI" >> "$GITHUB_OUTPUT"
+          if [ -z "$FINALI" ]; then
+            echo "Niente da distribuire."
+          else
+            echo "Da distribuire:$FINALI"
+          fi
+
+      - name: Installa la CLI di Supabase
+        if: steps.token.outputs.c_e == 'si' && steps.quali.outputs.nomi != ''
+        # Senza versione fissa si prende l'ultima. È una scelta:
+        # fissarla vorrebbe dire che un cambio di formato della CLI
+        # ferma le distribuzioni finché qualcuno non aggiorna questa
+        # riga, e una distribuzione ferma si nota dopo giorni.
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Distribuisci
+        if: steps.token.outputs.c_e == 'si' && steps.quali.outputs.nomi != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          NOMI: ${{ steps.quali.outputs.nomi }}
+        run: |
+          set -euo pipefail
+          for n in $NOMI; do
+            echo "──────── $n ────────"
+            supabase functions deploy "$n" --project-ref "$PROGETTO"
+          done
+
+      # Il controllo che conta davvero.
+      #
+      # Non verifica che la distribuzione sia riuscita — quello lo
+      # dice già il passo sopra — ma che verify_jwt sia rimasto
+      # falso. Perché quel valore è l'unico che può tornare al
+      # predefinito da solo, e quando lo fa la funzione continua a
+      # rispondere a chi ha un JWT: dall'area riservata sembra
+      # tutto a posto, mentre per i visitatori del sito è spenta.
+      # Un controllo che guarda solo l'esito del deploy non lo
+      # vedrebbe.
+      - name: verify_jwt è ancora falso?
+        if: steps.token.outputs.c_e == 'si' && steps.quali.outputs.nomi != ''
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          NOMI: ${{ steps.quali.outputs.nomi }}
+        run: |
+          set -euo pipefail
+          GUAI=0
+          for n in $NOMI; do
+            RISPOSTA=$(curl -sS \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              "https://api.supabase.com/v1/projects/$PROGETTO/functions/$n")
+            # Niente jq per una chiave booleana: la risposta è
+            # piatta e il grep su "verify_jwt":true/false è
+            # abbastanza, senza aggiungere una dipendenza.
+            if echo "$RISPOSTA" | grep -q '"verify_jwt":[[:space:]]*true'; then
+              echo "::error::«$n» è in linea con verify_jwt attivo. Questa funzione si autentica da sola con una chiave propria e si aspetta richieste senza JWT: così com'è risponde solo a chi ha un token, cioè è spenta per chi visita il sito. Controlla la sua voce in supabase/config.toml."
+              GUAI=1
+            elif echo "$RISPOSTA" | grep -q '"verify_jwt":[[:space:]]*false'; then
+              echo "«$n»: verify_jwt falso, come deve essere."
+            else
+              echo "::warning::Non riesco a leggere verify_jwt di «$n» dal progetto: controllalo a mano nella console Supabase."
+            fi
+          done
+          exit $GUAI
+
+      - name: Riepilogo
+        if: always() && steps.token.outputs.c_e == 'si'
+        env:
+          NOMI: ${{ steps.quali.outputs.nomi }}
+        run: |
+          if [ -z "${NOMI:-}" ]; then
+            echo "Nessuna funzione distribuita in questa esecuzione." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Distribuite:$NOMI" >> "$GITHUB_STEP_SUMMARY"
+          fi

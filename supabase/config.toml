@@ -1,0 +1,70 @@
+# ============================================================
+# QuotaFacile — configurazione Supabase CLI
+# ------------------------------------------------------------
+# Serve a una cosa sola, e quella cosa è importante:
+# VERIFY_JWT = FALSE SCRITTO QUI DENTRO, NON RICORDATO.
+#
+# Tutte le funzioni di questo progetto sono pubbliche per
+# necessità e si difendono da sole: un modulo di preventivo non
+# può chiedere a chi lo compila di autenticarsi, e il cron che
+# svuota la coda non ha un utente. Al posto del JWT usano una
+# chiave propria — x-qf-admin, x-qf-coda — confrontata per
+# impronta SHA-256 a tempo costante dentro la funzione.
+#
+# Il guaio è che verify_jwt torna a «true» da solo: è il valore
+# predefinito di ogni strumento di distribuzione, e chi lo
+# dimentica non rompe la funzione in modo visibile — la rompe per
+# tutti quelli che non hanno un JWT, cioè per i visitatori del
+# sito, mentre dall'area riservata continua a sembrare viva.
+# Scritto qui vale a ogni distribuzione e non dipende più da chi
+# si ricorda il flag.
+#
+# L'identificativo del progetto non è un segreto: compare già in
+# ogni indirizzo che il browser chiama. Il segreto è il token di
+# accesso, e quello sta fra i secret del repository.
+# ============================================================
+
+project_id = "vainqxalnxyzjqautcop"
+
+# ---- Le funzioni ----
+# Una voce per ognuna, anche quando dice la stessa cosa delle
+# altre: un elenco per inclusione fa sì che una funzione nuova
+# senza la sua riga venga distribuita con il valore predefinito
+# e lo si scopra subito, invece di ereditare in silenzio
+# un'impostazione pensata per un'altra.
+
+[functions.qf-admin]
+verify_jwt = false
+
+[functions.qf-bacheca]
+verify_jwt = false
+
+[functions.qf-chat]
+verify_jwt = false
+
+[functions.qf-contatti]
+verify_jwt = false
+
+[functions.qf-crm]
+verify_jwt = false
+
+[functions.qf-lead]
+verify_jwt = false
+
+[functions.qf-magazine]
+verify_jwt = false
+
+[functions.qf-mail]
+verify_jwt = false
+
+[functions.qf-mm]
+verify_jwt = false
+
+[functions.qf-mm-ai]
+verify_jwt = false
+
+[functions.qf-posta]
+verify_jwt = false
+
+[functions.qf-pro]
+verify_jwt = false
