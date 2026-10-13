@@ -996,6 +996,38 @@ alter table public.crm_lead
   add column if not exists email_fonte      text,
   add column if not exists email_trovata_il timestamptz;
 
+-- «Non ha un'email» e «nessuno l'ha cercata» si assomigliavano
+-- troppo.
+--
+-- La ricerca dell'email è una scelta al momento della ricerca —
+-- aprire il sito di ogni risultato costa secondi, e a chi sta
+-- solo guardando chi c'è in zona non serve. Giusto che sia
+-- opzionale. Il guaio è cosa resta in archivio quando è spenta:
+-- un lead con un sito e la colonna email vuota, identico a un
+-- lead il cui sito è stato aperto e l'indirizzo non c'era.
+--
+-- Su quattro ricerche l'opzione era attiva in due (23 email su 23
+-- siti aperti: quando guarda, trova) e spenta nelle altre due.
+-- Risultato: trentasette aziende che sembravano senza recapito, e
+-- che nessuno avrebbe ricontrollato proprio perché sembravano già
+-- controllate.
+--
+-- Questa colonna registra il tentativo, non l'esito. Insieme a
+-- email_trovata_il le combinazioni dicono tre cose distinte:
+--   entrambe vuote          → mai cercata
+--   cercata, trovata vuota  → cercata e sul sito non c'è
+--   entrambe piene          → trovata, e quando
+alter table public.crm_lead
+  add column if not exists email_cercata_il timestamptz;
+
+comment on column public.crm_lead.email_cercata_il is
+  'Quando il sito è stato aperto per cercare l''indirizzo, a prescindere dall''esito. Vuota = mai cercata, e quindi un lead senza email qui non è un lead senza email: è un lead non ancora guardato.';
+
+-- Chi va ricontrollato: ha un sito e nessuno l'ha mai aperto.
+create index if not exists crm_lead_email_da_cercare
+  on public.crm_lead (raccolto_il desc)
+  where sito is not null and email is null and email_cercata_il is null;
+
 -- ------------------------------------------------------------
 -- 8. Funzioni non esposte
 -- ------------------------------------------------------------

@@ -78,8 +78,12 @@
   /* ---------------- DIALOGO CON IL SERVER ---------------- */
   /* La ricerca dei lead può richiedere più tempo: interroga
      Google più volte, una per categoria e per pagina. */
-  async function chiamaLead(azione, d = {}) {
-    return chiama(azione, d, API_LEAD, 60000);
+  /* Il minuto basta per tutto tranne una cosa: cercare le email
+     apre fino a quaranta siti, sei alla volta, e ciascuno può
+     prendersi i suoi secondi prima di rispondere o di non
+     rispondere. Per quella il chiamante passa il suo tempo. */
+  async function chiamaLead(azione, d = {}, ms = 60000) {
+    return chiama(azione, d, API_LEAD, ms);
   }
 
   /* L'invio passa da un server di posta esterno: può metterci
@@ -354,6 +358,14 @@
     filtroStato: "tutti"
   };
 
+  /* Il recupero delle email mancanti. Una riga di stato sola,
+     perché l'operazione è una: apre i siti dei lead che si hanno
+     già e cerca l'indirizzo. `inCorso` serve a non farla partire
+     due volte — apre fino a quaranta siti e ci mette dei
+     secondi, e un doppio clic vorrebbe dire aprirli due volte a
+     ciascuno. */
+  const recupero = { inCorso: false };
+
   /* Stato delle liste. Separato da `ricerca` perché risponde a
      un'altra domanda: lì si sceglie fra attività appena trovate
      — identificate dal place_id di Google — qui fra lead già in
@@ -530,6 +542,38 @@
        «nessuna bozza scritta». */
     const scrivibili = base.filter(l => l.email && !l.no_contatto).length;
 
+    /* «Non ha un'email» e «nessuno l'ha cercata» non sono la
+       stessa cosa, e per un po' si sono assomigliate troppo.
+       La ricerca dell'email è una scelta al momento della ricerca:
+       quando è spenta il lead entra in archivio con un sito e
+       nessun indirizzo, identico a uno il cui sito è stato aperto
+       e l'indirizzo non c'era. Sembra già controllato, e nessuno
+       lo ricontrolla.
+       Adesso email_cercata_il distingue i due casi, e questi due
+       numeri li tengono separati in schermata. */
+    const daGuardare = base.filter(l => l.sito && !l.email && !l.email_cercata_il);
+    const guardatiInvano = base.filter(l => l.sito && !l.email && l.email_cercata_il).length;
+
+    const barraRecupero = daGuardare.length ? `
+        <div class="admin-actions" style="margin:.6rem 0;align-items:center">
+          <button class="btn btn-outline btn-sm" data-email-recupera ${recupero.inCorso ? "disabled" : ""}>
+            ${recupero.inCorso ? "Apro i siti…" : `✉️ Cerca le email mancanti (${daGuardare.length})`}
+          </button>
+          <span class="muted" style="font-size:.78rem">
+            ${plurale(daGuardare.length, "ha un sito che non è mai stato aperto", "hanno un sito che non è mai stato aperto")}:
+            l'indirizzo potrebbe esserci. Non consuma ricerche Google — apre solo i siti che hai già in archivio.
+            ${guardatiInvano ? (guardatiInvano === 1
+              ? "Un altro è già stato guardato e sul suo sito l'email non c'è."
+              : `Altri ${guardatiInvano} sono già stati guardati e sui loro siti l'email non c'è.`) : ""}
+          </span>
+        </div>`
+      : guardatiInvano ? `
+        <p class="muted" style="font-size:.78rem;margin:.4rem 0">
+          ✉️ ${plurale(guardatiInvano, "lead ha un sito già guardato senza trovare un'email", "lead hanno un sito già guardato senza trovare un'email")}:
+          non c'è altro da cercare lì.
+        </p>`
+      : "";
+
     const barraInvio = apertaOra ? `
         <div class="admin-actions" style="margin:.6rem 0;align-items:center">
           ${scrivibili ? `
@@ -539,7 +583,16 @@
           <span class="muted" style="font-size:.78rem">
             ${scrivibili
               ? `${scrivibili} su ${base.length} ${scrivibili === 1 ? "ha" : "hanno"} un'email. Le bozze si rileggono e si programmano in Email Ready.`
-              : "Nessuno di questi lead ha un'email in archivio: rifai la ricerca con «solo con email pubblica» qui sopra, oppure aggiungila a mano dal Mail Marketing."}
+              : daGuardare.length
+                /* Prima qui c'era scritto «rifai la ricerca con
+                   solo con email pubblica». Era l'unica strada e
+                   costava quota Google per ritrovare aziende già
+                   in archivio — che per via di ignoreDuplicates
+                   non si sarebbero nemmeno aggiornate. Adesso
+                   c'è il bottone qui sopra, che apre solo i siti
+                   e non parla con Google. */
+                ? `Nessuno di questi lead ha un'email, ma ${daGuardare.length} ${daGuardare.length === 1 ? "ha un sito mai aperto" : "hanno un sito mai aperto"}: premi «Cerca le email mancanti» qui sopra.`
+                : "Nessuno di questi lead ha un'email in archivio, e i siti sono già stati guardati: aggiungila a mano dal Mail Marketing, oppure cerca in un'altra zona."}
           </span>
         </div>` : "";
 
@@ -562,6 +615,7 @@
         <h3>📇 ${apertaOra ? `Lista «${esc(apertaOra.nome)}» (${base.length})` : `Lead in archivio (${salvati.length})`}</h3>
         ${salvati.length ? `
           ${barraListe}
+          ${barraRecupero}
           ${barraInvio}
           <div class="filterbar" style="margin:.6rem 0">
             <button class="chip ${R.filtroStato === "tutti" ? "active" : ""}" data-lead-filtro="tutti">Tutti</button>
@@ -586,6 +640,14 @@
                 <span>${esc(l.indirizzo || "—")}</span>
                 <span class="lead-meta">
                   ${l.telefono ? `<a href="tel:${esc(String(l.telefono).replace(/\s/g, ""))}">📞 ${esc(l.telefono)}</a>` : `<span class="muted">senza telefono</span>`}
+                  <!-- L'email mancava, e si notava appena dopo aver
+                       premuto «Cerca le email mancanti»: il bottone
+                       diceva di averne trovate tre e in schermata non
+                       se ne vedeva nessuna. Qui c'è anche perché è il
+                       dato che decide se a un lead si può scrivere o
+                       solo telefonare. -->
+                  ${l.email ? ` · <a href="mailto:${esc(l.email)}">✉️ ${esc(l.email)}</a>`
+                    : l.sito && l.email_cercata_il ? ` · <span class="muted">email non pubblicata</span>` : ""}
                   ${l.sito ? ` · <a href="${esc(l.sito)}" target="_blank" rel="noopener">🌐 sito</a>` : ""}
                   ${l.valutazione ? ` · ⭐ ${l.valutazione}` : ""}
                   · <span class="muted">${esc(CATEGORIE_LEAD()[l.categoria] || l.categoria || "—")}</span>
@@ -990,6 +1052,30 @@
 
     document.querySelectorAll("[data-lead-filtro]").forEach(b =>
       b.addEventListener("click", () => { R.filtroStato = b.dataset.leadFiltro; QF().render(); }));
+
+    /* Cerca le email dei lead che si hanno già.
+       Non parla con Google: apre i siti che sono in archivio. Per
+       questo non chiede conferma — non spende quota, non scrive a
+       nessuno e non cancella niente: al massimo scopre che
+       l'indirizzo non c'è, e lo annota perché la volta dopo non
+       si riapra lo stesso sito per niente. */
+    document.querySelector("[data-email-recupera]")?.addEventListener("click", async () => {
+      if (recupero.inCorso) return;
+      recupero.inCorso = true; QF().render();
+      const e = await chiamaLead("email-recupera", {}, 180000);
+      recupero.inCorso = false;
+      if (!e.ok) { QF().toast(e.errore || "Ricerca non riuscita."); QF().render(); return; }
+      /* Si dice quante ne sono state trovate e quante restano: chi
+         ha premuto deve sapere se ha finito o se deve premere
+         ancora, perché il giro si ferma a quaranta siti. */
+      const parti = [
+        `${plurale(e.trovate, "email trovata", "email trovate")} su ${e.esaminati} ${e.esaminati === 1 ? "sito aperto" : "siti aperti"}`,
+        e.senzaEmail ? `${e.senzaEmail} non la pubblicano` : null,
+        e.restanti ? `${e.restanti} ancora da guardare: premi di nuovo` : null
+      ].filter(Boolean);
+      QF().toast(parti.join("; ") + ".");
+      await carica();
+    });
 
     /* ---- liste di lead ----
        Le stesse del Mail Marketing: qui si compongono, di là si
