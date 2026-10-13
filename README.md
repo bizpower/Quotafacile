@@ -205,6 +205,47 @@ del workflow rilegge il valore dal progetto e fallisce se non è quello che il r
 Per allineare tutte le funzioni in un colpo: Actions → *Distribuisci le Edge Function* → Run
 workflow → `tutte`. È a mano di proposito, perché sovrascrive dodici funzioni.
 
+### ⚠️ `vercel.json` non è in vigore
+
+Il sito è servito da **GitHub Pages** (`Server: GitHub.com`, verificato sulla risposta vera), e
+GitHub Pages non legge `vercel.json` né permette di impostare intestazioni HTTP. Quel file descrive
+una configurazione corretta per Vercel, e **inerte oggi**: resta perché la migrazione è un'opzione
+aperta, non perché stia proteggendo qualcosa.
+
+Non è una pedanteria: leggendolo si conclude che il sito ha CSP, HSTS, `X-Frame-Options` e `nosniff`
+come intestazioni. Non le ha. Ecco cosa vale davvero:
+
+| Protezione | In vigore? | Come |
+|---|---|---|
+| Content-Security-Policy | **sì** | `<meta http-equiv>` in `index.html` — l'unica strada su Pages. `script-src 'self'` secco, senza `unsafe-inline`, perché il sito non ha un solo gestore di eventi nell'HTML |
+| Referrer-Policy | **sì, per impostazione predefinita del browser** | `strict-origin-when-cross-origin` è già il valore di default di Chrome e Firefox: coincide con quello che `vercel.json` chiede |
+| `frame-ancestors` / `X-Frame-Options` | **no** | In un `<meta>` vengono ignorate per specifica. Al loro posto c'è il controllo `dentroCornice` dentro l'area riservata |
+| Strict-Transport-Security | **no** | Richiede un'intestazione vera. Chi digita `quotafacile.net` fa un passaggio in chiaro prima del reindirizzamento |
+| X-Content-Type-Options, Permissions-Policy | **no** | Non esprimibili in un `<meta>` |
+
+Le tre righe «no» si chiudono solo cambiando chi serve il sito — Vercel (dove `vercel.json` entrerebbe
+in vigore così com'è) o un proxy davanti a Pages. È una decisione di hosting, non una riga di codice.
+
+### Prestazioni misurate (13 ottobre 2026)
+
+| | Desktop | Mobile |
+|---|---|---|
+| Largest Contentful Paint | 922 ms | 3,5 s |
+| Total Blocking Time | 0 ms | 0 ms |
+| Cumulative Layout Shift | 0,001 | 0,000 |
+
+**Non c'è niente da ottimizzare, e vale la pena scriverlo** per non rifare il giro. I 381 KB di
+JavaScript del sito pubblico sembrano molti, ma `defer` li tiene fuori dal percorso critico: il
+blocking time è zero su entrambi i profili. Lighthouse stima **0 ms** di guadagno per CSS inutilizzato,
+JS inutilizzato e minificazione — cioè dice che quei byte non sono il collo di bottiglia. L'unica voce
+con un valore in millisecondi è il reindirizzamento (630 ms su mobile): è `quotafacile.net` → `www` più
+`http` → `https`, entrambi necessari, e **chi arriva da una ricerca non li paga**, perché Google
+indicizza l'indirizzo finale. Il 3,5 s su mobile è latenza di rete simulata su connessione lenta.
+
+I moduli dell'area riservata (`admin`, `crm`, `mm`, `magazine`, `assistente`, `lead-ricerca`:
+433 KB in tutto) non stanno fra gli script della pagina — arrivano a richiesta al primo accesso, e
+chi visita il sito non li scarica mai.
+
 ### Notifiche (opzionali)
 
 Nessuna configurata = il sito funziona lo stesso, i contatti si leggono dall'area admin. Da
