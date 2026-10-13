@@ -869,10 +869,12 @@
           <div class="legal-warning" role="status" style="margin-bottom:.8rem">
             <strong>${plurale(opposizioni, "messaggio sembra", "messaggi sembrano")} dire di no.</strong>
             Sono in cima, con il bollino arancione. Leggili: se \u00e8 davvero un'opposizione,
-            registrala dalla scheda del lead \u2014 l'art. 21 del GDPR vuole che basti chiederlo,
-            e il piede di ogni nostra email promette che basta rispondere NO.
-            <span class="muted">Non la registro da solo: se sbagliassi a leggere bloccherei
-            per sempre un'azienda che voleva dire altro.</span>
+            premi <strong>Registra il no</strong> sul messaggio \u2014 l'art. 21 del GDPR vuole che
+            basti chiederlo, e il piede di ogni nostra email promette che basta rispondere NO.
+            <span class="muted">Non lo registro da solo: se sbagliassi a leggere bloccherei
+            per sempre un'azienda che voleva dire altro. Il bottone chiede conferma e poi fa
+            tutto \u2014 blacklist, opposizione sulla scheda del lead, e annulla quello che era
+            ancora in coda per quell'indirizzo.</span>
           </div>` : ""}
 
         ${elenco.length ? elenco.map(m => `
@@ -892,6 +894,21 @@
               ${m.anteprima ? `<span class="lead-meta" style="color:var(--ink)">${esc(m.anteprima)}</span>` : ""}
             </div>
             <div class="lead-lavorazione">
+              <!-- Il clic che mancava.
+                   Il piede di ogni nostra email promette che basta
+                   rispondere NO e l'indirizzo viene bloccato. La
+                   promessa la mantiene una persona — giusto, perché
+                   leggere male un messaggio e bloccare per sempre
+                   un'azienda che voleva dire altro è peggio — ma
+                   finora mantenerla voleva dire: leggere qui,
+                   premere «Vedi il lead» che porta all'elenco e
+                   non al lead, ritrovarlo fra novantaquattro,
+                   segnarlo. Quattro passaggi per ogni NO, il
+                   lunedì mattina in cui ne tornano cinque.
+                   Adesso è un bottone, con una conferma davanti:
+                   la decisione resta umana, la fatica no. -->
+              ${m.pare_opposizione ? `
+                <button class="btn btn-outline btn-sm" data-registra-no="${esc(m.email)}">🚫 Registra il no</button>` : ""}
               ${m.lead_id ? `<a class="btn btn-ghost btn-sm" href="#/admin/crm/lead">Vedi il lead</a>` : ""}
               <a class="btn btn-ghost btn-sm" href="https://mail.google.com/mail/u/0/#search/${encodeURIComponent(m.email)}" target="_blank" rel="noopener">Apri in Gmail</a>
             </div>
@@ -1306,6 +1323,47 @@
       arrivo.giorni = Number(ev.currentTarget.value) || 14;
       caricaArrivo(true);
     });
+
+    /* Registrare un no.
+       Non fa niente di nuovo: chiama blacklist-aggiungi, che
+       esiste già e fa le tre cose insieme — mette l'indirizzo in
+       blacklist, segna l'opposizione sulla scheda del lead se
+       quell'indirizzo è di un lead, e annulla i messaggi ancora
+       in bozza, pronti o in coda diretti a lui. Rifarle da qui a
+       pezzi avrebbe voluto dire poterne dimenticare una, e quella
+       dimenticata sarebbe stata la terza: un'opposizione
+       registrata mentre la coda continua a svuotarsi verso lo
+       stesso indirizzo.
+       La conferma nomina l'indirizzo per esteso, perché è
+       un'azione che non si torna indietro da sola. */
+    document.querySelectorAll("[data-registra-no]").forEach(b =>
+      b.addEventListener("click", async () => {
+        const email = b.dataset.registraNo;
+        if (!confirm(
+          `Registrare l'opposizione di ${email}?\n\n` +
+          "L'indirizzo va in blacklist, l'opposizione viene scritta sulla sua scheda se è un lead, " +
+          "e i messaggi ancora non partiti verso di lui vengono annullati.\n\n" +
+          "Non gli scriveremo più. Per riaprirlo bisogna togliere l'indirizzo dalla blacklist a mano."
+        )) return;
+        b.disabled = true;
+        const e = await chiamaMM("blacklist-aggiungi", {
+          indirizzi: email,
+          origine: "risposta",
+          motivo: "Ha risposto NO a una nostra email"
+        });
+        if (!e.ok) { b.disabled = false; QF().toast(e.errore || "Non riuscito."); return; }
+        /* Si dice cosa è stato fatto davvero, non «fatto»: se era
+           già in blacklist, o se non corrispondeva a nessun lead,
+           è un'informazione — non un errore, ma nemmeno un
+           dettaglio. */
+        const parti = [
+          e.aggiunti ? "indirizzo bloccato" : e.gia ? "era già in blacklist" : null,
+          e.leadSegnati ? `opposizione segnata su ${plurale(e.leadSegnati, "scheda", "schede")}` : null,
+          e.annullate ? `${plurale(e.annullate, "messaggio annullato", "messaggi annullati")}` : null
+        ].filter(Boolean);
+        QF().toast(parti.length ? parti.join("; ") + "." : "Registrato.");
+        await caricaArrivo(true);
+      }));
 
     /* ---- accessi ---- */
     const nomeDi = id => D().collaboratori.find(c => c.id === id)?.nome || "";
