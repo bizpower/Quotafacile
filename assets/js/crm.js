@@ -355,7 +355,17 @@
     esito: null,       // { risultati, centro, query, avvisi }
     errore: null,
     scelti: new Set(),
-    filtroStato: "tutti"
+    filtroStato: "tutti",
+    /* La categoria con cui l'attività è stata trovata.
+       Non è un vezzo da archivio: una ricerca per zona riporta
+       quello che c'è in zona, e in novantaquattro lead c'erano
+       quarantanove agenzie assicurative, diciotto officine,
+       quindici supermercati e dodici studi. Se il messaggio da
+       mandare parla di automazioni per agenzie assicurative, i
+       quarantacinque che non lo sono non sono un bacino più
+       grande: sono reclami per spam sul dominio da cui parte la
+       posta. */
+    filtroCategoria: "tutte"
   };
 
   /* Il recupero delle email mancanti. Una riga di stato sola,
@@ -419,10 +429,28 @@
      n'è una, e dentro quella il filtro di stato. Lo chiedono sia
      la schermata sia «seleziona i visibili», e tenerne due copie
      vorrebbe dire selezionare righe che non si vedono. */
-  function baseVisibile() {
+  /* L'archivio ristretto alla lista aperta, prima del filtro per
+     categoria: serve a contare quante categorie ci sono dentro,
+     che è una domanda da farsi su tutto il contenuto della lista
+     e non su quello che il filtro sta già mostrando. */
+  function baseNellaLista() {
     const salvati = D().lead || [];
     if (!liste.aperta) return salvati;
     return liste.dentro ? salvati.filter(l => liste.dentro.ids.has(l.id)) : [];
+  }
+
+  /* E qui dentro anche la categoria.
+     Mettere il filtro così in basso — nella funzione che tutto il
+     resto della schermata usa come punto di partenza — fa sì che
+     lo seguano da soli i conteggi degli stati, «seleziona i
+     visibili», quanti si possono scrivere e quanti hanno un sito
+     da aprire. Se fosse applicato solo all'elenco delle schede,
+     quei numeri parlerebbero di novantaquattro lead mentre sotto
+     se ne vedono quarantanove. */
+  function baseVisibile() {
+    const c = ricerca.filtroCategoria;
+    const b = baseNellaLista();
+    return c === "tutte" ? b : b.filter(l => (l.categoria || "—") === c);
   }
 
   function elencoVisibile() {
@@ -551,6 +579,31 @@
        lo ricontrolla.
        Adesso email_cercata_il distingue i due casi, e questi due
        numeri li tengono separati in schermata. */
+    /* Le categorie presenti nell'archivio (o nella lista aperta),
+       con quante ce ne sono. Solo quelle che ci sono davvero: un
+       elenco di venti categorie di cui diciassette a zero fa
+       scorrere molto e scegliere niente. */
+    const nellaLista = baseNellaLista();
+    const perCategoria = {};
+    nellaLista.forEach(l => {
+      const k = l.categoria || "—";
+      perCategoria[k] = (perCategoria[k] || 0) + 1;
+    });
+    const categorie = Object.keys(perCategoria).sort((a, b) => perCategoria[b] - perCategoria[a]);
+
+    const barraCategorie = categorie.length > 1 ? `
+          <div class="filterbar" style="margin:.6rem 0">
+            <button class="chip ${R.filtroCategoria === "tutte" ? "active" : ""}" data-archivio-cat="tutte">Tutte le categorie (${nellaLista.length})</button>
+            ${categorie.map(c => `
+              <button class="chip ${R.filtroCategoria === c ? "active" : ""}" data-archivio-cat="${esc(c)}">${esc(CATEGORIE_LEAD()[c] || c)} (${perCategoria[c]})</button>`).join("")}
+          </div>
+          ${R.filtroCategoria !== "tutte" ? `
+            <p class="muted" style="font-size:.78rem;margin:-.2rem 0 .6rem">
+              Stai guardando solo <strong>${esc(CATEGORIE_LEAD()[R.filtroCategoria] || R.filtroCategoria)}</strong>.
+              Tutto quello che sta sotto — conteggi, selezione, ricerca delle email — vale su questi ${base.length}.
+            </p>` : ""}`
+      : "";
+
     const daGuardare = base.filter(l => l.sito && !l.email && !l.email_cercata_il);
     const guardatiInvano = base.filter(l => l.sito && !l.email && l.email_cercata_il).length;
 
@@ -615,6 +668,7 @@
         <h3>📇 ${apertaOra ? `Lista «${esc(apertaOra.nome)}» (${base.length})` : `Lead in archivio (${salvati.length})`}</h3>
         ${salvati.length ? `
           ${barraListe}
+          ${barraCategorie}
           ${barraRecupero}
           ${barraInvio}
           <div class="filterbar" style="margin:.6rem 0">
@@ -1059,19 +1113,48 @@
        nessuno e non cancella niente: al massimo scopre che
        l'indirizzo non c'è, e lo annota perché la volta dopo non
        si riapra lo stesso sito per niente. */
+    /* data-archivio-cat e non data-lead-cat: quest'ultimo è già
+       di lead-ricerca.js, che con lo stesso nome disegna le venti
+       categorie del modulo di ricerca. Chiamandolo allo stesso
+       modo i due gestori si sovrapponevano: scegliere «Officine»
+       nel modulo di ricerca filtrava di nascosto anche
+       l'archivio, e i due pulsanti nuovi finivano a spuntare
+       categorie da cercare. Due cose diverse, due nomi. */
+    document.querySelectorAll("[data-archivio-cat]").forEach(b =>
+      b.addEventListener("click", () => { R.filtroCategoria = b.dataset.archivioCat; QF().render(); }));
+
     document.querySelector("[data-email-recupera]")?.addEventListener("click", async () => {
       if (recupero.inCorso) return;
+
+      /* Si mandano gli identificativi, non un «guarda tu quali».
+         Il bottone conta quelli che si stanno guardando — dentro
+         la lista aperta e dentro la categoria scelta — e deve
+         aprire esattamente quelli. Lasciando scegliere al server
+         aprirebbe i quaranta più recenti dell'intero archivio: se
+         il filtro è su «assicurazioni», finirebbe ad aprire i
+         siti dei supermercati, cioè il contrario di quello che
+         chiede chi ha filtrato. */
+      const daGuardare = baseVisibile()
+        .filter(l => l.sito && !l.email && !l.email_cercata_il);
+      if (!daGuardare.length) { QF().toast("Non è rimasto nessun sito da aprire."); return; }
+      const ids = daGuardare.slice(0, 40).map(l => l.id);
+
       recupero.inCorso = true; QF().render();
-      const e = await chiamaLead("email-recupera", {}, 180000);
+      const e = await chiamaLead("email-recupera", { ids }, 180000);
       recupero.inCorso = false;
       if (!e.ok) { QF().toast(e.errore || "Ricerca non riuscita."); QF().render(); return; }
       /* Si dice quante ne sono state trovate e quante restano: chi
          ha premuto deve sapere se ha finito o se deve premere
          ancora, perché il giro si ferma a quaranta siti. */
+      /* Quanti restano si conta su quello che si stava guardando,
+         non sul numero che torna dal server: quello è globale, e
+         con un filtro attivo direbbe «ne restano nove» mentre in
+         questa categoria non ne resta nessuno. */
+      const restanti = Math.max(0, daGuardare.length - (e.esaminati ?? 0));
       const parti = [
         `${plurale(e.trovate, "email trovata", "email trovate")} su ${e.esaminati} ${e.esaminati === 1 ? "sito aperto" : "siti aperti"}`,
         e.senzaEmail ? `${e.senzaEmail} non la pubblicano` : null,
-        e.restanti ? `${e.restanti} ancora da guardare: premi di nuovo` : null
+        restanti ? `${restanti} ancora da guardare: premi di nuovo` : null
       ].filter(Boolean);
       QF().toast(parti.join("; ") + ".");
       await carica();
