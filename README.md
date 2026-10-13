@@ -177,6 +177,34 @@ soltanto dentro le Edge Function.
 di autenticarsi. `qf_troppe_richieste()` blocca oltre 5 richieste dallo stesso indirizzo in un'ora
 (`429`), senza ostacolare chi ne manda due per rami diversi.
 
+### Come vanno in linea le funzioni
+
+Il sito si pubblica da sé ad ogni merge su `main`; le funzioni per molto tempo no, e andavano
+distribuite a mano passando il contenuto intero del file. Per le piccole funzionava. Per `qf-mm` —
+102 KB, 2.359 righe — no: è più di quanto una singola chiamata possa portare, e il risultato era che
+il modulo più grande del progetto, quello che fa girare il mail marketing, era **l'unico che non si
+poteva correggere lato server**.
+
+Ora lo fa `.github/workflows/deploy-funzioni.yml` con la CLI ufficiale, che legge i file dal disco:
+la dimensione non è più un limite per nessuna funzione. Distribuisce **solo quelle i cui file sono
+cambiati** nel push — ridistribuire una funzione che nessuno ha toccato sovrascriverebbe quello che è
+in linea, facendo sparire in silenzio una eventuale correzione messa lì senza passare da qui.
+
+| Serve | Dove |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | *Secret del repository* (Settings → Secrets and variables → Actions). Si crea su [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens). Finché manca, il workflow si ferma con un avviso che spiega cosa fare, invece di fallire in rosso ad ogni merge |
+
+**`verify_jwt` sta in `supabase/config.toml`, una riga per funzione, e non si passa più a mano.**
+Tutte le funzioni di questo progetto sono pubbliche per necessità e si autenticano da sole con una
+chiave propria (`x-qf-admin`, `x-qf-coda`) confrontata per impronta a tempo costante. Il guaio è che
+`verify_jwt` torna a `true` da solo — è il valore predefinito di ogni strumento di distribuzione — e
+quando lo fa **non rompe l'area riservata: rompe il sito per chi lo visita**, perché la funzione
+continua a rispondere a chi ha un JWT. Dall'interno sembra tutto a posto. Per questo l'ultimo passo
+del workflow rilegge il valore dal progetto e fallisce se non è quello che il repository dichiara.
+
+Per allineare tutte le funzioni in un colpo: Actions → *Distribuisci le Edge Function* → Run
+workflow → `tutte`. È a mano di proposito, perché sovrascrive dodici funzioni.
+
 ### Notifiche (opzionali)
 
 Nessuna configurata = il sito funziona lo stesso, i contatti si leggono dall'area admin. Da
