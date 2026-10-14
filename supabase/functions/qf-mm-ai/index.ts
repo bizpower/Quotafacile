@@ -873,8 +873,12 @@ async function bozza(d: Record<string, unknown>) {
 // Con un lead solo il motivo è uno, e si dice al singolare
 // invece di stampare «1 senza indirizzo».
 
-const PER_BLOCCO = 12;
 const PARALLELI = 3;
+/* Multipli esatti delle corsie: due passaggi quando si legge il
+   sito, tre quando non si legge. Il perché sta sul punto in cui
+   si usano. */
+const PER_BLOCCO = 3 * PARALLELI;
+const PER_BLOCCO_CON_SITO = 2 * PARALLELI;
 
 async function genera(d: Record<string, unknown>) {
   // Prima di toccare il database: se la chiave manca, dirlo
@@ -983,16 +987,28 @@ async function genera(d: Record<string, unknown>) {
     );
   }
 
-  /* OTTO INVECE DI DODICI QUANDO SI LEGGE IL SITO
+  /* SEI QUANDO SI LEGGE IL SITO, NOVE QUANDO NO
    *
    * Leggere la home aggiunge fino a otto secondi per lead prima
    * della chiamata al modello. Con dodici lead su tre corsie il
    * caso peggiore sfiorava i tre minuti, che e' esattamente il
    * punto in cui il browser smette di aspettare - e chi preme si
    * ritrova una richiesta annullata mentre il server continua a
-   * scrivere, cioe' il peggio dei due mondi. Con otto il caso
-   * peggiore sta sotto i due minuti. */
-  const perBlocco = conSito ? 8 : PER_BLOCCO;
+   * scrivere, cioe' il peggio dei due mondi.
+   *
+   * Otto bastavano finche' ogni lead era una chiamata sola. Poi
+   * sono arrivati i due tentativi in piu' sui 503 di Google, con
+   * le attese in mezzo: nel caso peggiore un lead adesso sono
+   * tre chiamate, e il margine che otto aveva se l'e' mangiato
+   * quello.
+   *
+   * Sei e nove sono due e tre passaggi esatti sulle tre corsie:
+   * nessuna corsia resta ferma ad aspettare le altre, e ogni
+   * blocco si chiude ben prima del tetto. I blocchi diventano
+   * piu' numerosi, e non e' un costo: ognuno salva le sue bozze
+   * mentre le scrive, e chi guarda Email Ready le vede comparire
+   * un blocco alla volta invece di aspettare la fine. */
+  const perBlocco = conSito ? PER_BLOCCO_CON_SITO : PER_BLOCCO;
   const blocco = candidati.slice(0, perBlocco);
   const restanti = candidati.length - blocco.length;
   const firma = await firmaDi(mittenteId);
@@ -1005,7 +1021,9 @@ async function genera(d: Record<string, unknown>) {
     if (daTogliere.length) await db.from("mm_email").delete().in("id", daTogliere);
   }
 
-  const righe: Record<string, unknown>[] = [];
+  /* Non si accumulano più: ogni bozza va in archivio appena è
+     pronta, e questo conta quante ce l'hanno fatta. */
+  let creati = 0;
   const falliti: { nome: string; motivo: string }[] = [];
   let costo = 0;
   let tokenIn = 0;
@@ -1034,7 +1052,7 @@ async function genera(d: Record<string, unknown>) {
         costo += s.costo;
         tokenIn += s.tokenIn;
         tokenOut += s.tokenOut;
-        righe.push({
+        const riga = {
           mittente_id: mittenteId,
           smtp_id: smtpId,
           lead_id: l.id,
@@ -1061,7 +1079,32 @@ async function genera(d: Record<string, unknown>) {
             token: { in: s.tokenIn, out: s.tokenOut },
             ...(COSTO_NOTO ? { costo: Number(s.costo.toFixed(5)) } : {}),
           },
-        });
+        };
+
+        /* OGNI BOZZA SI SALVA APPENA È SCRITTA
+         *
+         * Prima si accumulavano tutte e si scrivevano in un solo
+         * inserimento, in fondo al blocco. Funziona finché il
+         * blocco arriva in fondo — e il blocco è la cosa che più
+         * facilmente non ci arriva: dodici chiamate a un modello,
+         * con la lettura dei siti in mezzo, dentro una funzione
+         * che ha un tetto di tempo e un browser che a un certo
+         * punto smette di aspettare.
+         *
+         * Quando non ci arrivava, undici bozze già scritte e già
+         * pagate sparivano insieme alla dodicesima che aveva
+         * fallito. E fino a quel momento, in Email Ready, non si
+         * vedeva niente: nessuna bozza esisteva ancora.
+         *
+         * Adesso ogni bozza è in archivio nell'istante in cui è
+         * pronta. Se la generazione si ferma a metà, la metà
+         * scritta è lì, si legge e si manda — che è il punto.
+         * Dodici inserimenti invece di uno sono dodici scritture
+         * da una riga: accanto al costo di una chiamata al
+         * modello non si misurano. */
+        const { error } = await db.from("mm_email").insert(riga);
+        if (error) throw new Error(error.message);
+        creati++;
       } catch (e) {
         /* Un lead che fallisce non ferma gli altri del blocco: il
            suo nome torna indietro, così si sa chi riprovare. */
@@ -1070,16 +1113,11 @@ async function genera(d: Record<string, unknown>) {
     }
   }));
 
-  if (righe.length) {
-    const { error } = await db.from("mm_email").insert(righe);
-    if (error) throw new Error(error.message);
-  }
-
   /* Il costo si restituisce solo se i due prezzi sono configurati:
      altrimenti sarebbe una cifra inventata. I token invece sono
      misurati da Google, e quelli si possono mostrare sempre. */
   return {
-    creati: righe.length,
+    creati,
     falliti,
     saltati,
     restanti,

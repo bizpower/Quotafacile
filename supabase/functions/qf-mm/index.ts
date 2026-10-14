@@ -200,7 +200,7 @@ async function panoramica() {
   const [
     mittenti, smtp, liste, campagne, ultimeInviate, ultimiErrori,
     perStato, seriePerGiorno,
-    lead, leadNoContatto, blacklist, inviateOggi, ultimi7,
+    dentroLeListe, blacklist, inviateOggi, ultimi7,
   ] = await Promise.all([
     db.from("mm_mittenti").select("*").order("creato_il"),
     caselle().then((data) => ({ data, error: null })),
@@ -215,15 +215,61 @@ async function panoramica() {
     db.from("mm_email").select("stato"),
     db.from("mm_email").select("inviata_il").eq("stato", "inviata")
       .gte("inviata_il", new Date(ora.getTime() - 14 * 86400000).toISOString()),
-    numero(db.from("crm_lead").select("id", cont)),
-    numero(db.from("crm_lead").select("id", cont).eq("no_contatto", true)),
+    /* I LEAD DEL MAIL MARKETING SONO QUELLI NELLE LISTE
+     *
+     * Qui si contavano tutte le righe di crm_lead, e il riquadro
+     * diceva «94 lead in archivio» mentre di quei novantaquattro
+     * il mail marketing ne conosceva ventitré: gli altri erano
+     * officine, supermercati e studi raccolti esplorando una
+     * zona, che in nessuna lista sono mai entrati.
+     *
+     * Un numero che comprende chi non si sta lavorando non è una
+     * panoramica più generosa: è un numero che non si può usare.
+     * Da «94» non si ricava quante email si possono scrivere, e
+     * accanto a «15 scrivibili» sembrava che settantanove
+     * aziende fossero state perse per strada.
+     *
+     * Si legge l'appartenenza alle liste e si incrociano i lead
+     * una volta: da lì escono i tre numeri che servono davvero —
+     * quanti sono, quanti hanno un indirizzo, quanti si sono
+     * opposti. Il CRM continua a mostrare i suoi
+     * novantaquattro: quello è il suo archivio, e lì il numero
+     * giusto è quello. */
+    db.from("mm_lista_lead").select("lead_id"),
     numero(db.from("mm_blacklist").select("id", cont)),
     numero(db.from("mm_email").select("id", cont).eq("stato", "inviata").gte("inviata_il", ieri)),
     numero(db.from("mm_email").select("id", cont).gte("creata_il", settimana)),
   ]);
 
-  const errore = [mittenti, smtp, liste, campagne, perStato].find((r) => r.error);
+  const errore = [mittenti, smtp, liste, campagne, perStato, dentroLeListe].find((r) => r.error);
   if (errore?.error) throw new Error(errore.error.message);
+
+  /* Distinti: la stessa azienda può stare in due liste, e in quel
+     caso è un lead, non due. È anche la ragione per cui le liste
+     puntano ai lead invece di copiarli. */
+  const idNelleListe = [
+    ...new Set(((dentroLeListe.data ?? []) as { lead_id: string }[]).map((r) => r.lead_id)),
+  ];
+  type RigaLead = { email: string | null; no_contatto: boolean };
+  const righeLead: RigaLead[] = [];
+  /* A fette di duecento: gli id finiscono nell'indirizzo della
+     richiesta, e un elenco di mille uuid è un indirizzo di
+     trentasette chilobyte che il server rifiuta. Oggi i lead
+     nelle liste sono ventitré e una fetta basta; il giorno che
+     saranno mille questo conta ancora, invece di rispondere con
+     un errore. */
+  for (let i = 0; i < idNelleListe.length; i += 200) {
+    const fetta = idNelleListe.slice(i, i + 200);
+    const { data, error } = await db.from("crm_lead").select("email,no_contatto").in("id", fetta);
+    if (error) throw new Error(error.message);
+    righeLead.push(...((data ?? []) as RigaLead[]));
+  }
+  const lead = idNelleListe.length;
+  const leadNoContatto = righeLead.filter((l) => l.no_contatto).length;
+  /* Scrivibili: hanno un indirizzo e non si sono opposti. È il
+     numero da cui si capisce se una generazione ha senso, e
+     prima non c'era da nessuna parte. */
+  const leadScrivibili = righeLead.filter((l) => l.email && !l.no_contatto).length;
 
   /* Un solo passaggio sugli stati invece di sei conteggi
      separati: le righe sono le stesse, le query no. */
@@ -282,6 +328,7 @@ async function panoramica() {
       ultimi7,
       lead,
       leadNoContatto,
+      leadScrivibili,
       blacklist,
       liste: (liste.data ?? []).length,
       // null e non 0: "nessun invio ancora" non è "0% di consegne"
