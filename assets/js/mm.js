@@ -180,7 +180,14 @@
       ["pronte", "✅", "Pronte da inviare", n.pronte ?? 0, `${n.bozze ?? 0} ancora in bozza`],
       ["fallite", "⚠️", "Fallite", n.fallite ?? 0, n.fallite ? "da rivedere" : "nessun errore"],
       ["ultimi7", "📈", "Email ultimi 7 giorni", n.ultimi7 ?? 0, "create, in qualunque stato"],
-      ["lead", "👥", "Lead in archivio", n.lead ?? 0, `${plurale(n.liste ?? 0, "lista", "liste")}`],
+      /* Non «in archivio»: il numero che arriva è quello dei lead
+         entrati nelle liste, non delle righe del CRM. La riga
+         sotto dice quanti si possono davvero scrivere, perché è
+         da quella che si capisce se vale la pena generare. */
+      ["lead", "👥", "Lead nel mail marketing", n.lead ?? 0,
+        n.lead
+          ? `${n.leadScrivibili ?? 0} con email · ${plurale(n.liste ?? 0, "lista", "liste")}`
+          : "nessuna lista con lead dentro"],
       ["smtp", "⚙️", "Casella di invio",
         casella ? "Attiva" : inv.configurato ? "Da collegare" : "Da configurare",
         casella ? casella.from_email : (mittente()?.from_email || "—")],
@@ -1068,11 +1075,19 @@
       </div>
       <div class="mm-lavoro-asta"><i style="width:${quota}%"></i></div>
       <button class="btn btn-ghost btn-sm" id="mm-lavoro-ferma">${m.fermata ? "Fermo…" : "Ferma"}</button>`
+      /* Quando un blocco si interrompe a metà, qui si contano solo
+         i giri chiusi: diceva «0 bozze scritte» mentre il server
+         ne aveva già salvate cinque, una per una. Il numero non si
+         conosce — la risposta non è arrivata — e allora non si
+         dice un numero: si dice dove sono. */
       : `
       <div class="mm-lavoro-testo">
-        <strong>${m.errore ? "⚠️ " : "✓ "}${plurale(m.fatte, "bozza scritta", "bozze scritte")}${
-          m.fermata ? " — fermato" : ""}</strong>
-        <span class="muted">${esc(m.errore || riassunto || "Le trovi in Email Ready.")}</span>
+        <strong>${m.errore
+          ? `⚠️ Interrotta${m.fatte ? ` dopo ${plurale(m.fatte, "bozza", "bozze")}` : ""}`
+          : `✓ ${plurale(m.fatte, "bozza scritta", "bozze scritte")}${m.fermata ? " — fermato" : ""}`}</strong>
+        <span class="muted">${esc(m.errore
+          ? `${m.errore} Quelle già scritte sono in Email Ready: si approvano e si mandano.`
+          : (riassunto || "Le trovi in Email Ready."))}</span>
       </div>
       <a class="btn btn-outline btn-sm" href="#/admin/crm/mail/pronte">Vedile</a>
       <button class="btn btn-ghost btn-sm" id="mm-lavoro-chiudi">✕</button>`;
@@ -1117,6 +1132,14 @@
       if (e.costoNoto) { motore.costoNoto = true; motore.costo += e.costo || 0; }
       barraAggiorna();
 
+      /* L'elenco si rilegge dopo ogni giro, non solo in fondo: se
+         si sta guardando Email Ready le bozze compaiono mentre
+         vengono scritte, e si possono approvare e mandare senza
+         aspettare che la lista intera sia finita. Costa una
+         lettura per giro, contro i secondi che ogni giro impiega
+         comunque. */
+      if (rottaCorrente === "pronte") await caricaPosta2();
+
       if (!e.restanti) break;
       /* Nessun passo avanti: si esce invece di riprovare in eterno
          su un servizio che conta le chiamate. */
@@ -1141,12 +1164,17 @@
       const rileggi = () => rottaCorrente === "pronte" ? caricaPosta2() : Promise.resolve();
 
       if (!e.ok) {
-        /* Niente bozze, e il motivo è quello che ha detto il
-           server: la chiave che manca, la lista vuota, oppure il
-           motivo per cui quel lead è stato saltato. */
+        /* Il motivo è quello che ha detto il server: la chiave che
+           manca, la lista vuota, oppure il motivo per cui quel
+           lead è stato saltato. Su una lista però «non riuscita»
+           non vuol dire «niente di fatto»: le bozze si salvano
+           una per una, quindi quelle scritte prima dell'intoppo
+           ci sono, e vanno dette. */
         ultimaGenerazione = null;
         generaAperto = false; generaLead = null;
-        QF().toast(e.errore || "Non è stato scritto niente.");
+        QF().toast(formGenera.lead_id
+          ? (e.errore || "Non è stata scritta nessuna bozza.")
+          : `${e.errore || "Scrittura interrotta."} Quelle già scritte sono in Email Ready.`);
         QF().render();
         await rileggi();
         return;
@@ -1732,8 +1760,11 @@
               <a href="#/admin/crm/mail/pronte">Email Ready</a>, in stato «bozza»: da lì si rilegge,
               si ritocca e si approva. Non parte niente da sola.`
             : `
-              Parte e <strong>va avanti da sola</strong> fino in fondo alla lista, a blocchi di dodici
-              — otto se leggo anche le loro home, perché ogni pagina aggiunge qualche secondo.
+              Parte e <strong>va avanti da sola</strong> fino in fondo alla lista, a blocchi di nove
+              — sei se leggo anche le loro home, perché ogni pagina aggiunge qualche secondo.
+              Ogni bozza è salvata nell'istante in cui è scritta: se un blocco si interrompe, quelle
+              fatte restano in <a href="#/admin/crm/mail/pronte">Email Ready</a> e si possono già
+              approvare e mandare.
               Intanto puoi andare dove vuoi, anche nel CRM: una barra in basso dice a che punto è e
               ha sempre il tasto <strong>Ferma</strong>.
               ${quante != null

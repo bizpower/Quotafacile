@@ -698,10 +698,17 @@ prompt è il modo di rompere la coda di invio per sbaglio.
 Email Ready → **✨ Genera con AI**. Chiede lista, scopo, tono, chi firma e indicazioni aggiuntive:
 lo stesso prompt dello scrittore per un singolo messaggio, applicato a tutta la lista.
 
-**Dodici per volta — otto se legge le home — e dice quante restano.** Ogni bozza è una chiamata di
-qualche secondo: una lista da duecento aziende non sta in una richiesta HTTP, e provarci vorrebbe
-dire scoprirlo a metà, con qualche bozza salvata e nessuno che sa quante. Alla fine del blocco
+**Nove per volta — sei se legge le home — e dice quante restano.** Ogni bozza è una chiamata di
+qualche secondo: una lista da duecento aziende non sta in una richiesta HTTP. Alla fine del blocco
 compare quanto ha consumato e quante aziende restano, con il bottone per il blocco successivo.
+
+**Ogni bozza è salvata nell'istante in cui è scritta**, non in fondo al blocco. Prima si
+accumulavano e si inserivano tutte insieme: se il blocco non arrivava in fondo — ed è la cosa che
+più facilmente non ci arriva, fra lettura dei siti, tetto di tempo della funzione e browser che
+smette di aspettare — undici bozze già scritte e già pagate sparivano insieme alla dodicesima che
+aveva fallito, e fino a quel momento in Email Ready non si vedeva niente. Adesso una generazione
+interrotta lascia dietro di sé tutto quello che aveva scritto, pronto da approvare e mandare; chi
+sta guardando Email Ready le vede comparire un blocco alla volta.
 
 **Quattro motivi per saltare qualcuno, contati separati**, perché si rimediano in modi diversi:
 senza indirizzo, opposto, in blacklist, già contattato. Più un quinto: chi ha già una bozza non
@@ -765,9 +772,11 @@ azienda».
 
 **Una pagina, non tre.** Su Lovable erano home + chi-siamo + contatti + team: su una lista da dodici
 aziende sono quarantotto richieste prima ancora di parlare col modello, e nella home italiana tipica
-c'è già quasi tutto. Con la spunta accesa il blocco scende da **dodici a otto**: ogni pagina aggiunge
+c'è già quasi tutto. Con la spunta accesa il blocco scende da **nove a sei**: ogni pagina aggiunge
 fino a otto secondi, e dodici per tre corsie sfioravano i tre minuti in cui il browser smette di
-aspettare — cioè una richiesta annullata mentre il server continua a scrivere.
+aspettare — cioè una richiesta annullata mentre il server continua a scrivere. Nove e sei sono tre e
+due passaggi esatti sulle tre corsie, e tengono il margine anche nel caso peggiore in cui un 503 di
+Google fa ritentare lo stesso lead due volte.
 
 **Il nome del referente si usa e non si salva.** Se sulla pagina c'è «Mario Rossi, titolare» il
 modello può rivolgersi a lui per nome, ma quel nome **non viene scritto in `crm_lead`**: resta nel
