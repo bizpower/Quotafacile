@@ -155,53 +155,6 @@ function versioneDi(nome: string): number {
    Duplicata e non condivisa perche' due Edge Function non
    condividono un modulo: il commento vale da promemoria che se
    si corregge qui va corretta anche in qf-chat. */
-/* ---------------- Dove non si scrive ----------------
- *
- * Il Lead Finder legge l'indirizzo pubblicato sul sito, e quello
- * che trova non è sempre un recapito commerciale. Nei
- * ventitré lead in archivio ce n'erano undici così:
- *
- *   generaliitalia@pec.generaligroup.com   su 4 lead
- *   islariskmanagement@pec.it              su 1
- *   privacy@it.zurich.com                  su 1
- *   info@sara.it                           su 3  (compagnia, non agenzia)
- *   mario.rossi@email.it                   su 2  (segnaposto di un tema)
- *
- * Le prime due specie si riconoscono dalla forma e qui vengono
- * rifiutate, perché mandarci una proposta commerciale non è un
- * tentativo in più, è un reclamo quasi garantito:
- *
- * - la PEC è un canale a valore legale. Ci arrivano diffide,
- *   recessi, atti. Una proposta commerciale in una PEC viene
- *   letta come un abuso dello strumento, e chi la riceve ha
- *   l'abitudine di archiviare tutto;
- * - privacy@, legal@, dpo@ sono le caselle a cui si scrive per
- *   OPPORSI a un trattamento. Scriverci per vendere qualcosa
- *   significa chiedere di essere bloccati dalla persona il cui
- *   lavoro è bloccare.
- *
- * Le altre due specie — la casella della compagnia nazionale e il
- * segnaposto lasciato nel tema del sito — dalla forma non si
- * distinguono da un indirizzo buono: non si tirano a indovinare,
- * si guardano in archivio.
- *
- * Il filtro sta alla generazione e non all'invio: senza bozza non
- * c'è niente da mandare, ed è il punto più a monte in cui si può
- * mettere senza toccare i dati del lead, che resta in archivio
- * com'è.
- */
-const PEC_DOMINIO = /(^|\.)pec\.|(^|\.)(legalmail|postacert|arubapec|postacertificata|sicurezzapostale)\./i;
-const PEC_UTENTE = /^pec$/i;
-const CASELLE_DI_SERVIZIO = /^(privacy|legal|legale|dpo|rpd|abuse|postmaster|reclami|protocollo)$/i;
-
-function nonCommerciale(email: string): boolean {
-  const i = email.lastIndexOf("@");
-  if (i < 0) return false;
-  const utente = email.slice(0, i);
-  const dominio = email.slice(i + 1);
-  return PEC_DOMINIO.test(dominio) || PEC_UTENTE.test(utente) || CASELLE_DI_SERVIZIO.test(utente);
-}
-
 async function scegliModello(chiave: string, escludi: string | null = null): Promise<string | null> {
   let elenco: Array<Record<string, unknown>>;
   try {
@@ -237,6 +190,59 @@ async function scegliModello(chiave: string, escludi: string | null = null): Pro
   const flash = adatti.filter((n) => /flash/i.test(n) && !/preview|exp/i.test(n));
   if (flash.length) return flash.sort(perVersione)[0];
   return adatti.sort(perVersione)[0];
+}
+
+/* ---------------- Dove non si scrive ----------------
+ *
+ * Il Lead Finder legge l'indirizzo pubblicato sul sito, e quello
+ * che trova non è sempre un recapito commerciale. Nei ventitré
+ * lead in archivio ce n'erano undici così:
+ *
+ *   generaliitalia@pec.generaligroup.com   su 4 lead
+ *   islariskmanagement@pec.it              su 1
+ *   privacy@it.zurich.com                  su 1
+ *   info@sara.it                           su 3  (compagnia, non agenzia)
+ *   mario.rossi@email.it                   su 2  (segnaposto di un tema)
+ *
+ * Le prime due specie si riconoscono dalla forma e qui vengono
+ * rifiutate, perché mandarci una proposta commerciale non è un
+ * tentativo in più, è un reclamo quasi garantito:
+ *
+ * - la PEC è un canale a valore legale. Ci arrivano diffide,
+ *   recessi, atti. Una proposta commerciale in una PEC viene
+ *   letta come un abuso dello strumento, e chi la riceve ha
+ *   l'abitudine di archiviare tutto;
+ * - privacy@, legal@, dpo@ sono le caselle a cui si scrive per
+ *   OPPORSI a un trattamento. Scriverci per vendere qualcosa
+ *   significa chiedere di essere bloccati dalla persona il cui
+ *   lavoro è bloccare.
+ *
+ * Le altre due specie — la casella della compagnia nazionale e il
+ * segnaposto lasciato nel tema del sito — dalla forma non si
+ * distinguono da un indirizzo buono: non si tirano a indovinare,
+ * si guardano in archivio.
+ *
+ * Il filtro sta alla generazione e non all'invio: senza bozza non
+ * c'è niente da mandare, ed è il punto più a monte in cui si può
+ * mettere senza toccare i dati del lead, che resta in archivio
+ * com'è.
+ *
+ * Attenzione a «pec» dentro una parola: info@pecorari.it è un
+ * indirizzo buono. Per questo il controllo sul dominio pretende
+ * che «pec» sia un'etichetta intera — inizio stringa o dopo un
+ * punto, e seguita da un punto — e quello sull'utente pretende
+ * l'uguaglianza esatta, non il contenimento.
+ */
+const PEC_DOMINIO = /(^|\.)pec\.|(^|\.)(legalmail|postacert|arubapec|postacertificata|sicurezzapostale)\./i;
+const PEC_UTENTE = /^pec$/i;
+const CASELLE_DI_SERVIZIO = /^(privacy|legal|legale|dpo|rpd|abuse|postmaster|reclami|protocollo)$/i;
+
+function nonCommerciale(email: string): boolean {
+  const i = email.lastIndexOf("@");
+  if (i < 0) return false;
+  const utente = email.slice(0, i);
+  const dominio = email.slice(i + 1);
+  return PEC_DOMINIO.test(dominio) || PEC_UTENTE.test(utente) || CASELLE_DI_SERVIZIO.test(utente);
 }
 
 const TONI: Record<string, string> = {
