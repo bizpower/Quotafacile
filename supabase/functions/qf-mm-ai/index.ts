@@ -155,7 +155,7 @@ function versioneDi(nome: string): number {
    Duplicata e non condivisa perche' due Edge Function non
    condividono un modulo: il commento vale da promemoria che se
    si corregge qui va corretta anche in qf-chat. */
-async function scegliModello(chiave: string): Promise<string | null> {
+async function scegliModello(chiave: string, escludi: string | null = null): Promise<string | null> {
   let elenco: Array<Record<string, unknown>>;
   try {
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
@@ -175,7 +175,12 @@ async function scegliModello(chiave: string): Promise<string | null> {
       return Array.isArray(metodi) && metodi.includes("generateContent");
     })
     .map((m) => String(m.name ?? "").replace(/^models\//, ""))
-    .filter((n) => n && !/embedding|aqa|imagen|veo|tts|image|audio/i.test(n));
+    .filter((n) => n && !/embedding|aqa|imagen|veo|tts|image|audio/i.test(n))
+    /* Chi chiama per un 503 esclude il modello che ha appena
+       trovato pieno: senza questo si tornerebbe sempre lo stesso
+       nome, perché è il migliore dell'elenco — ed è proprio
+       quello occupato. */
+    .filter((n) => n !== escludi);
 
   if (!adatti.length) return null;
 
@@ -185,6 +190,59 @@ async function scegliModello(chiave: string): Promise<string | null> {
   const flash = adatti.filter((n) => /flash/i.test(n) && !/preview|exp/i.test(n));
   if (flash.length) return flash.sort(perVersione)[0];
   return adatti.sort(perVersione)[0];
+}
+
+/* ---------------- Dove non si scrive ----------------
+ *
+ * Il Lead Finder legge l'indirizzo pubblicato sul sito, e quello
+ * che trova non è sempre un recapito commerciale. Nei ventitré
+ * lead in archivio ce n'erano undici così:
+ *
+ *   generaliitalia@pec.generaligroup.com   su 4 lead
+ *   islariskmanagement@pec.it              su 1
+ *   privacy@it.zurich.com                  su 1
+ *   info@sara.it                           su 3  (compagnia, non agenzia)
+ *   mario.rossi@email.it                   su 2  (segnaposto di un tema)
+ *
+ * Le prime due specie si riconoscono dalla forma e qui vengono
+ * rifiutate, perché mandarci una proposta commerciale non è un
+ * tentativo in più, è un reclamo quasi garantito:
+ *
+ * - la PEC è un canale a valore legale. Ci arrivano diffide,
+ *   recessi, atti. Una proposta commerciale in una PEC viene
+ *   letta come un abuso dello strumento, e chi la riceve ha
+ *   l'abitudine di archiviare tutto;
+ * - privacy@, legal@, dpo@ sono le caselle a cui si scrive per
+ *   OPPORSI a un trattamento. Scriverci per vendere qualcosa
+ *   significa chiedere di essere bloccati dalla persona il cui
+ *   lavoro è bloccare.
+ *
+ * Le altre due specie — la casella della compagnia nazionale e il
+ * segnaposto lasciato nel tema del sito — dalla forma non si
+ * distinguono da un indirizzo buono: non si tirano a indovinare,
+ * si guardano in archivio.
+ *
+ * Il filtro sta alla generazione e non all'invio: senza bozza non
+ * c'è niente da mandare, ed è il punto più a monte in cui si può
+ * mettere senza toccare i dati del lead, che resta in archivio
+ * com'è.
+ *
+ * Attenzione a «pec» dentro una parola: info@pecorari.it è un
+ * indirizzo buono. Per questo il controllo sul dominio pretende
+ * che «pec» sia un'etichetta intera — inizio stringa o dopo un
+ * punto, e seguita da un punto — e quello sull'utente pretende
+ * l'uguaglianza esatta, non il contenimento.
+ */
+const PEC_DOMINIO = /(^|\.)pec\.|(^|\.)(legalmail|postacert|arubapec|postacertificata|sicurezzapostale)\./i;
+const PEC_UTENTE = /^pec$/i;
+const CASELLE_DI_SERVIZIO = /^(privacy|legal|legale|dpo|rpd|abuse|postmaster|reclami|protocollo)$/i;
+
+function nonCommerciale(email: string): boolean {
+  const i = email.lastIndexOf("@");
+  if (i < 0) return false;
+  const utente = email.slice(0, i);
+  const dominio = email.slice(i + 1);
+  return PEC_DOMINIO.test(dominio) || PEC_UTENTE.test(utente) || CASELLE_DI_SERVIZIO.test(utente);
 }
 
 const TONI: Record<string, string> = {
@@ -571,14 +629,54 @@ async function scrivi(
     }
   };
 
-  let r = await chiedi(modelloInUso);
+  /* IL 503 NON È UN ERRORE: È «RIPROVA»
+   *
+   * «This model is currently experiencing high demand. Spikes in
+   * demand are usually temporary. Please try again later.» — lo
+   * dice Google, parola per parola, e per tredici tentativi di
+   * fila non abbiamo riprovato nemmeno una volta: un solo 503
+   * faceva fallire tutti i lead del blocco e tornare zero bozze.
+   * Il ripiego su un altro modello c'era già, ma scattava solo
+   * sul 404, cioè sul modello che non esiste — non su quello che
+   * esiste ed è occupato.
+   *
+   * Le attese sono due e corte. Non per prudenza: il blocco ha un
+   * tetto di tempo, e la prima corsia che trova il modello
+   * occupato paga l'attesa per tutte. Appena si cambia modello
+   * modelloInUso resta cambiato per il resto del blocco, quindi i
+   * lead successivi non ripagano niente.
+   *
+   * Il 429 resta fuori di proposito: quello è un limite
+   * raggiunto, non un picco, e insistere lo peggiora. */
+  const TRANSITORI = [500, 502, 503, 504];
+  const ATTESE = [1200, 3500];
 
-  if (r.status === 404 && !MODELLO_SCELTO) {
-    const altro = await scegliModello(chiave);
+  const insistendo = async (modello: string) => {
+    let risposta = await chiedi(modello);
+    for (const attesa of ATTESE) {
+      if (!TRANSITORI.includes(risposta.status)) break;
+      console.warn("[qf-mm-ai]", modello, "ha risposto", risposta.status, "- riprovo fra", attesa, "ms");
+      await new Promise((x) => setTimeout(x, attesa));
+      risposta = await chiedi(modello);
+    }
+    return risposta;
+  };
+
+  let r = await insistendo(modelloInUso);
+
+  /* Due motivi diversi per cambiare modello, e vanno distinti:
+     il 404 è «questo modello non c'è», il 503 è «questo modello
+     è pieno». Nel secondo caso il sostituto deve essere un altro,
+     altrimenti scegliModello() ci restituirebbe lo stesso nome —
+     è quello migliore, ed è appunto quello occupato. */
+  if ((r.status === 404 || TRANSITORI.includes(r.status)) && !MODELLO_SCELTO) {
+    const pieno = TRANSITORI.includes(r.status);
+    const altro = await scegliModello(chiave, pieno ? modelloInUso : null);
     if (altro && altro !== modelloInUso) {
-      console.warn("[qf-mm-ai] modello", modelloInUso, "non disponibile: passo a", altro);
+      console.warn("[qf-mm-ai] modello", modelloInUso,
+        pieno ? "sovraccarico" : "non disponibile", ": passo a", altro);
       modelloInUso = altro;
-      r = await chiedi(modelloInUso);
+      r = await insistendo(modelloInUso);
     }
   }
 
@@ -607,6 +705,21 @@ async function scrivi(
       );
     }
     console.error("[qf-mm-ai] Google ha risposto", r.status, "-", messaggio || "(nessun messaggio)");
+    /* Un sovraccarico va detto come sovraccarico. «Errore 503»
+       fa cercare il guasto in casa — nella chiave, nei segreti,
+       nel codice — e il guasto non è in casa: è un modello
+       occupato. Chi legge deve sapere che ha già riprovato il
+       sistema, e quante volte, altrimenti ripreme subito e si
+       prende lo stesso muro. */
+    if (TRANSITORI.includes(r.status)) {
+      throw new ErroreCliente(
+        `Il modello «${modelloInUso}» di Google è occupato (${r.status}): ho riprovato ` +
+        `${ATTESE.length} volte e cercato un altro modello sulla tua chiave, senza fortuna. ` +
+        "Non è la chiave e non è QuotaFacile — è un picco di richieste da loro, e passa da sé. " +
+        "Riprova fra qualche minuto: le bozze già scritte restano." +
+        (messaggio ? ` Google dice: ${messaggio}` : ""),
+      );
+    }
     throw new ErroreCliente(
       "Il servizio di Google ha risposto con un errore (" + r.status + ")" +
       (messaggio ? ": " + messaggio : "."),
@@ -820,13 +933,17 @@ async function genera(d: Record<string, unknown>) {
     conBozza.set(r.lead_id, [...(conBozza.get(r.lead_id) ?? []), r.id]);
   }
 
-  const saltati = { senzaEmail: 0, opposti: 0, inBlacklist: 0, giaContattati: 0, giaScritti: 0 };
+  const saltati = {
+    senzaEmail: 0, opposti: 0, inBlacklist: 0, giaContattati: 0, giaScritti: 0,
+    nonCommerciale: 0,
+  };
   const candidati: Record<string, unknown>[] = [];
 
   for (const l of (lead ?? []) as Record<string, unknown>[]) {
     const email = String(l.email ?? "").toLowerCase();
     if (!emailValida(email)) { saltati.senzaEmail++; continue; }
     if (l.no_contatto) { saltati.opposti++; continue; }
+    if (nonCommerciale(email)) { saltati.nonCommerciale++; continue; }
     if (nero.has(email)) { saltati.inBlacklist++; continue; }
     if (contattati.has(email)) { saltati.giaContattati++; continue; }
     if (!sovrascrivi && conBozza.has(String(l.id))) { saltati.giaScritti++; continue; }
@@ -844,6 +961,8 @@ async function genera(d: Record<string, unknown>) {
         ? `${n} si è opposto a ricevere comunicazioni: non c'è niente da scrivere.`
         : saltati.inBlacklist
         ? `L'indirizzo di ${n} è in blacklist.`
+        : saltati.nonCommerciale
+        ? `L'indirizzo di ${n} non è un recapito commerciale: è una PEC o una casella di servizio (privacy, legale, DPO). Lì una proposta commerciale si prende un reclamo. Cerca il recapito dell'agenzia, oppure telefona.`
         : saltati.giaContattati
         ? `A ${n} è già partita un'email: se vuoi riscrivergli, parti da quella nel registro.`
         : `${n} ha già una bozza non spedita. Aprila in Email Ready, oppure spunta «rifai anche chi ha già una bozza».`,
@@ -857,6 +976,7 @@ async function genera(d: Record<string, unknown>) {
         saltati.senzaEmail ? `${saltati.senzaEmail} senza indirizzo` : null,
         saltati.opposti ? `${saltati.opposti} si sono opposti` : null,
         saltati.inBlacklist ? `${saltati.inBlacklist} in blacklist` : null,
+        saltati.nonCommerciale ? `${saltati.nonCommerciale} hanno una PEC o una casella di servizio (privacy, legale, DPO), dove una proposta commerciale si prende un reclamo` : null,
         saltati.giaContattati ? `${saltati.giaContattati} già contattati` : null,
         saltati.giaScritti ? `${saltati.giaScritti} hanno già una bozza (spunta «sovrascrivi» per rifarle)` : null,
       ].filter(Boolean).join(", ") + ".",
