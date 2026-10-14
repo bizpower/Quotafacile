@@ -309,9 +309,52 @@ const RE_EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,24}/g;
 // Caselle che non sono un contatto commerciale, segnaposto dei
 // temi grafici, e "indirizzi" che in realta' sono nomi di file
 // (logo@2x.png e' la trappola piu' comune).
-const NON_CONTATTI = /^(no-?reply|donotreply|postmaster|abuse|mailer-daemon|webmaster|hostmaster|nome|tuonome|esempio|example|email|indirizzo|user|utente)$/i;
+//
+// I NOMI FINTI DEI TEMI
+// mario.rossi@email.it e' arrivato in archivio su DUE lead
+// diversi — un'agenzia di Cagliari e una di Sestu — e questo lo
+// smaschera: lo stesso indirizzo sul sito di due aziende che non
+// hanno niente in comune non e' il recapito di nessuna delle due,
+// e' il segnaposto che il tema porta con se'. Mario Rossi e' il
+// nome finto italiano per antonomasia, insieme a nome.cognome e
+// a John Doe. Il dominio no: email.it e' un provider vero e
+// bloccarlo butterebbe via indirizzi buoni.
+const NON_CONTATTI =
+  /^(no-?reply|donotreply|postmaster|abuse|mailer-daemon|webmaster|hostmaster|nome|tuonome|esempio|example|email|indirizzo|user|utente|mario\.?rossi\d*|nome\.cognome|tuo\.?nome|john\.?doe|jane\.?doe|test)$/i;
 const DOMINI_FINTI = /(example\.(com|org|net|it)|dominio\.|tuosito|tuodominio|wixpress\.com|sentry\.io|schema\.org|w3\.org|godaddy|squarespace)/i;
 const PARE_UN_FILE = /\.(png|jpe?g|gif|webp|svg|ico|css|js|woff2?|ttf)$/i;
+
+/* ---------------- Dove non si scrive ----------------
+ *
+ * Le stesse due specie che qf-mm-ai rifiuta alla generazione, qui
+ * rifiutate alla raccolta. La ragione di tenerle in due posti e'
+ * la stessa dei modelli AI: due Edge Function non condividono un
+ * modulo, e il commento vale da promemoria — se si corregge qui
+ * va corretto anche in qf-mm-ai, dove la funzione si chiama
+ * nonCommerciale().
+ *
+ * Perche' anche qui, e non solo la': un indirizzo che non si puo'
+ * usare in archivio e' peggio di nessun indirizzo. Fa sembrare il
+ * lead contattabile, conta nei numeri della dashboard, e passa
+ * «Cerca le email mancanti» come se fosse risolto. Nei ventitre'
+ * lead con email ce n'erano sei cosi': quattro con la PEC di
+ * Generali, una PEC di un broker, e privacy@it.zurich.com.
+ *
+ * Se sul sito l'unico indirizzo e' una PEC, il lead resta senza
+ * email ed e' giusto: a quella PEC non gli scriveremmo comunque.
+ * Il telefono c'e' quasi sempre, e per un'agenzia vale di piu'.
+ */
+const PEC_DOMINIO = /(^|\.)pec\.|(^|\.)(legalmail|postacert|arubapec|postacertificata|sicurezzapostale)\./i;
+const PEC_UTENTE = /^pec$/i;
+const CASELLE_DI_SERVIZIO = /^(privacy|legal|legale|dpo|rpd|abuse|postmaster|reclami|protocollo)$/i;
+
+function nonCommerciale(email: string): boolean {
+  const i = email.lastIndexOf("@");
+  if (i < 0) return false;
+  const utente = email.slice(0, i);
+  const dominio = email.slice(i + 1);
+  return PEC_DOMINIO.test(dominio) || PEC_UTENTE.test(utente) || CASELLE_DI_SERVIZIO.test(utente);
+}
 
 const PAGINE_CONTATTI = ["/", "/contatti", "/contatti.html", "/contact", "/chi-siamo"];
 
@@ -401,7 +444,8 @@ function emailDa(htmlGrezzo: string, dominio: string | null): string | null {
     .filter((e) => e.length <= 120 && (e.match(/@/g) ?? []).length === 1)
     .filter((e) => !PARE_UN_FILE.test(e))
     .filter((e) => !DOMINI_FINTI.test(e))
-    .filter((e) => !NON_CONTATTI.test(e.split("@")[0]));
+    .filter((e) => !NON_CONTATTI.test(e.split("@")[0]))
+    .filter((e) => !nonCommerciale(e));
 
   if (!buone.length) return null;
   if (dominio) {
