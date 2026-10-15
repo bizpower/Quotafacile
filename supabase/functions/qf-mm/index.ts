@@ -894,8 +894,12 @@ async function listaElimina(d: Record<string, unknown>) {
 
 /* Le colonne dei lead che servono al mail marketing. Non tutte:
    note e stato della trattativa sono lavoro della pipeline. */
+/* email_cercata_il distingue «il sito non l'ha mai aperto
+   nessuno» da «l'abbiamo aperto e l'email non c'era»: senza, la
+   lista non puo' proporre di cercare gli indirizzi mancanti
+   senza riaprire ogni volta gli stessi siti per niente. */
 const COLONNE_LEAD =
-  "id,nome,categoria,citta,provincia,indirizzo,telefono,sito,email," +
+  "id,nome,categoria,citta,provincia,indirizzo,telefono,sito,email,email_cercata_il," +
   "valutazione,recensioni,fonte,raccolto_il,query_origine,no_contatto,no_contatto_motivo";
 
 async function listaContenuto(d: Record<string, unknown>) {
