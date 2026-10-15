@@ -455,6 +455,7 @@
   let contenuto = null;      // { lead, altreListe }
   let listaModulo = null;    // lista in creazione/modifica
   let leadModulo = null;     // lead a mano
+  let recuperoLista = false; // sta aprendo i siti per cercare le email
 
   async function chiamaLead(azione, d = {}, timeout = 90000) {
     const stop = new AbortController();
@@ -650,6 +651,17 @@
     const conEmail = lead.filter(x => x.email).length;
     const opposti = lead.filter(x => x.no_contatto).length;
 
+    /* GLI INDIRIZZI MANCANTI SI CERCANO DA QUI
+       Il bottone esisteva solo nel CRM, sull'archivio intero. Ma
+       chi sta per generare guarda questa lista, e un lead senza
+       email il generatore lo salta: la differenza fra quindici
+       bozze e ventitré sta in otto siti che nessuno ha mai
+       aperto. Stessa azione del CRM, stessi lead - si manda
+       l'elenco degli id, non «guarda tu quali», perché qui si
+       guarda una lista e deve aprire quella. */
+    const daGuardare = lead.filter(x => x.sito && !x.email && !x.email_cercata_il);
+    const guardatiInvano = lead.filter(x => x.sito && !x.email && x.email_cercata_il).length;
+
     return `
     <div class="mm-testata">
       <div style="min-width:0">
@@ -669,10 +681,26 @@
     </div>
     <input type="file" id="mm-file" accept=".csv,text/csv" hidden>
 
+    ${daGuardare.length ? `
+      <div class="mm-azioni" style="margin:.6rem 0;align-items:center">
+        <button class="btn btn-outline btn-sm" id="mm-email-recupera" ${recuperoLista ? "disabled" : ""}>
+          ${recuperoLista ? "Apro i siti…" : `✉️ Cerca le email mancanti (${daGuardare.length})`}
+        </button>
+        <span class="muted" style="font-size:.78rem">
+          ${plurale(daGuardare.length, "lead di questa lista ha un sito mai aperto", "lead di questa lista hanno un sito mai aperto")}:
+          l'indirizzo potrebbe esserci, e senza indirizzo la generazione li salta.
+          Non consuma ricerche Google — apre solo i siti già in archivio.
+          ${guardatiInvano ? (guardatiInvano === 1
+            ? "Un altro è già stato guardato e sul suo sito l'email non c'è."
+            : `Altri ${guardatiInvano} sono già stati guardati e sui loro siti l'email non c'è.`) : ""}
+        </span>
+      </div>` : ""}
+
     ${conEmail === 0 && lead.length ? `
       <p class="legal-warning" style="font-size:.82rem">
         Nessuno di questi lead ha un indirizzo email. Google non lo fornisce: va cercato sul
-        sito dell'attività e scritto a mano, oppure importato da un file.
+        sito dell'attività${daGuardare.length ? " — il bottone qui sopra apre quelli che non ha mai guardato nessuno —" : ""}
+        e scritto a mano, oppure importato da un file.
       </p>` : ""}
 
     ${lead.length === 0 ? `
@@ -3851,6 +3879,45 @@ QuotaFacile · ${esc(mittente()?.from_email || "nome@quotafacile.net")}">${esc(s
         generaAperto = true;
         QF().render();
       }));
+
+    /* Cerca le email mancanti dei lead di questa lista.
+       È l'azione email-recupera di qf-lead, la stessa del CRM:
+       apre i siti che sono già in archivio, non parla con Google
+       e non scrive a nessuno. Per questo non chiede conferma —
+       al massimo scopre che l'indirizzo non c'è, e lo annota
+       perché la volta dopo non si riapra lo stesso sito per
+       niente. */
+    $("#mm-email-recupera")?.addEventListener("click", async () => {
+      if (recuperoLista) return;
+      const daGuardare = (contenuto?.lead || [])
+        .filter(x => x.sito && !x.email && !x.email_cercata_il);
+      if (!daGuardare.length) { QF().toast("Non è rimasto nessun sito da aprire."); return; }
+
+      recuperoLista = true; QF().render();
+      /* Quaranta per volta: è il tetto del server, e mandargliene
+         di più vorrebbe dire credere di averli guardati tutti. */
+      const e = await chiamaLead("email-recupera", { ids: daGuardare.slice(0, 40).map(x => x.id) }, 180000);
+      recuperoLista = false;
+
+      if (!e.ok) { QF().toast(e.errore || "Ricerca non riuscita."); QF().render(); return; }
+      /* Quanti restano si conta su quelli di questa lista, non sul
+         numero del server: quello è di tutto l'archivio e qui
+         direbbe che ne restano da guardare mentre in questa lista
+         non ne resta nessuno. */
+      const restanti = Math.max(0, daGuardare.length - (e.esaminati ?? 0));
+      QF().toast([
+        `${plurale(e.trovate, "email trovata", "email trovate")} su ${e.esaminati} ${e.esaminati === 1 ? "sito aperto" : "siti aperti"}`,
+        e.senzaEmail ? `${e.senzaEmail} non la pubblicano` : null,
+        restanti ? `${restanti} ancora da guardare: premi di nuovo` : null
+      ].filter(Boolean).join("; ") + ".");
+
+      /* Si ricarica la panoramica e la lista: cambiano i numeri
+         del cruscotto (quanti si possono scrivere) e le righe. */
+      const id = listaAperta;
+      await carica();
+      listaAperta = null;
+      await apriLista(id);
+    });
 
     document.querySelectorAll("[data-togli]").forEach(b =>
       b.addEventListener("click", async () => {

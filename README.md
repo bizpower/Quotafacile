@@ -715,6 +715,14 @@ senza indirizzo, opposto, in blacklist, già contattato. Più un quinto: chi ha 
 spedita viene saltato, a meno che non si spunti «rifai anche chi ha già una bozza» — senza quella
 spunta si eviterebbero due messaggi identici alla stessa azienda.
 
+**«Senza indirizzo» si rimedia da dentro la lista.** Se una lista contiene lead con un sito che
+nessuno ha mai aperto, in cima compare **✉️ Cerca le email mancanti (N)**: è l'azione
+`email-recupera` di `qf-lead`, la stessa che sta nel CRM, ristretta ai lead di quella lista (gli id
+si mandano espliciti, altrimenti il server aprirebbe i quaranta più recenti di tutto l'archivio).
+Apre solo i siti già in archivio — non parla con Google, non consuma quota, non scrive a nessuno —
+e annota `email_cercata_il` anche quando non trova niente, così la volta dopo non si riapre lo
+stesso sito per niente. È la differenza concreta fra quindici bozze e ventitré.
+
 ### Scrivere a un lead solo, dalla sua riga
 
 Lead Lists → apri una lista → il bottone ✨ sulla riga dell'attività. Apre **la stessa finestra**
