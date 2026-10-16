@@ -613,19 +613,36 @@ async function interroga(frase: string): Promise<Mossa> {
         "disponibile domani, oppure serve un piano a pagamento su AI Studio.",
     );
   }
-  if (r.status === 400 || r.status === 403) {
-    throw new Error("Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva.");
-  }
-
   /* Quello che Google ha scritto, non un numero.
      Prima qui c'era "ha risposto con un errore (404)", e per mesi
      quel 404 ha significato "il modello e' stato ritirato" senza
      che la frase lo dicesse: si e' cercato il guasto nella chiave,
      che era giusta. Il messaggio di Google lo diceva, e veniva
-     buttato via. */
+     buttato via. Si legge una volta sola, qui, perche' serve
+     anche al 403 qui sotto. */
+  const corpoErrore = r.ok ? null : await r.json().catch(() => null);
+  const messaggio: string | null = corpoErrore?.error?.message || null;
+
+  if (r.status === 400 || r.status === 403) {
+    /* Una chiave valida e un progetto bloccato danno lo stesso
+       403, e la frase di prima - "controlla che sia valida e
+       attiva" - mandava a rifare una chiave che non aveva niente
+       che non andasse. La differenza la dice Google nel corpo
+       della risposta, e adesso si legge: stessa diagnosi che fa
+       qf-mm-ai, perche' la chiave e' la stessa. */
+    const progettoNegato = /denied access|project.*blocked|consumer.*blocked/i.test(messaggio ?? "");
+    throw new Error(
+      progettoNegato
+        ? "La chiave QF_GEMINI_KEY è valida ma il progetto Google a cui appartiene non ha accesso " +
+          "all'API: succede con le chiavi create da un account Google Workspace. Rifalla su " +
+          "aistudio.google.com/apikey con un account Google normale." +
+          (messaggio ? ` Google dice: ${messaggio}` : "")
+        : "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva." +
+          (messaggio ? ` Google dice: ${messaggio}` : ""),
+    );
+  }
+
   if (!r.ok) {
-    const e = await r.json().catch(() => null);
-    const messaggio = e?.error?.message || null;
     if (r.status === 404) {
       console.error("[qf-chat] modello non trovato:", modelloInUso, "-", messaggio || "(nessun messaggio)");
       throw new Error(

@@ -686,14 +686,45 @@ async function scrivi(
       "l'assistenza torna domani, altrimenti riprova fra qualche minuto.",
     );
   }
+  /* Il corpo dell'errore si legge una volta sola, qui, e vale per
+     tutti i rami sotto: prima il 403 veniva raccontato senza
+     averlo mai aperto. */
+  const corpoErrore = r.ok ? null : await r.json().catch(() => null);
+  const messaggio: string | null = corpoErrore?.error?.message || null;
+
   if (r.status === 400 || r.status === 403) {
+    /* LA CHIAVE PUÒ ESSERE VALIDA E IL PROGETTO BLOCCATO LO STESSO
+     *
+     * Qui c'era scritto «Google ha rifiutato la chiave: controlla
+     * che sia valida e attiva», per qualunque 403. È la frase che
+     * manda a cercare il guasto nel posto sbagliato: la chiave di
+     * questo progetto elenca i cinquanta modelli senza fare una
+     * piega — quindi è valida, attiva e scritta giusta — e
+     * risponde 403 solo quando le si chiede di generare, con le
+     * parole «Your project has been denied access».
+     *
+     * Non è la chiave: è il progetto Google che le sta dietro, a
+     * cui l'API di generazione non è concessa. Succede con le
+     * chiavi fatte da un account Google Workspace, dove l'accesso
+     * all'API Gemini lo deve abilitare l'amministratore.
+     *
+     * Chi legge deve sapere quale delle due cose rifare, perché
+     * rifare una chiave buona non cambia niente. */
+    const progettoNegato = /denied access|project.*blocked|consumer.*blocked/i.test(messaggio ?? "");
     throw new ErroreCliente(
-      "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva.",
+      progettoNegato
+        ? "La chiave QF_GEMINI_KEY è valida — Google con questa chiave mi elenca i modelli — ma " +
+          "rifiuta di generare: il progetto Google a cui appartiene non ha accesso all'API. " +
+          "Succede con le chiavi create da un account Google Workspace, dove l'API Gemini la deve " +
+          "abilitare l'amministratore. La via più corta è rifare la chiave su " +
+          "aistudio.google.com/apikey con un account Google normale e rimetterla nel segreto " +
+          "QF_GEMINI_KEY del progetto Supabase." +
+          (messaggio ? ` Google dice: ${messaggio}` : "")
+        : "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva." +
+          (messaggio ? ` Google dice: ${messaggio}` : ""),
     );
   }
   if (!r.ok) {
-    const e = await r.json().catch(() => null);
-    const messaggio = e?.error?.message || null;
     if (r.status === 404) {
       console.error("[qf-mm-ai] modello non trovato:", modelloInUso, "-", messaggio || "(nessun messaggio)");
       throw new ErroreCliente(
