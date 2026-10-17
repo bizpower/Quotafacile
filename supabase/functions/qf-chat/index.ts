@@ -160,6 +160,24 @@ const MODELLO_PREDEFINITO = "gemini-3.5-flash";
 // cambia solo se Google dice che quel modello non esiste.
 let modelloInUso = MODELLO_SCELTO || MODELLO_PREDEFINITO;
 
+/* DUE PORTE PER LO STESSO MODELLO, E LA CHIAVE DICE QUALE
+ *
+ *   AIza…  chiave di AI Studio    → generativelanguage.googleapis.com
+ *   AQ.…   chiave di Google Cloud → aiplatform.googleapis.com
+ *
+ * Una chiave dell'uno mandata all'altro risponde 403 "Your
+ * project has been denied access", che sembra un divieto ed e'
+ * solo la porta sbagliata. Con un account Google Workspace, AI
+ * Studio consegna chiavi AQ. senza che nessuno lo scelga.
+ *
+ * Stessa cosa in qf-mm-ai: la chiave e' una sola, e se si
+ * corregge qui va corretta anche la'. */
+const VERTEX = (chiave: string) => chiave.startsWith("AQ.");
+const baseModelli = (chiave: string) =>
+  VERTEX(chiave)
+    ? "https://aiplatform.googleapis.com/v1/publishers/google/models"
+    : "https://generativelanguage.googleapis.com/v1beta/models";
+
 // Da "models/gemini-3.8-flash" a 3.8, per poter confrontare.
 function versioneDi(nome: string): number {
   const m = nome.match(/gemini-(\d+)(?:\.(\d+))?/);
@@ -168,6 +186,10 @@ function versioneDi(nome: string): number {
 }
 
 async function scegliModello(chiave: string): Promise<string | null> {
+  /* Dalla porta Vertex l'elenco non si chiede con una chiave
+     express: risponde 404. Si resta sul modello configurato. */
+  if (VERTEX(chiave)) return null;
+
   let elenco: Array<Record<string, unknown>>;
   try {
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
@@ -576,7 +598,7 @@ async function interroga(frase: string): Promise<Mossa> {
   const chiedi = async (modello: string) => {
     try {
       return await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`,
+        `${baseModelli(chiave)}/${modello}:generateContent`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": chiave },
@@ -630,15 +652,19 @@ async function interroga(frase: string): Promise<Mossa> {
        che non andasse. La differenza la dice Google nel corpo
        della risposta, e adesso si legge: stessa diagnosi che fa
        qf-mm-ai, perche' la chiave e' la stessa. */
-    const progettoNegato = /denied access|project.*blocked|consumer.*blocked/i.test(messaggio ?? "");
+    const dice = messaggio ?? "";
     throw new Error(
-      progettoNegato
-        ? "La chiave QF_GEMINI_KEY è valida ma il progetto Google a cui appartiene non ha accesso " +
-          "all'API: succede con le chiavi create da un account Google Workspace. Rifalla su " +
-          "aistudio.google.com/apikey con un account Google normale." +
-          (messaggio ? ` Google dice: ${messaggio}` : "")
-        : "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva." +
-          (messaggio ? ` Google dice: ${messaggio}` : ""),
+      (/requires billing|billing to be enabled/i.test(dice)
+        ? "Il progetto Google della chiave non ha la fatturazione collegata, e senza quella l'API " +
+          "non genera: con un account Workspace il piano gratuito non c'è."
+      : /are blocked|API_KEY_SERVICE_BLOCKED/i.test(dice)
+        ? "La chiave ha una lista di API consentite che non comprende quella chiamata: si corregge " +
+          "nelle restrizioni della chiave, nella console Google Cloud."
+      : /denied access|project.*blocked|consumer.*blocked/i.test(dice)
+        ? "La chiave è valida ma il progetto Google a cui appartiene non ha accesso all'API di " +
+          "generazione: succede con le chiavi create da un account Workspace."
+        : "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva.") +
+      (messaggio ? ` Google dice: ${messaggio}` : ""),
     );
   }
 

@@ -141,6 +141,32 @@ function chiaveAi(): string {
   return k;
 }
 
+/* DUE PORTE PER LO STESSO MODELLO, E LA CHIAVE DICE QUALE
+ *
+ * Google serve Gemini da due servizi diversi:
+ *
+ *   AIza…  chiave di AI Studio    → generativelanguage.googleapis.com
+ *   AQ.…   chiave di Google Cloud → aiplatform.googleapis.com
+ *          (Vertex AI in "express mode")
+ *
+ * Il modello dietro e' lo stesso, i due servizi no: una chiave
+ * dell'uno, mandata all'altro, risponde 403 "Your project has
+ * been denied access" — che e' il modo peggiore possibile di
+ * dire "hai sbagliato porta", perche' sembra un divieto e manda
+ * a rifare una chiave che non ha niente che non vada. Due giorni
+ * di diagnosi li ha mangiati quella frase.
+ *
+ * Succede senza che nessuno lo scelga: con un account Google
+ * Workspace, AI Studio consegna chiavi AQ. e non AIza.
+ *
+ * Qui la porta si deduce dal prefisso, e le due chiavi
+ * funzionano entrambe. */
+const VERTEX = (chiave: string) => chiave.startsWith("AQ.");
+const baseModelli = (chiave: string) =>
+  VERTEX(chiave)
+    ? "https://aiplatform.googleapis.com/v1/publishers/google/models"
+    : "https://generativelanguage.googleapis.com/v1beta/models";
+
 // Da "models/gemini-3.8-flash" a 3.8, per poter confrontare.
 function versioneDi(nome: string): number {
   const m = nome.match(/gemini-(\d+)(?:\.(\d+))?/);
@@ -156,6 +182,12 @@ function versioneDi(nome: string): number {
    condividono un modulo: il commento vale da promemoria che se
    si corregge qui va corretta anche in qf-chat. */
 async function scegliModello(chiave: string, escludi: string | null = null): Promise<string | null> {
+  /* Dalla porta Vertex l'elenco dei modelli non si chiede con
+     una chiave express: risponde 404. Si resta sul modello
+     configurato, che è quello che il chiamante stava già usando:
+     meglio nessun ripiego che un ripiego inventato. */
+  if (VERTEX(chiave)) return null;
+
   let elenco: Array<Record<string, unknown>>;
   try {
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
@@ -616,7 +648,7 @@ async function scrivi(
   const chiedi = async (modello: string) => {
     try {
       return await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`,
+        `${baseModelli(chiave)}/${modello}:generateContent`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": chiave },
@@ -693,36 +725,46 @@ async function scrivi(
   const messaggio: string | null = corpoErrore?.error?.message || null;
 
   if (r.status === 400 || r.status === 403) {
-    /* LA CHIAVE PUÒ ESSERE VALIDA E IL PROGETTO BLOCCATO LO STESSO
+    /* UN 403 NON È MAI «LA CHIAVE È SBAGLIATA»
      *
      * Qui c'era scritto «Google ha rifiutato la chiave: controlla
      * che sia valida e attiva», per qualunque 403. È la frase che
-     * manda a cercare il guasto nel posto sbagliato: la chiave di
-     * questo progetto elenca i cinquanta modelli senza fare una
-     * piega — quindi è valida, attiva e scritta giusta — e
-     * risponde 403 solo quando le si chiede di generare, con le
-     * parole «Your project has been denied access».
+     * manda a cercare il guasto nel posto sbagliato, e su questo
+     * progetto ha mandato a rifare due volte una chiave che non
+     * aveva niente che non andasse.
      *
-     * Non è la chiave: è il progetto Google che le sta dietro, a
-     * cui l'API di generazione non è concessa. Succede con le
-     * chiavi fatte da un account Google Workspace, dove l'accesso
-     * all'API Gemini lo deve abilitare l'amministratore.
+     * I 403 che si incontrano davvero sono quattro, e ognuno si
+     * rimedia in un posto diverso:
      *
-     * Chi legge deve sapere quale delle due cose rifare, perché
-     * rifare una chiave buona non cambia niente. */
-    const progettoNegato = /denied access|project.*blocked|consumer.*blocked/i.test(messaggio ?? "");
-    throw new ErroreCliente(
-      progettoNegato
-        ? "La chiave QF_GEMINI_KEY è valida — Google con questa chiave mi elenca i modelli — ma " +
-          "rifiuta di generare: il progetto Google a cui appartiene non ha accesso all'API. " +
-          "Succede con le chiavi create da un account Google Workspace, dove l'API Gemini la deve " +
-          "abilitare l'amministratore. La via più corta è rifare la chiave su " +
-          "aistudio.google.com/apikey con un account Google normale e rimetterla nel segreto " +
-          "QF_GEMINI_KEY del progetto Supabase." +
-          (messaggio ? ` Google dice: ${messaggio}` : "")
-        : "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva." +
-          (messaggio ? ` Google dice: ${messaggio}` : ""),
-    );
+     *   "denied access"      porta sbagliata, o progetto senza
+     *                        accesso all'API Gemini;
+     *   "requires billing"   manca la fatturazione sul progetto
+     *                        Cloud (con Workspace non c'è piano
+     *                        gratuito);
+     *   "are blocked"        la chiave ha una lista di API
+     *                        consentite che non comprende quella
+     *                        chiamata;
+     *   tutto il resto       si riporta quello che ha detto
+     *                        Google, che è più di quanto sapremmo
+     *                        dire noi.
+     *
+     * In tutti e quattro i casi il messaggio di Google viene
+     * riportato intero: è lì che sta l'indirizzo da aprire. */
+    const dice = messaggio ?? "";
+    const coda = messaggio ? ` Google dice: ${messaggio}` : "";
+    const spiegazione =
+      /requires billing|billing to be enabled/i.test(dice)
+        ? "Il progetto Google della chiave non ha la fatturazione collegata, e senza quella " +
+          "l'API non genera: con un account Workspace il piano gratuito non c'è."
+      : /are blocked|API_KEY_SERVICE_BLOCKED/i.test(dice)
+        ? "La chiave ha una lista di API consentite che non comprende quella chiamata: si corregge " +
+          "nelle restrizioni della chiave, nella console Google Cloud."
+      : /denied access|project.*blocked|consumer.*blocked/i.test(dice)
+        ? "La chiave è valida ma il progetto Google a cui appartiene non ha accesso all'API di " +
+          "generazione. Succede con le chiavi create da un account Workspace: o si abilita l'API " +
+          "sul progetto, o si rifà la chiave su aistudio.google.com/apikey con un account normale."
+        : "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva.";
+    throw new ErroreCliente(spiegazione + coda);
   }
   if (!r.ok) {
     if (r.status === 404) {
