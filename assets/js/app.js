@@ -593,11 +593,25 @@ const dentroCornice = (() => {
   try { return window.top !== window.self; } catch (e) { return true; }
 })();
 
+/* Un file alla volta, chiesto quando serve. Chi chiama tiene la
+   promessa in corso, così due richieste ravvicinate non scaricano
+   due volte lo stesso file. */
+function caricaScript(nome) {
+  return new Promise((risolvi, rifiuta) => {
+    const s = document.createElement("script");
+    s.src = BASE_SITO + "assets/js/" + nome + ".js";
+    s.onload = risolvi;
+    s.onerror = () => rifiuta(new Error(nome + ".js non si è caricato"));
+    document.head.appendChild(s);
+  });
+}
+
 let riservataInCorso = null;
 
 function caricaRiservata() {
   if (window.QF_ADMIN && window.QF_CRM && window.QF_MM && window.QF_MAGAZINE
-      && window.QF_ASSISTENTE && window.QF_RICERCA) return Promise.resolve();
+      && window.QF_ASSISTENTE && window.QF_RICERCA
+      && window.QF_ACCESSO && window.QF_AREA) return Promise.resolve();
   if (riservataInCorso) return riservataInCorso;
   /* L'assistente sta in questo gruppo e non fra gli script della
      pagina perché serve solo qui dentro: sul sito pubblico non
@@ -605,15 +619,17 @@ function caricaRiservata() {
 
      lead-ricerca.js è il modulo di ricerca dei lead, usato sia dal
      CRM sia dal mail marketing. Sta qui per la stessa ragione
-     degli altri e arriva in parallelo: nessuno dei sei cerca gli
-     altri al caricamento, solo quando servono. */
-  riservataInCorso = Promise.all(["admin", "crm", "mm", "magazine", "assistente", "lead-ricerca"].map(nome => new Promise((risolvi, rifiuta) => {
-    const s = document.createElement("script");
-    s.src = BASE_SITO + "assets/js/" + nome + ".js";
-    s.onload = risolvi;
-    s.onerror = () => rifiuta(new Error(nome + ".js non si è caricato"));
-    document.head.appendChild(s);
-  }))).catch(e => {
+     degli altri e arriva in parallelo: nessuno degli otto cerca
+     gli altri al caricamento, solo quando servono.
+
+     accesso.js e area.js sono arrivati qui dopo: li cerca soltanto
+     admin.js — la porta dei collaboratori e la loro area — e
+     stavano fra gli script di ogni pagina pubblica, venticinque
+     kilobyte scaricati da chi legge una guida per una schermata
+     che non vedrà mai. */
+  riservataInCorso = Promise.all(
+    ["admin", "crm", "mm", "magazine", "assistente", "lead-ricerca", "accesso", "area"].map(caricaScript),
+  ).catch(e => {
     /* Se il caricamento fallisce la promessa va scartata, non
        tenuta: altrimenti ogni tentativo successivo ricadrebbe
        sullo stesso errore anche quando la rete è tornata. */
@@ -621,6 +637,33 @@ function caricaRiservata() {
     throw e;
   });
   return riservataInCorso;
+}
+
+/* ---------------- LE PAGINE LEGALI ARRIVANO QUANDO SERVONO ----
+ *
+ * I testi di privacy, cookie, termini e note legali sono
+ * cinquantacinque kilobyte, e stavano fra gli script di ogni
+ * pagina: li scaricava chi leggeva una guida, chi guardava la
+ * scheda di un intermediario, chi apriva la home. Servono su
+ * sette indirizzi.
+ *
+ * I dati del titolare restano in legal-dati.js, che pesa poco ed
+ * è caricato sempre: i dati strutturati di ogni pagina
+ * dichiarano l'editore, e senza resterebbero anonimi.
+ *
+ * Le pagine legali sono pre-renderizzate: il loro HTML contiene
+ * già il testo, quindi un motore di ricerca lo trova comunque.
+ * Il caricamento serve a chi ci arriva navigando. */
+let legaliInCorso = null;
+
+function caricaLegali() {
+  if (window.QF_LEGAL) return Promise.resolve();
+  if (legaliInCorso) return legaliInCorso;
+  legaliInCorso = caricaScript("legal").catch(e => {
+    legaliInCorso = null;
+    throw e;
+  });
+  return legaliInCorso;
 }
 
 /* JSON-LD dinamico per SEO (FAQPage) */
@@ -659,7 +702,10 @@ const urlGuida = f => SITO() + percorsoDomanda(f);
 /* Identità dell'editore: dichiarata una volta e richiamata per
    riferimento da tutti gli altri nodi del grafo. */
 function editoreJsonLd() {
-  const C = window.QF_LEGAL?.CONFIG;
+  /* I dati, non i testi: legal-dati.js c'è sempre, legal.js
+     arriva solo sulle rotte legali. Il ripiego su QF_LEGAL tiene
+     in piedi il grafo anche se un giorno l'ordine cambiasse. */
+  const C = window.QF_LEGAL_DATI || window.QF_LEGAL?.CONFIG;
   const base = SITO();
   const org = {
     "@type": "Organization",
@@ -3024,7 +3070,23 @@ function render() {
   }
   else if (page === "preventivo") html = views.preventivo(query);
   else if (page === "area-pro") html = views.areaPro();
-  else if (LEGAL_ROUTES[page]) { setJsonLd(null); html = LEGAL_ROUTES[page](); navKey = ""; }
+  else if (LEGAL_ROUTES[page]) {
+    setJsonLd(null); navKey = "";
+    if (window.QF_LEGAL) html = LEGAL_ROUTES[page]();
+    else {
+      /* Due righe, e corte apposta: il pre-render aspetta che
+         #app superi i duecento caratteri prima di salvare la
+         pagina, quindi un segnaposto breve non finisce mai in un
+         file pubblicato al posto del documento. */
+      html = `<div class="card"><p class="muted">Apertura del documento…</p></div>`;
+      caricaLegali().then(render).catch(() => {
+        app.innerHTML = `<div class="legal-warning" role="alert">
+          <strong>Il documento non si è caricato.</strong>
+          Può essere la rete. Ricarica la pagina e riprova.
+        </div>`;
+      });
+    }
+  }
   /* L'area riservata riceve tutto il percorso, non solo il primo
      segmento: dentro ci sono due applicazioni con rotte proprie. */
   else if (page === "admin") {

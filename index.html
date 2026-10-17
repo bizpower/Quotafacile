@@ -278,7 +278,15 @@
        294 KB di console di amministrazione, CRM e mail marketing
        che ogni visitatore anonimo scaricava e interpretava per
        leggere una guida sulle polizze. Ora li carica app.js solo
-       quando si entra davvero nell'area riservata. -->
+       quando si entra davvero nell'area riservata.
+
+       Dalla stessa lista sono usciti, per la stessa ragione:
+       accesso.js e area.js (la porta dei collaboratori e la loro
+       area: li cerca solo admin.js) e legal.js (55 KB di testi
+       per sette indirizzi). Dei documenti legali resta qui
+       legal-dati.js, che pesa 4 KB: contiene i dati del titolare,
+       e quelli servono su ogni pagina perché li dichiarano i dati
+       strutturati. -->
   <!-- Le icone prima di tutto il resto: sono gli script defer, che
        girano nell'ordine in cui stanno qui, e app.js le chiede
        mentre disegna la prima schermata. -->
@@ -289,10 +297,8 @@
   <script defer src="assets/js/intermediari.js"></script>
   <script defer src="assets/js/daily-questions.js"></script>
   <script defer src="assets/js/staff-questions.js"></script>
-  <script defer src="assets/js/legal.js"></script>
-  <script defer src="assets/js/accesso.js"></script>
+  <script defer src="assets/js/legal-dati.js"></script>
   <script defer src="assets/js/pro.js"></script>
-  <script defer src="assets/js/area.js"></script>
   <script defer src="assets/js/app.js"></script>
   <script defer src="assets/js/consent.js"></script>
 </body>

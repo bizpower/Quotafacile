@@ -20,9 +20,10 @@ quotafacile/
 │   ├── js/admin.js               # 🔐 Area riservata (#/admin): la porta + console di piattaforma
 │   ├── js/crm.js                 # 🏢 CRM Bizpower (#/admin/crm): amministrazione della società
 │   ├── js/mm.js                  # 📮 Mail Marketing (#/admin/crm/mail): liste, campagne, invii
-│   ├── js/accesso.js             # 🔑 Sessione dei collaboratori (Supabase Auth, storage, RLS)
-│   ├── js/area.js                # 🧑‍💼 Area personale del collaboratore (#/admin/area)
-│   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (+ LEGAL_CONFIG)
+│   ├── js/accesso.js             # 🔑 Sessione dei collaboratori (a richiesta, col gruppo admin)
+│   ├── js/area.js                # 🧑‍💼 Area personale del collaboratore (a richiesta, idem)
+│   ├── js/legal.js               # ⚖️ Privacy, Cookie Policy, T&C, Note legali (a richiesta)
+│   ├── js/legal-dati.js          # 🪪 I dati del titolare: piccolo, e caricato su ogni pagina
 │   └── js/consent.js             # 🍪 Cookie banner e centro preferenze (CMP)
 ├── supabase/
 │   ├── schema.sql                # 🗄️ Tabelle, RLS, trigger: lo schema del database
@@ -242,9 +243,31 @@ con un valore in millisecondi è il reindirizzamento (630 ms su mobile): è `quo
 `http` → `https`, entrambi necessari, e **chi arriva da una ricerca non li paga**, perché Google
 indicizza l'indirizzo finale. Il 3,5 s su mobile è latenza di rete simulata su connessione lenta.
 
-I moduli dell'area riservata (`admin`, `crm`, `mm`, `magazine`, `assistente`, `lead-ricerca`:
-433 KB in tutto) non stanno fra gli script della pagina — arrivano a richiesta al primo accesso, e
-chi visita il sito non li scarica mai.
+### Quello che una pagina pubblica scarica davvero
+
+I moduli dell'area riservata (`admin`, `crm`, `mm`, `magazine`, `assistente`, `lead-ricerca`,
+`accesso`, `area`: 452 KB in tutto) non stanno fra gli script della pagina — arrivano a richiesta al
+primo accesso, e chi visita il sito non li scarica mai. `accesso.js` e `area.js` sono entrati nel
+gruppo dopo gli altri: li cerca soltanto `admin.js`, ma stavano fra gli script di ogni pagina
+pubblica.
+
+Stessa sorte per `legal.js`: 55 KB di testi di informative che servono su sette indirizzi e che
+scaricava chiunque aprisse una guida. I **dati** del titolare restano sempre presenti, in
+`legal-dati.js` (4 KB), perché i dati strutturati di ogni pagina dichiarano l'editore — ragione
+sociale, partita IVA, sede — e senza resterebbero anonimi. Le pagine legali sono pre-renderizzate:
+il loro HTML contiene già il testo, quindi un motore di ricerca lo trova comunque; il caricamento a
+richiesta riguarda solo chi ci arriva navigando.
+
+Misurato sui file veri:
+
+| | file | byte | gzip |
+|---|---|---|---|
+| prima | 13 | 383 251 | 118 433 |
+| dopo | 11 | 306 730 | **95 966** |
+
+Cioè **22 KB gzip in meno (−19%)** su ogni pagina indicizzata, senza perdere una funzione: il
+pre-render produce gli stessi 38 file e la stessa sitemap di prima, e l'unica differenza
+nell'HTML pubblicato sono i tag `<script>`.
 
 ### Notifiche — chi ti dice che è arrivata una richiesta
 
@@ -1126,7 +1149,7 @@ Segugio e Prima: inseguirle è bruciare budget.
 chiusura con la ✕ = rifiuto, registrazione della scelta con data e versione, banner non riproposto
 per 6 mesi dopo un rifiuto. Revoca sempre disponibile dal footer o via `QFConsent.open()`.
 
-> ⚠️ **Prima di pubblicare:** compila `LEGAL_CONFIG` in `assets/js/legal.js` (ragione sociale, sede,
+> ⚠️ **Prima di pubblicare:** compila i campi in `assets/js/legal-dati.js` (ragione sociale, sede,
 > P. IVA, REA, PEC, foro). Finché i campi restano `«...»` le pagine legali mostrano un avviso giallo
 > in cima: nessun dato societario inventato viene mai pubblicato al posto di quelli reali.
 
