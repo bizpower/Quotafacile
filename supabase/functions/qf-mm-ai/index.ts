@@ -141,31 +141,24 @@ function chiaveAi(): string {
   return k;
 }
 
-/* DUE PORTE PER LO STESSO MODELLO, E LA CHIAVE DICE QUALE
+/* LA CHIAVE AQ. PASSA DA QUI LO STESSO
  *
- * Google serve Gemini da due servizi diversi:
+ * Google serve Gemini da due servizi: generativelanguage
+ * (le chiavi AIza di AI Studio) e aiplatform (Vertex AI). Con un
+ * account Google Workspace AI Studio consegna chiavi che
+ * cominciano con AQ., e per due giorni il 403 "Your project has
+ * been denied access" ha fatto pensare che quelle chiavi
+ * volessero l'altra porta.
  *
- *   AIza…  chiave di AI Studio    → generativelanguage.googleapis.com
- *   AQ.…   chiave di Google Cloud → aiplatform.googleapis.com
- *          (Vertex AI in "express mode")
+ * Misurato: non e' cosi'. Quel 403 era il progetto senza
+ * fatturazione, e appena la fatturazione e' stata collegata la
+ * stessa chiave AQ. e' passata di qui. Dall'altra porta, invece,
+ * la console non lascia nemmeno spuntare l'API nelle restrizioni
+ * della chiave: e' grigia.
  *
- * Il modello dietro e' lo stesso, i due servizi no: una chiave
- * dell'uno, mandata all'altro, risponde 403 "Your project has
- * been denied access" — che e' il modo peggiore possibile di
- * dire "hai sbagliato porta", perche' sembra un divieto e manda
- * a rifare una chiave che non ha niente che non vada. Due giorni
- * di diagnosi li ha mangiati quella frase.
- *
- * Succede senza che nessuno lo scelga: con un account Google
- * Workspace, AI Studio consegna chiavi AQ. e non AIza.
- *
- * Qui la porta si deduce dal prefisso, e le due chiavi
- * funzionano entrambe. */
-const VERTEX = (chiave: string) => chiave.startsWith("AQ.");
-const baseModelli = (chiave: string) =>
-  VERTEX(chiave)
-    ? "https://aiplatform.googleapis.com/v1/publishers/google/models"
-    : "https://generativelanguage.googleapis.com/v1beta/models";
+ * Quindi l'indirizzo resta uno solo, per tutte le chiavi. Questo
+ * commento sta qui perche' la strada sbagliata era scritta in un
+ * commit e qualcuno potrebbe ripercorrerla. */
 
 // Da "models/gemini-3.8-flash" a 3.8, per poter confrontare.
 function versioneDi(nome: string): number {
@@ -182,12 +175,6 @@ function versioneDi(nome: string): number {
    condividono un modulo: il commento vale da promemoria che se
    si corregge qui va corretta anche in qf-chat. */
 async function scegliModello(chiave: string, escludi: string | null = null): Promise<string | null> {
-  /* Dalla porta Vertex l'elenco dei modelli non si chiede con
-     una chiave express: risponde 404. Si resta sul modello
-     configurato, che è quello che il chiamante stava già usando:
-     meglio nessun ripiego che un ripiego inventato. */
-  if (VERTEX(chiave)) return null;
-
   let elenco: Array<Record<string, unknown>>;
   try {
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
@@ -648,7 +635,7 @@ async function scrivi(
   const chiedi = async (modello: string) => {
     try {
       return await fetch(
-        `${baseModelli(chiave)}/${modello}:generateContent`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": chiave },
@@ -723,6 +710,18 @@ async function scrivi(
      averlo mai aperto. */
   const corpoErrore = r.ok ? null : await r.json().catch(() => null);
   const messaggio: string | null = corpoErrore?.error?.message || null;
+
+  if (r.status === 402) {
+    /* QUATTROCENTODUE: "PAGAMENTO RICHIESTO"
+       L'API Gemini a pagamento funziona a credito prepagato: la
+       chiave e' giusta, il progetto e' giusto, il credito e'
+       finito. Senza questo ramo finiva nel generico "errore
+       (402)", che e' il numero meno riconoscibile dei quattro. */
+    throw new ErroreCliente(
+      "Il credito prepagato del progetto Google è esaurito: si ricarica su ai.studio/projects, " +
+      "alla voce fatturazione del progetto." + (messaggio ? ` Google dice: ${messaggio}` : ""),
+    );
+  }
 
   if (r.status === 400 || r.status === 403) {
     /* UN 403 NON È MAI «LA CHIAVE È SBAGLIATA»

@@ -160,23 +160,11 @@ const MODELLO_PREDEFINITO = "gemini-3.5-flash";
 // cambia solo se Google dice che quel modello non esiste.
 let modelloInUso = MODELLO_SCELTO || MODELLO_PREDEFINITO;
 
-/* DUE PORTE PER LO STESSO MODELLO, E LA CHIAVE DICE QUALE
- *
- *   AIza…  chiave di AI Studio    → generativelanguage.googleapis.com
- *   AQ.…   chiave di Google Cloud → aiplatform.googleapis.com
- *
- * Una chiave dell'uno mandata all'altro risponde 403 "Your
- * project has been denied access", che sembra un divieto ed e'
- * solo la porta sbagliata. Con un account Google Workspace, AI
- * Studio consegna chiavi AQ. senza che nessuno lo scelga.
- *
- * Stessa cosa in qf-mm-ai: la chiave e' una sola, e se si
- * corregge qui va corretta anche la'. */
-const VERTEX = (chiave: string) => chiave.startsWith("AQ.");
-const baseModelli = (chiave: string) =>
-  VERTEX(chiave)
-    ? "https://aiplatform.googleapis.com/v1/publishers/google/models"
-    : "https://generativelanguage.googleapis.com/v1beta/models";
+/* La chiave puo' cominciare con AQ. invece che con AIza - le
+   consegna cosi' AI Studio agli account Google Workspace - e
+   passa comunque da qui: l'indirizzo e' uno solo. Il perche' sta
+   per esteso in qf-mm-ai, insieme alla strada sbagliata che
+   abbiamo percorso prima di misurarlo. */
 
 // Da "models/gemini-3.8-flash" a 3.8, per poter confrontare.
 function versioneDi(nome: string): number {
@@ -186,10 +174,6 @@ function versioneDi(nome: string): number {
 }
 
 async function scegliModello(chiave: string): Promise<string | null> {
-  /* Dalla porta Vertex l'elenco non si chiede con una chiave
-     express: risponde 404. Si resta sul modello configurato. */
-  if (VERTEX(chiave)) return null;
-
   let elenco: Array<Record<string, unknown>>;
   try {
     const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
@@ -598,7 +582,7 @@ async function interroga(frase: string): Promise<Mossa> {
   const chiedi = async (modello: string) => {
     try {
       return await fetch(
-        `${baseModelli(chiave)}/${modello}:generateContent`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${modello}:generateContent`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-goog-api-key": chiave },
@@ -644,6 +628,15 @@ async function interroga(frase: string): Promise<Mossa> {
      anche al 403 qui sotto. */
   const corpoErrore = r.ok ? null : await r.json().catch(() => null);
   const messaggio: string | null = corpoErrore?.error?.message || null;
+
+  if (r.status === 402) {
+    /* Credito prepagato esaurito: la chiave e' giusta, manca il
+       credito. Stesso ramo in qf-mm-ai. */
+    throw new Error(
+      "Il credito prepagato del progetto Google è esaurito: si ricarica su ai.studio/projects, " +
+      "alla voce fatturazione del progetto." + (messaggio ? ` Google dice: ${messaggio}` : ""),
+    );
+  }
 
   if (r.status === 400 || r.status === 403) {
     /* Una chiave valida e un progetto bloccato danno lo stesso
