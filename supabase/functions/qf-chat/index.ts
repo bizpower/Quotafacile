@@ -160,6 +160,12 @@ const MODELLO_PREDEFINITO = "gemini-3.5-flash";
 // cambia solo se Google dice che quel modello non esiste.
 let modelloInUso = MODELLO_SCELTO || MODELLO_PREDEFINITO;
 
+/* La chiave puo' cominciare con AQ. invece che con AIza - le
+   consegna cosi' AI Studio agli account Google Workspace - e
+   passa comunque da qui: l'indirizzo e' uno solo. Il perche' sta
+   per esteso in qf-mm-ai, insieme alla strada sbagliata che
+   abbiamo percorso prima di misurarlo. */
+
 // Da "models/gemini-3.8-flash" a 3.8, per poter confrontare.
 function versioneDi(nome: string): number {
   const m = nome.match(/gemini-(\d+)(?:\.(\d+))?/);
@@ -623,6 +629,15 @@ async function interroga(frase: string): Promise<Mossa> {
   const corpoErrore = r.ok ? null : await r.json().catch(() => null);
   const messaggio: string | null = corpoErrore?.error?.message || null;
 
+  if (r.status === 402) {
+    /* Credito prepagato esaurito: la chiave e' giusta, manca il
+       credito. Stesso ramo in qf-mm-ai. */
+    throw new Error(
+      "Il credito prepagato del progetto Google è esaurito: si ricarica su ai.studio/projects, " +
+      "alla voce fatturazione del progetto." + (messaggio ? ` Google dice: ${messaggio}` : ""),
+    );
+  }
+
   if (r.status === 400 || r.status === 403) {
     /* Una chiave valida e un progetto bloccato danno lo stesso
        403, e la frase di prima - "controlla che sia valida e
@@ -630,15 +645,19 @@ async function interroga(frase: string): Promise<Mossa> {
        che non andasse. La differenza la dice Google nel corpo
        della risposta, e adesso si legge: stessa diagnosi che fa
        qf-mm-ai, perche' la chiave e' la stessa. */
-    const progettoNegato = /denied access|project.*blocked|consumer.*blocked/i.test(messaggio ?? "");
+    const dice = messaggio ?? "";
     throw new Error(
-      progettoNegato
-        ? "La chiave QF_GEMINI_KEY è valida ma il progetto Google a cui appartiene non ha accesso " +
-          "all'API: succede con le chiavi create da un account Google Workspace. Rifalla su " +
-          "aistudio.google.com/apikey con un account Google normale." +
-          (messaggio ? ` Google dice: ${messaggio}` : "")
-        : "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva." +
-          (messaggio ? ` Google dice: ${messaggio}` : ""),
+      (/requires billing|billing to be enabled/i.test(dice)
+        ? "Il progetto Google della chiave non ha la fatturazione collegata, e senza quella l'API " +
+          "non genera: con un account Workspace il piano gratuito non c'è."
+      : /are blocked|API_KEY_SERVICE_BLOCKED/i.test(dice)
+        ? "La chiave ha una lista di API consentite che non comprende quella chiamata: si corregge " +
+          "nelle restrizioni della chiave, nella console Google Cloud."
+      : /denied access|project.*blocked|consumer.*blocked/i.test(dice)
+        ? "La chiave è valida ma il progetto Google a cui appartiene non ha accesso all'API di " +
+          "generazione: succede con le chiavi create da un account Workspace."
+        : "Google ha rifiutato la chiave QF_GEMINI_KEY: controlla che sia valida e attiva.") +
+      (messaggio ? ` Google dice: ${messaggio}` : ""),
     );
   }
 
