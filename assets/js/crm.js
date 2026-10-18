@@ -216,7 +216,7 @@
           ${[
             ["Collaboratori e anagrafica squadra", true],
             ["Accessi personali dei collaboratori", true],
-            ["Lead locali (ricerca per zona e categoria)", true],
+            ["Lead: archivio, liste e organizzazione", true],
             ["Mail: modelli, invio, registro", true]
           ].map(([t, fatto]) => `
             <div class="crm-passo ${fatto ? "fatto" : ""}">
@@ -333,28 +333,16 @@
     in_trattativa: "🟠 In trattativa", cliente: "🟢 Cliente", scartato: "⚪ Scartato"
   };
 
-  /* Stato della ricerca. Vive solo finché la scheda è aperta: i
-     risultati non salvati non sono un archivio, sono una lista
-     della spesa.
+  /* COSA SI STA GUARDANDO DELL'ARCHIVIO
+     Due filtri, e vivono finché la scheda è aperta.
 
-     La forma è quella che lead-ricerca.js si aspetta, ed è la
-     stessa nel mail marketing. Cambia un valore iniziale e non è
-     una svista: qui soloConEmail nasce spento, perché nel CRM si
-     esplora una zona per capire chi c'è e aprire il sito di ogni
-     risultato costerebbe secondi a chi non li ha chiesti. Nel
-     mail marketing nasce acceso, perché lì le liste servono a
-     mandare email. */
-  const ricerca = {
-    modalita: "rapida",
-    campi: { zona: "", via: "", citta: "Milano", provincia: "MI", cap: "", regione: "Lombardia" },
-    categorie: ["ristorazione"],
-    raggio: 2000,
-    soloQualita: true,
-    soloConEmail: false,
-    inCorso: false,
-    esito: null,       // { risultati, centro, query, avvisi }
-    errore: null,
-    scelti: new Set(),
+     Questo oggetto era lo stato della ricerca su Google — zona,
+     categorie, raggio, risultati, selezione — più, in fondo, i
+     due filtri dell'archivio. Il modulo di ricerca è andato nel
+     Lead Finder del mail marketing, dove ce n'era già uno
+     identico, e qui è rimasto quello che riguarda le schede che
+     si hanno già. */
+  const vista = {
     filtroStato: "tutti",
     /* La categoria con cui l'attività è stata trovata.
        Non è un vezzo da archivio: una ricerca per zona riporta
@@ -376,12 +364,14 @@
      ciascuno. */
   const recupero = { inCorso: false };
 
-  /* Stato delle liste. Separato da `ricerca` perché risponde a
-     un'altra domanda: lì si sceglie fra attività appena trovate
-     — identificate dal place_id di Google — qui fra lead già in
-     archivio, che hanno un id nostro. Tenere un solo insieme di
-     "scelti" per due cose diverse è il modo più rapido per
-     aggiungere a una lista il contatto sbagliato.
+  /* Stato delle liste: quali lead sono spuntati e in quale lista
+     stanno per finire. Era tenuto separato dallo stato della
+     ricerca perché rispondeva a un'altra domanda — lì si
+     sceglieva fra attività appena trovate, identificate dal
+     place_id di Google, qui fra lead già in archivio, che hanno
+     un id nostro. Adesso la ricerca sta altrove e la confusione
+     non si pone, ma il motivo per cui "scelti" è uno solo e
+     parla di id nostri resta scritto.
 
      Si carica alla prima apertura della scheda e non al
      caricamento del CRM: la panoramica del mail marketing è una
@@ -448,14 +438,14 @@
      quei numeri parlerebbero di novantaquattro lead mentre sotto
      se ne vedono quarantanove. */
   function baseVisibile() {
-    const c = ricerca.filtroCategoria;
+    const c = vista.filtroCategoria;
     const b = baseNellaLista();
     return c === "tutte" ? b : b.filter(l => (l.categoria || "—") === c);
   }
 
   function elencoVisibile() {
     const b = baseVisibile();
-    return ricerca.filtroStato === "tutti" ? b : b.filter(l => l.stato === ricerca.filtroStato);
+    return vista.filtroStato === "tutti" ? b : b.filter(l => l.stato === vista.filtroStato);
   }
 
   function leadView() {
@@ -470,65 +460,36 @@
     base.forEach(l => { perStato[l.stato] = (perStato[l.stato] || 0) + 1; });
     const elenco = elencoVisibile();
 
-    const R = ricerca;
-    const precisa = R.modalita === "precisa";
+    const R = vista;
 
-    const modulo = `
+    /* QUI NON SI CERCA PIÙ: QUI SI ORGANIZZA
+     *
+     * Il modulo di ricerca di Google stava in cima a questa
+     * schermata ed era identico a quello del Lead Finder nel mail
+     * marketing. Due porte sulla stessa funzione del server, e
+     * ogni volta la domanda «da quale delle due ho cercato?».
+     *
+     * Adesso le aziende nuove entrano da una porta sola, di là.
+     * Questa sezione è il posto dove quello che è entrato si
+     * ordina: liste, categorie, stato della trattativa, chi se ne
+     * occupa, chi non vuole essere contattato, gli indirizzi
+     * mancanti da cercare. */
+    const intestazione = `
       <div class="card">
-        <h3>🔎 Cerca attività</h3>
-        <p class="muted" style="font-size:.85rem">Anagrafica d'impresa dalle API ufficiali di Google, non da pagine raschiate. L'email fa eccezione — Google non la fornisce — e quando la chiedi viene letta sul sito che l'attività pubblica da sé: è una delle fonti già dichiarate nell'informativa alle imprese. Di ogni contatto salvato resta scritto da dove viene, email compresa: è la risposta a «dove avete preso il mio recapito», ed è ciò che tiene la raccolta dentro il legittimo interesse.</p>
-        ${window.QF_RICERCA.moduloHtml(R)}
+        <h3>👥 I lead che hai</h3>
+        <p class="muted" style="font-size:.85rem">
+          Qui si organizza l'archivio: lo dividi in liste, lo filtri per categoria e per stato,
+          assegni le schede ai collaboratori, registri chi si è opposto e cerchi gli indirizzi
+          email che mancano. <strong>Le aziende nuove si cercano nel
+          <a href="#/admin/crm/mail/lead-finder">Lead Finder</a></strong> del Mail Marketing: una strada
+          sola per chiedere a Google, così non c'è da ricordarsi da quale delle due si era cercato.
+        </p>
+        <p class="privacy-hint">
+          Di ogni contatto in archivio resta scritto da dove viene, email compresa: è la risposta a
+          «dove avete preso il mio recapito», ed è ciò che tiene la raccolta dentro il legittimo
+          interesse.
+        </p>
       </div>`;
-
-    const risultati = () => {
-      if (R.errore) {
-        return `<div class="legal-warning" role="alert" style="margin-top:1.2rem"><strong>Ricerca non riuscita.</strong> ${esc(R.errore)}</div>`;
-      }
-      if (!R.esito) return "";
-      /* Quaranta righe più in basso la stessa lettura è già
-         difesa — `R.esito?.risultati || []` — e qui no: se la
-         risposta arrivasse senza l'elenco, o senza il centro, la
-         schermata dei lead resterebbe bianca invece di dire che
-         non ha trovato niente. Una pagina vuota non si distingue
-         da un guasto, e questa è la schermata da cui si lavora. */
-      const r = R.esito.risultati || [];
-      const nuovi = r.filter(x => !x.gia);
-      const centro = R.esito.centro?.indirizzo;
-      return `
-      <div class="card" style="margin-top:1.2rem">
-        <h3>Trovate ${r.length} attività <span class="pill">${nuovi.length} non ancora in archivio</span></h3>
-        ${centro ? `<p class="muted" style="font-size:.82rem">Centro della ricerca: ${esc(centro)}</p>` : ""}
-        ${(R.esito.avvisi || []).map(a => `<p class="privacy-hint">⚠️ ${esc(a)}</p>`).join("")}
-
-        ${r.length ? `
-        <div class="admin-actions" style="margin:.8rem 0">
-          <button class="btn btn-outline btn-sm" data-lead-tutti>Seleziona tutte le nuove</button>
-          <button class="btn btn-ghost btn-sm" data-lead-nessuno>Deseleziona</button>
-          <button class="btn btn-primary btn-sm" data-lead-salva ${R.scelti.size ? "" : "disabled"}>
-            Salva ${R.scelti.size || ""} in archivio
-          </button>
-        </div>
-
-        ${r.map(x => `
-          <label class="lead-riga ${x.gia ? "gia" : ""}">
-            <input type="checkbox" data-lead-scegli="${esc(x.place_id)}"
-                   ${x.gia ? "disabled" : ""} ${R.scelti.has(x.place_id) ? "checked" : ""}>
-            <span class="lead-corpo">
-              <strong>${esc(x.nome)}</strong>
-              <span>${esc(x.indirizzo || "—")}</span>
-              <span class="lead-meta">
-                ${x.telefono ? `📞 ${esc(x.telefono)}` : `<span class="muted">senza telefono</span>`}
-                ${x.email ? ` · ✉️ ${esc(x.email)}` : ""}
-                ${x.sito ? ` · 🌐 <a href="${esc(x.sito)}" target="_blank" rel="noopener">sito</a>` : ""}
-                ${x.valutazione ? ` · ⭐ ${x.valutazione} (${x.recensioni})` : ""}
-                ${x.tipo_google ? ` · ${esc(x.tipo_google)}` : ""}
-              </span>
-            </span>
-            ${x.gia ? `<span class="pill">già in archivio</span>` : ""}
-          </label>`).join("")}`
-        : `<p class="muted">Nessun risultato con questi criteri. Prova ad allargare il raggio o a togliere il filtro qualità.</p>`}
-      </div>`;
-    };
 
     /* Le liste sono quelle del Mail Marketing, non una seconda
        raccolta: la stessa azienda sta in una riga sola e le liste
@@ -730,14 +691,16 @@
               </div>
             </div>`).join("") || (
               L.aperta && !L.dentro ? ""
-              : L.aperta ? `<p class="muted">${ricerca.filtroStato === "tutti"
+              : L.aperta ? `<p class="muted">${vista.filtroStato === "tutti"
                   ? "Questa lista è vuota. Torna a «Tutto l'archivio», scegli dei lead e aggiungili qui."
                   : "Nessun lead con questo filtro, dentro questa lista."}</p>`
               : `<p class="muted">Nessun lead con questo filtro.</p>`)}`
-        : `<p class="muted">Nessun lead in archivio. Fai una ricerca qui sopra e salva quelli che ti interessano.</p>`}
+        : `<p class="muted">Nessun lead in archivio. Le aziende si cercano nel
+           <a href="#/admin/crm/mail/lead-finder">Lead Finder</a> del Mail Marketing, e quelle che
+           salvi compaiono qui.</p>`}
       </div>`;
 
-    return modulo + risultati() + archivio;
+    return intestazione + archivio;
   }
 
   /* La sezione PRODUZIONE non c'è più.
@@ -966,7 +929,11 @@
   const SEZIONI = {
     panoramica: ["📊 Panoramica", panoramicaView],
     collaboratori: ["👥 Collaboratori", collaboratoriView],
-    lead: ["🔎 Lead locali", leadView],
+    /* Era «🔎 Lead locali», con la lente, perché da qui si
+       cercava. Adesso da qui si organizza: la lente è passata al
+       Lead Finder, che è l'unico posto da cui si chiede a
+       Google. */
+    lead: ["👥 Lead", leadView],
     posta: ["✉️ Posta", mailView],
     mail: ["📮 Mail Marketing", null],
     magazine: ["📰 Magazine", null]
@@ -1063,63 +1030,12 @@
     document.querySelectorAll("[data-crm-modifica]").forEach(b =>
       b.addEventListener("click", () => { modifica = b.dataset.crmModifica; QF().render(); }));
 
-    /* ---- lead locali ---- */
-    const R = ricerca;
-
-    /* Modalità, tendine a cascata, categorie e invio stanno in
-       lead-ricerca.js: sono gli stessi del mail marketing, e la
-       volta che ne ho corretta una sola — il comune facoltativo —
-       l'altra è rimasta indietro per settimane. Qui resta solo
-       cosa fare dei risultati, che è l'unica cosa diversa fra le
-       due schermate. */
-    /* Col punto interrogativo, come due righe più su per le
-       categorie. I cinque file dell'area riservata arrivano
-       insieme e di norma c'è: ma se uno solo tarda o non arriva,
-       qui saltava tutto il resto di bind() — e il CRM restava a
-       schermo con i bottoni che non rispondevano, senza dire
-       niente. Una schermata che non reagisce è il guasto più
-       difficile da riferire: non si sa nemmeno cosa raccontare. */
-    window.QF_RICERCA?.lega(R, async (dati) => {
-      R.scelti = new Set();
-      R.errore = null;
-      const esito = await chiamaLead("cerca", dati);
-      if (esito.ok) { R.esito = esito; R.errore = null; }
-      else { R.esito = null; R.errore = esito.errore || "Ricerca non riuscita."; }
-    });
-
-    document.querySelectorAll("[data-lead-scegli]").forEach(b =>
-      b.addEventListener("change", () => {
-        const id = b.dataset.leadScegli;
-        if (b.checked) R.scelti.add(id); else R.scelti.delete(id);
-        /* Solo il pulsante di salvataggio cambia: ridisegnare
-           tutto azzererebbe lo scorrimento a metà elenco. */
-        const salva = document.querySelector("[data-lead-salva]");
-        if (salva) {
-          salva.disabled = R.scelti.size === 0;
-          salva.textContent = `Salva ${R.scelti.size || ""} in archivio`;
-        }
-      }));
-
-    $("[data-lead-tutti]")?.addEventListener("click", () => {
-      (R.esito?.risultati || []).filter(x => !x.gia).forEach(x => R.scelti.add(x.place_id));
-      QF().render();
-    });
-    $("[data-lead-nessuno]")?.addEventListener("click", () => { R.scelti.clear(); QF().render(); });
-
-    $("[data-lead-salva]")?.addEventListener("click", async ev => {
-      const scelti = (R.esito?.risultati || []).filter(x => R.scelti.has(x.place_id));
-      if (!scelti.length) return;
-      ev.currentTarget.disabled = true;
-      ev.currentTarget.textContent = "Salvataggio…";
-      const esito = await chiamaLead("salva", { lead: scelti, query: R.esito.query });
-      if (!esito.ok) { QF().toast(esito.errore || "Salvataggio non riuscito."); QF().render(); return; }
-      QF().toast(esito.salvati === esito.richiesti
-        ? `${esito.salvati} lead salvati in archivio.`
-        : `${esito.salvati} salvati, ${esito.richiesti - esito.salvati} erano già presenti.`);
-      R.scelti = new Set();
-      R.esito = null;
-      await carica();
-    });
+    /* ---- lead: organizzazione dell'archivio ---- */
+    /* I gestori della ricerca non stanno piu' qui: il modulo di
+       Google, la selezione dei risultati e il salvataggio in
+       archivio vivono solo nel Lead Finder del mail marketing.
+       Qui restano i due filtri dell'archivio. */
+    const R = vista;
 
     document.querySelectorAll("[data-lead-filtro]").forEach(b =>
       b.addEventListener("click", () => { R.filtroStato = b.dataset.leadFiltro; QF().render(); }));

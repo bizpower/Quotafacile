@@ -413,7 +413,7 @@ lo sono mai: tenerli distinti rende difficile sbagliarsi.
 |---|---|
 | **👥 Collaboratori** | ✅ anagrafica, ruoli, attivazione e **creazione degli accessi personali** |
 | **📁 Documenti** | ✅ archivio della squadra: chi ha caricato cosa, categorie, scadenze in evidenza |
-| **🔎 Lead locali** | ✅ ricerca per zona, provincia, categorie e raggio, con filtro «solo con email»; salvataggio, assegnazione e stato di lavorazione. Stesso modulo del Lead Finder del mail marketing |
+| **👥 Lead** | ✅ organizzazione dell'archivio: liste, categorie, stato di lavorazione, assegnazione, opposizione al contatto, ricerca degli indirizzi mancanti. Le aziende nuove si cercano nel Lead Finder del mail marketing |
 | **📇 Pipeline** | ✅ viste per fase, etichette, storia delle attività su ogni lead |
 | **✉️ Mail** | ✅ modelli, invio dalla casella Aruba, registro, opposizione al contatto |
 | **🏆 Produzione** | ✅ classifica calcolata dai fatti registrati, con i pesi dichiarati |
@@ -555,7 +555,18 @@ cancellarlo porterebbe via la storia di ciò che ha prodotto e dei documenti che
 E il punteggio di produzione nasce a zero e lo calcolerà il database dai fatti registrati —
 un numero che si può digitare a mano non misura niente.
 
-### 🔎 Lead locali
+### 👥 Lead — e dove si cercano
+
+La sezione **Lead** del CRM organizza quello che è già in archivio: lo divide in liste (le stesse
+del mail marketing), lo filtra per categoria e per stato, assegna le schede ai collaboratori,
+registra chi si è opposto, cerca gli indirizzi email mancanti aprendo i siti che si hanno già.
+
+**Da qui non si cerca su Google.** Il modulo di ricerca stava anche qui ed era lo stesso del Lead
+Finder: due porte sulla stessa funzione del server, e ogni volta la domanda «da quale delle due
+avevo cercato?». Ora le aziende nuove entrano da una porta sola — **Lead Finder**, nel mail
+marketing — e quello che si salva lì compare qui.
+
+#### La ricerca, nel Lead Finder
 
 Ricerca **rapida** (una zona) o **precisa** (regione → provincia → comune dall'anagrafe ISTAT,
 più via e CAP), raggio da 500 m a 10 km, fino a 4 categorie per volta fra venti, filtro qualità
@@ -563,9 +574,9 @@ più via e CAP), raggio da 500 m a 10 km, fino a 4 categorie per volta fra venti
 risultati per ricerca, senza duplicati fra categorie, con l'indicazione di chi è **già in
 archivio** — così non si riprende come nuovo un contatto che qualcuno sta già lavorando.
 
-#### Un modulo, due schermate — `assets/js/lead-ricerca.js`
+#### Perché il modulo vive in un file suo — `assets/js/lead-ricerca.js`
 
-Questa ricerca si usa da due posti: **Lead locali** nel CRM e **Lead Finder** nel mail
+Questa ricerca si è usata a lungo da due posti: **Lead locali** nel CRM e **Lead Finder** nel mail
 marketing. Erano due moduli scritti separatamente, ed erano divergiti esattamente come diverge
 sempre il codice copiato:
 
@@ -587,14 +598,14 @@ validazione, tendine a cascata, attesa: tutto in `lead-ricerca.js`, che si regis
 dell'uscita resta separato di proposito, perché è diverso davvero: nel CRM si salva in archivio,
 nel mail marketing in una lista.
 
-L'unica differenza che resta è un valore iniziale, e è voluta: **`soloConEmail` nasce acceso nel
-mail marketing** — lì le liste servono a mandare email, e un'attività senza indirizzo è una riga
-che il generatore salterebbe contandola fra gli scartati — e **spento nel CRM**, dove si esplora
-una zona per capire chi c'è e aprire il sito di ogni risultato costerebbe secondi a chi non li ha
-chiesti.
+Poi la seconda schermata è stata tolta del tutto: una strada sola per chiedere a Google, e il CRM
+che organizza invece di cercare. Il file condiviso resta com'è — lo usa il Lead Finder — e con lui
+resta la ragione per cui era stato separato, che vale per la prossima volta che due schermate
+vorranno la stessa cosa.
 
 Dai risultati si salva quello che interessa; in archivio ogni lead ha uno stato (nuovo,
-contattato, in trattativa, cliente, scartato) e si assegna a un collaboratore.
+contattato, in trattativa, cliente, scartato) e si assegna a un collaboratore, nella sezione
+**Lead** del CRM.
 
 **Niente scraping.** Solo API ufficiali Google: Geocoding per trasformare un indirizzo in
 coordinate, Places (New) per trovare le attività nel raggio. È il vincolo che il progetto

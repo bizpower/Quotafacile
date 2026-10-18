@@ -1059,7 +1059,7 @@ Usa **grassetto** per i numeri che contano."></textarea>
              "Bacheca: approvazione e moderazione", "Guide SEO e segnalazioni"])}
           ${porta("#/admin/crm", "🏢", "CRM",
             "Il lavoro che resta in ufficio: non quello che si vede da fuori.",
-            ["Collaboratori, ruoli e documenti", "Lead locali e lavorazione",
+            ["Collaboratori, ruoli e documenti", "Lead: liste, categorie e lavorazione",
              "Posta e modelli", "Mail Marketing e Magazine"])}
         </div>
       </div>
