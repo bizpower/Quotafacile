@@ -395,11 +395,11 @@
   }
 
   /* ---------------- SEZIONI · LEAD FINDER e LEAD LISTS ----------------
-     La ricerca non è riscritta: è la stessa funzione qf-lead che
-     alimenta «Lead locali» nel CRM. Due copie dello stesso codice
-     Google vorrebbero dire due comportamenti che con il tempo
-     divergono, e un'attività trovata due volte con due schede
-     diverse.
+     Questo è l'unico posto da cui si chiede a Google. Lo stesso
+     modulo stava anche nel CRM, in «Lead locali»: due porte sulla
+     stessa funzione del server, e ogni volta la domanda «da quale
+     delle due avevo cercato?». Ora il CRM organizza l'archivio e
+     qui si cercano le aziende nuove.
 
      Su Lovable ogni lista aveva le proprie righe di lead: la
      stessa azienda in tre liste erano tre record, e l'opposizione
@@ -482,9 +482,9 @@
     return `
     <div class="card">
       <p class="muted" style="margin:0 0 .8rem;font-size:.85rem">
-        Cerca attività su Google e salvale in una lista. È la stessa ricerca di «Lead locali»
-        nel CRM: un'attività trovata qui e lì resta una riga sola, con la ricerca che l'ha
-        prodotta scritta accanto.
+        Cerca attività su Google e salvale in una lista. È l'unico posto da cui si cerca:
+        quello che salvi qui si ritrova nella sezione <a href="#/admin/crm/lead">Lead</a> del
+        CRM, con la ricerca che l'ha prodotta scritta accanto.
       </p>
       ${window.QF_RICERCA.moduloHtml(ricerca)}
     </div>
