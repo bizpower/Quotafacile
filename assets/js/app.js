@@ -1390,17 +1390,26 @@ const CTR_FASCE = [
   ["dalla 7ª alla 10ª", 0.02]
 ];
 
+/* IL LISTINO NON HA PIÙ UNA CASELLA «GRATIS»
+ *
+ * C'era, e si chiamava QuotaPass: profilo pubblico, risposte in
+ * bacheca, presenza nella lista. Tutte cose che continuano a
+ * esistere e a non costare niente — l'iscrizione è gratuita e il
+ * profilo resta anche a chi disdice.
+ *
+ * Ma in un listino accanto a due piani che offrono «30 giorni
+ * gratis», una terza casella con scritto «Gratis» non si legge
+ * come «questo è il punto di partenza»: si legge come una terza
+ * offerta da confrontare con le altre due, e la domanda che
+ * arriva è «qual è la differenza fra il piano gratuito e la prova
+ * gratuita?». Una domanda che nasce dalla disposizione dei
+ * riquadri, non da quello che vendiamo.
+ *
+ * Quindi il listino mostra quello che si paga, e l'iscrizione
+ * gratuita resta detta dov'è sempre stata: nell'invito a creare
+ * il profilo, in fondo alla pagina, e nella risposta sulla
+ * disdetta. */
 const PIANI = [
-  {
-    id: "gratis", nome: "QuotaPass", prezzo: null, cadenza: "sempre gratuito",
-    sommario: "La vetrina. Serve a esserci e a farsi verificare.",
-    voci: [
-      "Profilo pubblico con numero RUI, ruolo e città",
-      "Risposte in bacheca firmate e indicizzate",
-      "Presenza nella lista intermediari"
-    ],
-    azione: { testo: "Crea la QuotaPass", href: "#/area-pro" }
-  },
   /* Le voci elencate qui sono quelle che il codice fa davvero, e
      l'elenco è corto per quello. Prima ne prometteva quattro per
      piano — "richieste della tua provincia", "priorità nello
@@ -1413,9 +1422,15 @@ const PIANI = [
     id: "base", nome: "Base", prezzo: "8,99", cadenza: "al mese, IVA esclusa",
     prova: 30,
     sommario: "Per essere trovato, non solo per esserci.",
+    /* Prima la prima voce diceva «tutto quello che c'è nel piano
+       gratuito», e rimandava al riquadro accanto. Quel riquadro
+       non c'è più, quindi le tre cose che conteneva sono scritte
+       qui per esteso: un elenco che rimanda a qualcosa che il
+       lettore non vede è un elenco che non dice niente. */
     voci: [
-      "Tutto quello che c'è nel piano gratuito",
-      "Profilo in evidenza nella Lista Intermediari, sopra i profili gratuiti",
+      "Profilo pubblico con numero RUI, ruolo e città",
+      "Risposte in bacheca firmate e indicizzate",
+      "Profilo in evidenza nella Lista Intermediari, sopra i profili senza abbonamento",
       "Il contrassegno In evidenza sulla tua QuotaPass"
     ],
     azione: { testo: "Prova 30 giorni gratis", piano: "base" }
