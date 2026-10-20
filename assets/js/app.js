@@ -1500,7 +1500,7 @@ views.professionisti = () => {
         alle domande degli utenti e fatti trovare da chi sta già cercando una polizza.
         Nessuna commissione sui contratti: il cliente è tuo, e il rapporto pure.</p>
         <div class="hero-actions">
-          <a href="#/area-pro" class="btn btn-gold">Inizia gratis — crea la QuotaPass</a>
+          <a href="#/area-pro" class="btn btn-gold">Crea la QuotaPass — 30 giorni gratis</a>
           <a href="#piani" class="btn btn-outline">Vedi i piani</a>
         </div>
       </div>
@@ -1642,8 +1642,10 @@ views.professionisti = () => {
           <p class="muted">No. Una richiesta indirizzata a te arriva a te. Non è un mercato di lead
           rivenduti a tre colleghi della stessa città.</p></div>
         <div class="card"><h3>Posso disdire quando voglio?</h3>
-          <p class="muted">Sì. L'abbonamento è mensile e si interrompe dalla mensilità successiva.
-          Il profilo gratuito resta, con le risposte che hai scritto.</p></div>
+          <p class="muted">Sì. L'abbonamento è mensile e si interrompe dalla mensilità successiva, e
+          se disdici entro i trenta giorni di prova non paghi nulla. Il tuo account e le risposte che
+          hai pubblicato restano: esce dalla vetrina e dalla Lista Intermediari il profilo, non il
+          lavoro che ci hai messo dentro — se torni, torna anche quello.</p></div>
         <div class="card"><h3>Il gestore è un concorrente?</h3>
           <p class="muted">No. QuotaFacile è gestita da un intermediario iscritto alla sezione E del RUI,
           ma <strong>non ha un profilo in vetrina</strong>: non compare fra quelli che l'utente
@@ -1658,10 +1660,11 @@ views.professionisti = () => {
     <div class="container">
       <div class="cta-band">
         <div>
-          <h2 style="color:#fff">Iscrizione gratuita. Ti bastano 3 minuti.</h2>
-          <p>Si comincia dal profilo gratuito. I piani a pagamento si attivano quando hai visto se il posto ti serve.</p>
+          <h2 style="color:#fff">Trenta giorni gratis. Ti bastano 3 minuti.</h2>
+          <p>Crei la QuotaPass, scegli il piano e per trenta giorni non paghi nulla: se disdici entro la
+          prova non parte nessun addebito.</p>
         </div>
-        <a href="#/area-pro" class="btn btn-gold">Crea il profilo ora</a>
+        <a href="#/area-pro" class="btn btn-gold">Crea la QuotaPass</a>
       </div>
     </div>
   </section>`;
@@ -2713,15 +2716,37 @@ function abbonamentoHTML(p) {
   const data = s => s ? new Date(s).toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" }) : "—";
 
   if (!a) {
+    /* QUESTO RIQUADRO DICE LA COSA CHE COSTA
+     *
+     * Prima diceva: «QuotaPass gratuita — il profilo, le risposte
+     * e la presenza nella lista restano gratuiti e lo
+     * resteranno». Era una promessa, scritta al presente e al
+     * futuro, e dal momento in cui la vetrina si paga non è più
+     * vera. Lasciarla sarebbe stato il modo peggiore di cambiare
+     * listino: far leggere a chi si è appena registrato che non
+     * pagherà mai, e poi non mostrarlo a nessuno.
+     *
+     * Adesso dice dove si è — account sì, vetrina no — e da qui
+     * si sceglie il piano. I due bottoni sono gli stessi del
+     * listino, `data-abbona`, quindi la finestra di pagamento che
+     * si apre è una sola in tutto il sito. */
     return `
     <div class="card abbo-card">
       <div class="abbo-testa">
-        <strong>Nessun abbonamento attivo</strong>
-        <span class="pill">QuotaPass gratuita</span>
+        <strong>Il tuo profilo non è ancora in vetrina</strong>
+        <span class="pill">30 giorni gratis</span>
       </div>
-      <p class="muted" style="font-size:.88rem;margin:.4rem 0 0">Il profilo, le risposte in bacheca e la
-      presenza nella lista intermediari restano gratuiti e lo resteranno. I piani a pagamento sono
-      sulla <a href="#/professionisti#piani">pagina per i professionisti</a>.</p>
+      <p class="muted" style="font-size:.88rem;margin:.4rem 0 .8rem">
+        L'account c'è e il profilo lo puoi compilare da subito. Per comparire nella
+        <a href="#/intermediari">Lista Intermediari</a> e in vetrina, e per firmare con la tua
+        QuotaPass le risposte in bacheca, serve un abbonamento. I primi trenta giorni non si pagano:
+        la carta serve subito, l'addebito parte dopo, e se disdici entro la prova non paghi nulla.
+      </p>
+      <div class="admin-actions" style="margin-top:0">
+        <button class="btn btn-primary btn-sm" data-abbona="base">Base · 8,99 €/mese</button>
+        <button class="btn btn-outline btn-sm" data-abbona="pro">Pro · 19,99 €/mese</button>
+        <a class="btn btn-ghost btn-sm" href="#/professionisti#piani">Cosa cambia fra i due</a>
+      </div>
     </div>`;
   }
 
@@ -2754,6 +2779,10 @@ function abbonamentoHTML(p) {
    "abbonato" sarebbe stato una riga che chiunque si riscriveva
    dalla console. Ora l'identità è un'utenza vera. */
 let proModo = "entra";   // entra | registrati
+/* Il piano che si stava per sottoscrivere quando ci si è
+   accorti di non avere un account. Vive il tempo di una
+   registrazione e poi si azzera. */
+let pianoVoluto = null;
 
 function proPortaHTML() {
   const reg = proModo === "registrati";
@@ -2765,7 +2794,7 @@ function proPortaHTML() {
         <span class="eyebrow">Area professionisti</span>
         <h1 class="titolo-sezione">${reg ? "Crea la tua QuotaPass" : "Entra nella tua area"}</h1>
         <p class="muted">${reg
-          ? "Gratis. Il profilo compare in vetrina solo quando lo chiedi tu e solo dopo il riscontro del numero RUI sul registro pubblico IVASS."
+          ? "Trenta giorni gratis, poi 8,99 € o 19,99 € al mese. Il profilo compare in vetrina quando lo chiedi tu, dopo il riscontro del numero RUI sul registro pubblico IVASS e finché l'abbonamento è in corso."
           : "Con l'email e la password che hai scelto alla registrazione."}</p>
       </div>
       <div class="card">
@@ -3369,9 +3398,17 @@ function bind() {
     b.addEventListener("click", async () => {
       const piano = b.dataset.abbona;
       if (!window.QF_PRO?.autenticato()) {
+        /* Si teneva il posto a mente a parole — «crea il tuo
+           account» — e poi il posto lo si perdeva: finita la
+           registrazione si finiva sul profilo, e del piano che si
+           stava per sottoscrivere non restava traccia. Chi aveva
+           premuto «Prova 30 giorni gratis» su Pro doveva tornare
+           al listino e ripremere, sempre che si ricordasse quale
+           dei due aveva scelto. Adesso il piano aspetta qui. */
+        pianoVoluto = piano;
         proModo = "registrati";
         vaiA("area-pro");
-        toast("Crea il tuo account: l'abbonamento si aggancia a quello.");
+        toast("Prima l'account: l'abbonamento si aggancia a quello, e poi si riparte da qui.");
         return;
       }
       const testoPrec = b.textContent;
@@ -3432,9 +3469,25 @@ function bind() {
       citta: dati.citta || null, telefono: null, email: dati.email,
       spec: [], bio: null, consensoRui: true, consensoTermini: true
     });
+    /* DOPO L'ACCOUNT SI VA ALLA CASSA
+       La vetrina e' la cosa che si paga, quindi far atterrare chi
+       si e' appena registrato sul modulo del profilo lo lasciava
+       a meta' strada: un profilo compilato che non compare da
+       nessuna parte, e nessuno che gli dica perche'. Se era
+       arrivato da un bottone del listino si riprende da quel
+       piano; se e' entrato dalla porta principale sceglie, e la
+       scelta e' il primo riquadro che vede nella sua area. */
     proTab = "profilo";
+    const scelto = pianoVoluto;
+    pianoVoluto = null;
     render();
-    toast("Account creato. Completa il profilo: la vetrina si attiva dopo il riscontro del RUI.");
+    if (scelto) {
+      toast("Account creato. Apro il pagamento: i primi 30 giorni non si pagano.");
+      const esito = await window.QF_PRO.checkout(scelto);
+      if (!esito.ok) toast(esito.errore || "Pagamento non avviato: puoi riprovare dalla tua area.");
+      return;
+    }
+    toast("Account creato. Scegli il piano: la vetrina si attiva con l'abbonamento, dopo il riscontro del RUI.");
   });
 
   $("#pro-esci")?.addEventListener("click", async () => {
