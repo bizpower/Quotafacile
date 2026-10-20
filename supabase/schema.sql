@@ -1889,14 +1889,32 @@ alter table public.pro_profili       enable row level security;
 alter table public.pro_abbonamenti   enable row level security;
 alter table public.pro_eventi_stripe enable row level security;
 
--- In vetrina finisce solo chi ha chiesto di esserci, e solo dopo
--- il riscontro sul RUI: un profilo non verificato pubblicato in
+-- In vetrina finisce solo chi ha chiesto di esserci, ha superato
+-- il riscontro sul RUI — un profilo non verificato pubblicato in
 -- una directory di intermediari è un'attestazione che nessuno ha
--- controllato.
+-- controllato — e ha un abbonamento in corso.
+--
+-- La terza condizione è arrivata dopo: la comparsa in vetrina e
+-- nella Lista Intermediari è la cosa che si paga, e un cancello
+-- scritto solo nel browser non è un cancello.
+--
+-- Si guarda `piano` e non la tabella degli abbonamenti, per due
+-- ragioni. La prima: `piano` lo scrive solo il webhook di Stripe
+-- con la chiave di servizio, e la grant di UPDATE concessa agli
+-- utenti non lo comprende — quindi nessuno se lo assegna da solo.
+-- La seconda: una sottoquery su pro_abbonamenti dentro questa
+-- policy verrebbe filtrata dalla RLS di quella tabella, che non è
+-- leggibile da nessuno, e la vetrina risulterebbe vuota per
+-- tutti.
+--
+-- `piano` vale 'base' o 'pro' finché l'abbonamento è trialing o
+-- active, e torna null negli altri casi: i trenta giorni di prova
+-- stanno dentro, l'abbonamento disdetto esce dal giorno in cui
+-- Stripe lo dichiara chiuso.
 drop policy if exists "profili in vetrina visibili a tutti" on public.pro_profili;
 create policy "profili in vetrina visibili a tutti"
   on public.pro_profili for select
-  using (pubblico and stato_verifica = 'verificato');
+  using (pubblico and stato_verifica = 'verificato' and piano is not null);
 
 drop policy if exists "ognuno vede il proprio profilo" on public.pro_profili;
 create policy "ognuno vede il proprio profilo"

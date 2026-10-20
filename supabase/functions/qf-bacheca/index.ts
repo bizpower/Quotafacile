@@ -109,13 +109,28 @@ async function nuovaDomanda(d: Record<string, unknown>) {
   return { id: data.id };
 }
 
-/* Il profilo di chi firma, quando ha un account.
+/* Il profilo di chi firma, quando ha un account e un abbonamento.
    Si ricava dal token, mai dal corpo della richiesta: se
    arrivasse da un campo JSON, chiunque potrebbe firmare a nome di
    un altro e fargli guadagnare - o perdere - quello che ne segue.
    Chi non ha un account puo' rispondere lo stesso: la risposta
    resta in attesa di approvazione come tutte le altre, solo senza
-   un profilo a cui attribuirla. */
+   un profilo a cui attribuirla.
+
+   L'ABBONAMENTO CONTA ANCHE QUI
+
+   La firma non e' un'etichetta: lega la risposta alla QuotaPass,
+   porta punti, e dai punti dipende la posizione nella vetrina.
+   Da quando la vetrina si paga, attribuire una risposta al
+   profilo di chi non ha un abbonamento vorrebbe dire far
+   guadagnare posizioni in una classifica a cui non si partecipa.
+
+   `piano` e' la stessa colonna che governa la visibilita' in
+   vetrina: la scrive il webhook di Stripe, vale finche'
+   l'abbonamento e' in prova o attivo, e nessun utente la puo'
+   toccare. La risposta resta e resta pubblicabile - la bacheca
+   vive di risposte, non di abbonamenti - semplicemente non viene
+   attribuita. */
 async function profiloDiChiFirma(req: Request): Promise<string | null> {
   const auth = req.headers.get("Authorization") || "";
   if (!auth.startsWith("Bearer ")) return null;
@@ -126,8 +141,9 @@ async function profiloDiChiFirma(req: Request): Promise<string | null> {
     const { data: u } = await comeLui.auth.getUser();
     if (!u?.user) return null;
     const { data } = await db.from("pro_profili")
-      .select("id").eq("utente_id", u.user.id).maybeSingle();
-    return data?.id ?? null;
+      .select("id,piano").eq("utente_id", u.user.id).maybeSingle();
+    if (!data?.piano) return null;
+    return data.id;
   } catch {
     return null;
   }
