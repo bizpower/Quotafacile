@@ -122,6 +122,20 @@ const DISEGNI = {
       <path d="M310 112 L406 112" stroke="${V.chiaro}" stroke-width="14" stroke-linecap="round"/>
       <rect x="126" y="184" width="82" height="50" rx="11" fill="${V.oro}"/>
     </g>`,
+  targa: `
+    <g transform="translate(30,70)">
+      <path d="M50 116 L104 116 M28 170 L92 170" stroke="${V.salvia}" stroke-width="9" stroke-linecap="round" opacity=".7"/>
+      <rect x="140" y="170" width="220" height="20" rx="10" fill="${V.chiaro}"/>
+      <circle cx="162" cy="224" r="32" fill="none" stroke="${V.chiaro}" stroke-width="13"/>
+      <circle cx="346" cy="224" r="32" fill="none" stroke="${V.chiaro}" stroke-width="13"/>
+      <path d="M346 190 L366 40" stroke="${V.chiaro}" stroke-width="14" stroke-linecap="round"/>
+      <path d="M320 34 L416 34" stroke="${V.chiaro}" stroke-width="14" stroke-linecap="round"/>
+      <g transform="rotate(-3 265 388)">
+        <rect x="150" y="320" width="230" height="136" rx="15" fill="${V.oro}"/>
+        <rect x="168" y="338" width="194" height="100" rx="8" fill="none" stroke="${V.fondo}" stroke-width="7"/>
+        ${[0,1,2,3].map(i => `<rect x="${192+i*40}" y="362" width="22" height="52" rx="5" fill="${V.fondo}"/>`).join("")}
+      </g>
+    </g>`,
   risparmio: `
     <g transform="translate(40,140)">
       ${[0, 1, 2, 3].map(i => {
@@ -182,6 +196,7 @@ export const COPERTINE = [
   { id: "neopatentati",          eyebrow: "Auto",      titolo: "Neopatentati",                    disegno: "neopatentati" },
   { id: "monopattino",           eyebrow: "Auto",      titolo: "Monopattino<br>elettrico",        disegno: "monopattino" },
   { id: "risparmio-auto",        eyebrow: "Auto",      titolo: "Risparmiare<br>sulla polizza",    disegno: "risparmio" },
+  { id: "targa-monopattino",     eyebrow: "Auto",      titolo: "Targa e<br>assicurazione",        disegno: "targa" },
 ];
 
 // La cartella di destinazione è accanto a questo file e non alla
