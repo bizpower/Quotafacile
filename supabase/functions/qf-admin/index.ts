@@ -285,8 +285,43 @@ async function aggiornaRichiesta(d: Record<string, unknown>) {
   const id = testo(d.id, 40);
   const stato = String(d.stato ?? "");
   if (!id || !["nuova", "presa_in_carico", "chiusa"].includes(stato)) throw new Error("Stato non valido");
-  await db.from("richieste").update({ stato }).eq("id", id);
+  // L'esito si guarda: prima l'errore veniva buttato via e la
+  // console annunciava "presa in carico" anche quando il
+  // database non aveva scritto niente.
+  const { error } = await db.from("richieste").update({ stato }).eq("id", id);
+  if (error) throw new Error(error.message);
   return { stato };
+}
+
+/* Eliminare vuol dire eliminare.
+   ------------------------------------------------------------
+   "Chiusa" e "presa in carico" sono stati di lavorazione: la
+   richiesta resta, perche' una trattativa finita e' comunque
+   successa. Qui invece la riga sparisce dal database - recapiti,
+   note e prova del consenso compresi - e non c'e' modo di
+   riportarla indietro.
+
+   Serve per due cose concrete: le prove, i doppioni e lo spam,
+   che non sono contatti e in archivio fanno solo rumore; e la
+   cancellazione chiesta da chi ha scritto, che il Regolamento
+   (art. 17 GDPR) vuole effettiva e non una colonna "nascosta".
+
+   Due dettagli non casuali. Il delete porta `.select()`, cosi'
+   si sa se ha tolto qualcosa davvero: senza, cancellare una riga
+   che non c'e' piu' risponde "fatto" e la console mostrerebbe un
+   successo per un'operazione che non ha toccato niente. E
+   l'errore del database non viene inghiottito: se la riga resta,
+   chi guarda deve vederlo. */
+async function eliminaRichiesta(d: Record<string, unknown>) {
+  const id = testo(d.id, 40);
+  if (!id) throw new Error("Richiesta non indicata");
+
+  const { data, error } = await db.from("richieste").delete().eq("id", id).select("id");
+  if (error) throw new Error(error.message);
+  if (!data || !data.length) {
+    throw new Error("Questa richiesta non esiste piu': forse e' gia' stata eliminata.");
+  }
+  return { eliminata: data[0].id };
 }
 
 const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> = {
@@ -298,6 +333,7 @@ const AZIONI: Record<string, (d: Record<string, unknown>) => Promise<unknown>> =
   "verifica-pro": verificaPro,
   "chiudi-segnalazione": chiudiSegnalazione,
   "aggiorna-richiesta": aggiornaRichiesta,
+  "elimina-richiesta": eliminaRichiesta,
   "cambia-chiave": cambiaChiave,
 };
 

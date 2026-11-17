@@ -315,7 +315,8 @@
       : D().richieste.filter(r => r.stato === filtroRichieste);
 
     return `
-    <p class="admin-hint">Queste sono le richieste arrivate dal sito. Sono salvate nel database <em>prima</em> che si provi a inviare qualunque avviso: se una notifica non parte il contatto resta comunque qui, e non si perde.</p>
+    <p class="admin-hint">Queste sono le richieste arrivate dal sito. Sono salvate nel database <em>prima</em> che si provi a inviare qualunque avviso: se una notifica non parte il contatto resta comunque qui, e non si perde.<br>
+    I tre stati servono a lavorarle: <em>Chiusa</em> archivia, non toglie niente. <em>Elimina</em> invece cancella la riga dal database — recapiti, note e prova del consenso compresi — e non si torna indietro: è per le prove, i doppioni, lo spam, e per chi chiede di essere cancellato.</p>
 
     <div class="filterbar">
       ${Object.entries(filtri).map(([k, v]) => `<button class="chip ${filtroRichieste === k ? "active" : ""}" data-filtrorich="${k}">${v}${k !== "tutte" ? ` (${D().richieste.filter(r => r.stato === k).length})` : ""}</button>`).join("")}
@@ -342,6 +343,12 @@
         <div class="admin-actions">
           ${Object.entries(STATI_RICHIESTA).map(([k, v]) => `
             <button class="chip ${r.stato === k ? "active" : ""}" data-statorich="${r.id}:${k}">${v}</button>`).join("")}
+          <!-- L'eliminazione non è uno stato, quindi non è una
+               chip accanto agli altri tre: è un bottone, ed è
+               l'ultimo. Chiudere una richiesta la archivia;
+               questo la toglie. -->
+          <button class="btn btn-ghost btn-sm danger" data-del-richiesta="${r.id}"
+                  data-chi="${esc(r.nome)}" data-quando="${esc(dataOra(r.creato_il))}">🗑 Elimina</button>
         </div>
       </div>`).join("") : `<p class="muted">Nessuna richiesta con questo filtro.</p>`}`;
   }
@@ -1304,6 +1311,22 @@ Usa **grassetto** per i numeri che contano."></textarea>
         const i = b.dataset.statorich.lastIndexOf(":");
         const id = b.dataset.statorich.slice(0, i), stato = b.dataset.statorich.slice(i + 1);
         agisci("aggiorna-richiesta", { id, stato }, `Richiesta: ${STATI_RICHIESTA[stato]}`);
+      }));
+
+    /* eliminazione definitiva di una richiesta.
+       La conferma dice chi e quando, perché in un elenco di
+       schede uguali il rischio non è premere il bottone: è
+       premerlo sulla scheda sbagliata. E dice cosa se ne va
+       davvero, prova del consenso compresa: è l'unica copia. */
+    document.querySelectorAll("[data-del-richiesta]").forEach(b =>
+      b.addEventListener("click", () => {
+        const chi = b.dataset.chi || "questa persona";
+        const quando = b.dataset.quando || "";
+        if (!confirm(
+          `Eliminare definitivamente la richiesta di ${chi}${quando ? ` del ${quando}` : ""}?\n\n` +
+          "Spariscono dal database i recapiti, le note e la prova del consenso privacy. " +
+          "Non è come «Chiusa»: non si può annullare e non resta una copia.")) return;
+        agisci("elimina-richiesta", { id: b.dataset.delRichiesta }, "Richiesta eliminata.");
       }));
 
     /* verifica RUI di un professionista iscritto */
