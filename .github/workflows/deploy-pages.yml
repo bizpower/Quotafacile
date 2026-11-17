@@ -52,7 +52,24 @@ jobs:
   deploy:
     needs: verifica
     if: needs.verifica.outputs.attivo == 'si'
-    runs-on: ubuntu-latest
+    # L'immagine è fissata, e non è pignoleria: "ubuntu-latest" è
+    # un'etichetta mobile, e quando GitHub l'ha spostata su Ubuntu
+    # 26.04 il passo del pre-render ha cominciato a fallire con
+    #
+    #   Cannot install dependencies for ubuntu26.04-x64
+    #     with Playwright 1.56.0!
+    #   ERROR: Playwright does not support chromium on ubuntu26.04-x64
+    #
+    # Il deploy si fermava lì, in venti secondi, e il sito restava
+    # all'ultima pubblicazione riuscita: tre settimane di modifiche
+    # unite in main e mai arrivate online, senza che niente in
+    # pagina lo dicesse. Playwright dichiara le distribuzioni che
+    # supporta una per una, quindi o si fissa l'immagine o si
+    # insegue la sua versione: qui si fissa, perché la versione del
+    # browser che pre-renderizza il sito è meglio sceglierla che
+    # subirla. Quando si vorrà passare a 26.04 si alzerà anche
+    # playwright@ qui sotto, nello stesso commit.
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
