@@ -1021,11 +1021,20 @@ function ruiLabel(b) {
 
 /* CTA "CHIAMA": presente su ogni scheda. Finché il recapito non è
    stato inserito resta visibile ma inattiva, così la scheda mostra
-   comunque l'azione principale senza offrire un link telefonico rotto. */
+   comunque l'azione principale senza offrire un link telefonico rotto.
+
+   Il numero nella scheda si scrive leggibile, a gruppi, ma dentro
+   l'href gli spazi non ci vanno: RFC 3966 vuole solo le cifre e
+   l'eventuale prefisso internazionale, e un centralino VoIP o un
+   telefono fisso collegato al browser sullo spazio si ferma. Da
+   qui la ripulitura, la stessa che la console fa già sulle schede
+   dei lead. */
+const telPulito = t => String(t).replace(/[^\d+]/g, "");
+
 function ctaChiama(b) {
   return (!b.tel || DA_COMPILARE(b.tel))
     ? `<span class="btn btn-primary btn-sm btn-disabled" aria-disabled="true" title="Recapito telefonico non ancora disponibile">${ICO("telefono")} CHIAMA</span>`
-    : `<a class="btn btn-primary btn-sm" href="tel:${esc(b.tel)}">${ICO("telefono")} CHIAMA</a>`;
+    : `<a class="btn btn-primary btn-sm" href="tel:${esc(telPulito(b.tel))}" aria-label="Chiama ${esc(b.nome)} al ${esc(b.tel)}">${ICO("telefono")} CHIAMA</a>`;
 }
 
 /* QuotaPass component */

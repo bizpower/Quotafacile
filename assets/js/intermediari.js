@@ -50,8 +50,8 @@
          riportato qui: finché manca la riga non compare, invece
          di mostrare un segnaposto o una supposizione. */
       operaPerConto: null,
-      citta: "«Città»",
-      tel: "«+39 ...»",
+      citta: "Milano",
+      tel: "+39 393 177 5780",
       email: "«email professionale»",
       bio: "«Due righe su come aiuti i tuoi clienti: rami di specializzazione, tipo di clientela, tempi di risposta.»",
       spec: ["Impresa", "Vita", "Salute"],
