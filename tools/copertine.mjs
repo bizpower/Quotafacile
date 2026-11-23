@@ -122,6 +122,16 @@ const DISEGNI = {
       <path d="M310 112 L406 112" stroke="${V.chiaro}" stroke-width="14" stroke-linecap="round"/>
       <rect x="126" y="184" width="82" height="50" rx="11" fill="${V.oro}"/>
     </g>`,
+  sanitaria: `
+    <g transform="translate(40,60)">
+      <path d="M230 40 L400 100 L400 250 C400 350 320 410 230 450
+               C140 410 60 350 60 250 L60 100 Z"
+            fill="none" stroke="${V.chiaro}" stroke-width="14" stroke-linejoin="round"/>
+      <rect x="200" y="150" width="60" height="190" rx="12" fill="${V.oro}"/>
+      <rect x="135" y="215" width="190" height="60" rx="12" fill="${V.oro}"/>
+      <path d="M20 480 L135 480 L168 433 L205 527 L242 468 L282 480 L440 480"
+            fill="none" stroke="${V.salvia}" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>`,
   targa: `
     <g transform="translate(30,70)">
       <path d="M50 116 L104 116 M28 170 L92 170" stroke="${V.salvia}" stroke-width="9" stroke-linecap="round" opacity=".7"/>
@@ -197,6 +207,7 @@ export const COPERTINE = [
   { id: "monopattino",           eyebrow: "Auto",      titolo: "Monopattino<br>elettrico",        disegno: "monopattino" },
   { id: "risparmio-auto",        eyebrow: "Auto",      titolo: "Risparmiare<br>sulla polizza",    disegno: "risparmio" },
   { id: "targa-monopattino",     eyebrow: "Auto",      titolo: "Targa e<br>assicurazione",        disegno: "targa" },
+  { id: "assicurazione-sanitaria", eyebrow: "Salute",  titolo: "Assicurazione<br>sanitaria",      disegno: "sanitaria" },
 ];
 
 // La cartella di destinazione è accanto a questo file e non alla
